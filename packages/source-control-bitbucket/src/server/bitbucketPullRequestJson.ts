@@ -22,12 +22,9 @@ import { dedupeChecks } from "@t3tools/source-control-core/server/pullRequestChe
 
 /** Unknown enum values must not fail the whole payload. */
 const RawUserSchema = Schema.Struct({
-  /**
-   * How Bitbucket addresses an account when a reviewer set is written; the handles it shows are
-   * not accepted there.
-   */
+  /** Reviewer writes require UUIDs, not displayed handles. */
   uuid: Schema.optional(Schema.NullOr(Schema.String)),
-  /** Absent on an app account, which is why `display_name` has to stand in for it. */
+  /** App accounts omit this; use `display_name`. */
   nickname: Schema.optional(Schema.NullOr(Schema.String)),
   display_name: Schema.optional(Schema.NullOr(Schema.String)),
   links: Schema.optional(
@@ -166,11 +163,11 @@ export interface BitbucketPullRequest {
   readonly baseBranch: string;
   readonly state: PullRequestState;
   readonly isDraft: boolean;
-  /** Listings omit conflict state; only the detail read's conflicts endpoint can answer. */
+  /** Listings omit conflict state; detail reads use the conflicts endpoint. */
   readonly mergeability: PullRequestMergeability;
   readonly createdAt: string;
   readonly updatedAt: string;
-  /** When the request was merged or declined, unlike `updatedAt`, which later comments move. */
+  /** Merge/decline time; later comments move `updatedAt`. */
   readonly closedAt: string | null;
   readonly body: string;
   readonly reviewRequestLogins: ReadonlyArray<string>;
@@ -367,9 +364,7 @@ export type BitbucketRawComment = Schema.Schema.Type<typeof RawCommentSchema>;
 
 export interface BitbucketComments {
   readonly comments: ReadonlyArray<PullRequestComment>;
-  /**
-   * Raw entries for thread assembly after all pages; parents and replies may cross page boundaries.
-   */
+  /** Raw entries for thread assembly across page boundaries. */
   readonly entries: ReadonlyArray<BitbucketRawComment>;
   readonly next: string | null;
 }
@@ -507,8 +502,7 @@ export function decodeStatusesJson(
     const status = decodedStatus.value;
     const name = trimmed(status.name) ?? trimmed(status.key);
     if (name === null) continue;
-    // Reruns reuse status keys; the later entry wins. Use the key to distinguish pipelines with the
-    // same name.
+    // Reruns reuse keys; later entries win. Keys distinguish same-named pipelines.
     checks.push({
       check: {
         name,

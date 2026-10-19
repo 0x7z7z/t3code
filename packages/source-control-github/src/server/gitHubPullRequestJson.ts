@@ -124,7 +124,7 @@ interface CheckFields {
   readonly description?: string | null | undefined;
   readonly detailsUrl?: string | null | undefined;
   readonly targetUrl?: string | null | undefined;
-  /** Distinguishes same-named checks; empty for app-owned runs and absent for commit statuses. */
+  /** Empty for app-owned runs; absent for commit statuses. */
   readonly workflowName?: string | null | undefined;
   readonly startedAt?: string | null | undefined;
   readonly completedAt?: string | null | undefined;
@@ -173,10 +173,7 @@ export function gitHubReactionContent(
   return GITHUB_REACTION_BY_CONTENT[content];
 }
 
-/**
- * GitHub includes empty reaction groups. Omit the viewer from actors to avoid duplicating 'You',
- * but retain them in count.
- */
+/** Keep the viewer in counts, not actors, to avoid duplicating 'You'. */
 function toReactions(
   groups: ReadonlyArray<ReactionGroup> | null | undefined,
   viewer: string | null,
@@ -388,10 +385,7 @@ function nextCursorOf(pageInfo: PageInfoFields | null | undefined): string | nul
   return pageInfo?.hasNextPage === true ? trimmed(pageInfo.endCursor) : null;
 }
 
-/**
- * Unknown update permission lets the host enforce access; unknown authorship must not grant
- * author-specific actions.
- */
+/** Defer unknown update access to the host; unknown authorship grants no author actions. */
 function toPullRequestViewerFields(
   raw:
     | {
@@ -422,7 +416,7 @@ interface RequestedTeamFields {
   readonly teamAvatarUrl?: string | null | undefined;
 }
 
-/** Team logins use org/slug; the slash prevents collisions with user logins and verdicts. */
+/** org/slug avoids collisions with user logins and verdicts. */
 function toRequestedTeam(raw: object | null | undefined): PullRequestActor | null {
   if (raw == null || !("combinedSlug" in raw)) return null;
   const team = raw as RequestedTeamFields;
@@ -488,10 +482,7 @@ function toMergeMethod(value: string | null | undefined): PullRequestMergeMethod
   }
 }
 
-/**
- * GitHub's reviewDecision ignores reviews that do not satisfy branch rules, including app
- * approvals.
- */
+/** GitHub's reviewDecision ignores reviews outside branch rules, including app approvals. */
 function toReviewDecisionWithReviews(
   value: string | null | undefined,
   reviews: ReadonlyArray<LatestReviewFields> | undefined,
@@ -568,7 +559,7 @@ function toCheckStatus(raw: CheckFields): PullRequestCheckStatus {
   }
 }
 
-/** What GitHub writes where a run has not reached that moment yet, which is not a time. */
+/** GitHub's sentinel for timestamps not reached yet. */
 const UNSET_TIMESTAMP = "0001-01-01T00:00:00Z";
 
 const STILL_RUNNING = "9999-12-31T23:59:59Z";
@@ -582,10 +573,7 @@ function isNamelessCheck(raw: CheckFields): boolean {
   return trimmed(raw.name) === null && trimmed(raw.context) === null;
 }
 
-/**
- * An unfinished run must outrank finished runs of the same check, including concurrent push/PR
- * workflows.
- */
+/** Unfinished runs outrank finished runs of the same check across push/PR workflows. */
 function toCheckEntries(raw: ReadonlyArray<CheckFields> | null | undefined): ReadonlyArray<{
   readonly check: PullRequestCheck;
   readonly workflowName: string | null;
@@ -669,8 +657,7 @@ function toComments(raw: {
     path: null,
     reviewState: null,
   }));
-  // Bodiless COMMENTED reviews only contain line comments read separately; keep empty reviews only
-  // for verdict events.
+  // Bodiless COMMENTED reviews only hold line comments read separately.
   const reviews = raw.reviews.flatMap((review): ReadonlyArray<PullRequestComment> => {
     const submittedAt = trimmed(review.submittedAt);
     const reviewState = trimmed(review.state);
@@ -812,7 +799,7 @@ export const LenientPullRequestList = GraphQL.query(PullRequestList.name, {
 
 type DecodeFailure = Cause.Cause<Schema.SchemaError>;
 
-/** Skip invalid rows, but count them in rawCount so they cannot prematurely end pagination. */
+/** Count skipped invalid rows in rawCount to avoid ending pagination early. */
 export function toPullRequestRows(
   connection:
     | { readonly pageInfo: PageInfoFields; readonly nodes: ReadonlyArray<unknown> | null }
@@ -935,7 +922,7 @@ export interface GitHubPullRequestSummary {
   readonly reviewDecision: PullRequestReviewDecision | null;
   readonly checksState: PullRequestChecksState | null;
   readonly mergeability: PullRequestMergeability;
-  /** Null when GitHub says the pull request is in no stack; absent when the read did not ask. */
+  /** Null means no stack; absent means not requested. */
   readonly stack?: PullRequestStackMembership | null;
 }
 
@@ -1204,9 +1191,7 @@ export interface GitHubReviewThreadComments {
     string,
     { readonly additions: number; readonly deletions: number }
   >;
-  /**
-   * Empty means not read (unsupported field or degraded page); preserve the existing commit list.
-   */
+  /** Empty means unread; preserve existing commits. */
   readonly commits: ReadonlyArray<PullRequestCommit>;
   readonly viewer: { readonly canUpdate: boolean; readonly didAuthor: boolean };
 }
@@ -1355,8 +1340,7 @@ export function toReviewThreadPage(result: ReviewThreads.Result): GitHubReviewTh
   for (const { commit } of nodesOf(pullRequest.commits)) {
     const oid = trimmed(commit.oid);
     if (oid === null) continue;
-    // Merge stats include all changes against the first parent; showing them would count upstream
-    // changes as PR work.
+    // Merge stats count upstream changes against the first parent as PR work.
     if (commit.parents.totalCount <= 1) {
       commitStats.set(oid, {
         additions: Math.max(0, commit.additions),
@@ -1419,7 +1403,7 @@ export interface GitHubRepositoryAccess {
   readonly canWrite: boolean;
 }
 
-/** GitHub App installations report null permissions; let GitHub enforce their unreported grants. */
+/** App installations report null permissions; let GitHub enforce access. */
 export function toCanWrite(viewerPermission: string | null | undefined): boolean {
   if (viewerPermission === null) return true;
   switch (viewerPermission?.trim().toUpperCase()) {
@@ -1441,10 +1425,7 @@ export interface GitHubBaseComparison {
   readonly viewerCanUpdate: boolean;
 }
 
-/**
- * Use assignableUsers: collaborators requires push access and teams require read:org. Exclude the
- * author, but retain requested outsiders/apps so requests can be withdrawn.
- */
+/** assignableUsers avoids push/read:org requirements. Keep requested outsiders/apps removable. */
 export function toReviewerCandidates(
   result: ReviewerCandidates.Result,
 ): PullRequestReviewerCandidateList | null {
@@ -1461,7 +1442,7 @@ export function toReviewerCandidates(
     candidates.set(`${slug === null ? "user" : "team"} ${id}`, {
       id,
       kind: slug === null ? "user" : "team",
-      // The same `org/slug` the reviewer row shows, so taking the request back finds that row.
+      // Match reviewer rows' org/slug so requests can be withdrawn.
       login: slug === null ? id : (trimmed("combinedSlug" in raw ? raw.combinedSlug : null) ?? id),
       name: trimmed("teamName" in raw ? raw.teamName : "name" in raw ? raw.name : null),
       avatarUrl: trimmed(
@@ -1504,9 +1485,7 @@ export function buildReviewerRequest(
   };
 }
 
-/**
- * Retain labels already applied even if absent from the repository page, so users can remove them.
- */
+/** Keep applied labels removable even when absent from the repository page. */
 export function toLabelCandidates(
   result: LabelCandidates.Result,
 ): PullRequestLabelCandidateList | null {
@@ -1548,10 +1527,7 @@ export interface GitHubViewerAccess {
   readonly canTriage: boolean;
   readonly canUpdate: boolean;
   readonly didAuthor: boolean;
-  /**
-   * GitHub returns false for current branches too; this means permitted and update needed. Absent
-   * if not read.
-   */
+  /** Permitted and update needed; false also covers current branches. Absent if unread. */
   readonly canUpdateBranch?: boolean;
 }
 
@@ -1608,8 +1584,7 @@ function toFilesPatch(entries: ReadonlyArray<unknown>): GitHubPullRequestFilesPa
     const hunks = value.patch ?? "";
     const status = value.status?.trim().toLowerCase();
     if (hunks.length === 0) {
-      // Keep hunkless files visible: pure renames are complete, while omitted binary changes leave
-      // a patch gap.
+      // Hunkless renames are complete; omitted binary changes leave a patch gap.
       const additions = value.additions ?? 0;
       const deletions = value.deletions ?? 0;
       if (additions + deletions > 0) {

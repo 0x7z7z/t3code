@@ -37,8 +37,7 @@ const GitHubPullRequestSchema = Schema.Struct({
   mergedAt: Schema.optional(Schema.NullOr(Schema.String)),
   updatedAt: Schema.optional(Schema.OptionFromNullOr(Schema.DateTimeUtcFromString)),
   isCrossRepository: Schema.optional(Schema.Boolean),
-  // gh < 2.47 omits headRepository.nameWithOwner; keep both fields optional to tolerate CLI version
-  // drift.
+  // gh < 2.47 omits headRepository.nameWithOwner.
   headRepository: Schema.optional(
     Schema.NullOr(
       Schema.Struct({

@@ -20,10 +20,7 @@ export function parseFetchRemotes(
     .map((match) => ({ name: match[1]!, url: match[2]! }));
 }
 
-/**
- * Match gh's noninteractive remote selection: marked default, then upstream/github/origin, then the
- * sole remote. Return null for ambiguous hosts, SSH aliases or defaults.
- */
+/** gh priority: marked default, upstream/github/origin, sole remote. Null if ambiguous or SSH-aliased. */
 export function selectGitHubBaseRepository(input: {
   readonly remotes: string;
   readonly resolved: string;
@@ -59,10 +56,7 @@ export function selectGitHubBaseRepository(input: {
     : null;
 }
 
-/**
- * GH_REPO must be checked by the caller first; host remains available even when no repository is
- * found.
- */
+/** Check GH_REPO first; host is available even without a repository. */
 export function resolveGitHubRepository(input: {
   readonly remotes: string;
   readonly resolved: string;
@@ -150,7 +144,7 @@ export function parsePullRequestReference(
   return { kind: "branch", headSelector: trimmed };
 }
 
-/** SSH aliases without a domain default to github.com because they do not identify an API host. */
+/** SSH aliases without a domain cannot identify an API host; default to github.com. */
 export function gitHubApiHostForRemote(remoteUrl: string): string | null {
   const provider = detectSourceControlProviderFromRemoteUrl(remoteUrl);
   if (provider === null) return null;

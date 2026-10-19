@@ -193,10 +193,7 @@ export function repositoryNameFromRemoteUrl(url: string): string | null {
     : path.split("/").slice(-2).join("/");
 }
 
-/**
- * SSH aliases and installation mounts make remote URLs insufficient; resolve the browser URL from
- * the serving login.
- */
+// Resolve browser URLs from the serving login to handle SSH aliases and mounts.
 const refineRepositoryIdentity: NonNullable<
   SourceControlProvider.SourceControlProvider["Service"]["refineRepositoryIdentity"]
 > = Effect.fn("ForgejoSourceControlProvider.refineRepositoryIdentity")(function* ({
@@ -451,7 +448,7 @@ export const make = Effect.gen(function* () {
             ],
           });
         if (input.force) {
-          // The sha comes from the server and git would read anything but a commit as an option.
+          // Non-commit server input could become git options.
           if (!/^[0-9a-f]{7,64}$/i.test(pull.head.sha))
             return yield* new ForgejoCli.ForgejoCliError({
               command: repo.command ?? "tea",
@@ -459,8 +456,7 @@ export const make = Effect.gen(function* () {
               detail: "Forgejo reported a pull request head that is not a commit.",
               reason: "invalid-response",
             });
-          // tea leaves existing PR branches stale; `--keep` updates the tip without discarding
-          // dirty files.
+          // tea leaves PR branches stale; `--keep` updates them without discarding dirty files.
           yield* process.run({
             operation: "ForgejoSourceControlProvider.checkoutChangeRequest",
             command: "git",

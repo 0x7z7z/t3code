@@ -36,10 +36,7 @@ function isAtLeastAsNew(candidate: string | null, kept: string | null): boolean 
   );
 }
 
-/**
- * Reruns can duplicate a check; qualify names by workflow so distinct jobs with the same name stay
- * separate.
- */
+/** Deduplicate reruns while keeping same-named jobs from different workflows separate. */
 export function dedupeChecks(
   entries: ReadonlyArray<{
     readonly check: PullRequestCheck;

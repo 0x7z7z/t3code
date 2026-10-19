@@ -113,9 +113,7 @@ export interface ProviderChangeRequestSummary {
   readonly reviewDecision?: PullRequestReviewDecision | null | undefined;
   readonly checksState?: PullRequestChecksState | null | undefined;
   readonly mergeability?: PullRequestMergeability | undefined;
-  /**
-   * Null when the host says it is in none; absent when the read did not ask.
-   */
+  /** Null means no stack; absent means not requested. */
   readonly stack?: PullRequestStackMembership | null | undefined;
 }
 
@@ -197,7 +195,7 @@ export interface ProviderChangeRequestActivity {
 
 export interface ProviderDiffSlice {
   readonly patch: string;
-  /** Something in this slice could not be shown, as opposed to there being more slices. */
+  /** Content was omitted within this slice. */
   readonly truncated: boolean;
   readonly nextCursor: string | null;
   readonly omittedFileStats?: ReadonlyArray<PullRequestOmittedFileStat>;
@@ -210,19 +208,14 @@ export interface ProviderDiffFileContents {
 
 export interface ProviderFilesViewed {
   readonly files: ReadonlyArray<PullRequestFileViewed>;
-  /** The host has more files than were read, so the ones missing here are not "unviewed". */
+  /** More files exist; missing entries are unknown, not "unviewed". */
   readonly truncated: boolean;
 }
 
-/**
- * Opaque revisions: an empty string means deleted; an absent path means the read could not
- * determine it.
- */
+/** Opaque revisions: empty means deleted; absent means unknown. */
 export interface ProviderFileRevisions {
   readonly revisions: ReadonlyMap<string, string>;
-  /**
-   * True only if all file revisions were read, allowing the caller to reuse them for other paths.
-   */
+  /** All revisions were read and can be reused for other paths. */
   readonly complete?: boolean;
 }
 
@@ -251,10 +244,7 @@ export interface PullRequestProviderApi {
   readonly kind: SourceControlProviderKind;
   readonly capabilities: PullRequestCapabilities;
   readonly mergeMessageRewrite?: (message: string) => string;
-  /**
-   * Absent: `owner/name` identifies repositories across checkouts. Present: only matching checkout
-   * keys may serve them (e.g. Azure organization/project paths).
-   */
+  /** Use matching checkout keys instead of `owner/name`. */
   readonly repositoryKey?: (input: { readonly canonicalKey: string }) => string;
 
   readonly getViewer: (input: {
@@ -271,17 +261,12 @@ export interface PullRequestProviderApi {
       /** Hosts may ignore unsupported search; the caller filters returned rows. */
       readonly query?: string | undefined;
       readonly cursor?: ProviderListCursor | undefined;
-      /**
-       * Apply supported filters; the caller filters returned rows for anything the host ignores.
-       */
+      /** The caller applies any filters the host ignores. */
       readonly filters?: PullRequestListFilters | undefined;
     },
   ) => Effect.Effect<ProviderChangeRequestPage, PullRequestProviderError>;
 
-  /**
-   * Returns the newest `limit` rows across all repositories under one cursor boundary, not `limit`
-   * per repository.
-   */
+  /** Newest `limit` rows total across repositories, under one cursor boundary. */
   readonly listChangeRequestsAcross?: (input: {
     readonly cwd: string;
     readonly host: string;
@@ -323,7 +308,7 @@ export interface PullRequestProviderApi {
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<ProviderChangeRequestSummary, PullRequestProviderError>;
 
-  /** Null means unknown. Without this method, watched requests are reread in full on every pass. */
+  /** Null means unknown; an absent method requires full watch reads. */
   readonly getChangeRequestWatchFingerprint?: (
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<ProviderChangeRequestWatchFingerprint | null, PullRequestProviderError>;
@@ -382,10 +367,7 @@ export interface PullRequestProviderApi {
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 
-  /**
-   * Required when `capabilities.viewedFiles` is `environment` to invalidate locally stored marks
-   * after changes.
-   */
+  /** Required for `environment` viewed marks to invalidate them after changes. */
   readonly getFileRevisions?: (
     input: ProviderRepositoryRef & {
       readonly number: number;
@@ -405,7 +387,7 @@ export interface PullRequestProviderApi {
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 
-  /** Called only with edit capability and at least one field; empty updates differ across hosts. */
+  /** Requires edit capability and at least one field. */
   readonly updateChangeRequest?: (
     input: ProviderRepositoryRef & {
       readonly number: number;
@@ -436,7 +418,7 @@ export interface PullRequestProviderApi {
     },
   ) => Effect.Effect<void, PullRequestProviderError>;
 
-  /** Providers exclude the author, since only they can match host-specific account identities. */
+  /** Exclude the author using host-specific account identities. */
   readonly listReviewerCandidates: (
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<PullRequestReviewerCandidateList, PullRequestProviderError>;

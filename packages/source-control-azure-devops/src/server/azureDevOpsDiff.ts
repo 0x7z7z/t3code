@@ -3,7 +3,7 @@ import { structuredPatch } from "diff";
 
 import type { AzureDevOpsChangeEntry } from "./azureDevOpsPullRequestJson.ts";
 
-/** Pin the iteration so a push during pagination cannot renumber files under the cursor. */
+/** Pin the iteration to prevent pushes from renumbering files during pagination. */
 export interface AzureDevOpsDiffCursor {
   readonly iterationId: number;
   readonly fileIndex: number;
@@ -50,7 +50,7 @@ const MAX_FILE_BYTES = 512 * 1024;
 
 const PATCH_CONTEXT_LINES = 3;
 
-/** Edit distance bounds quadratic diff work deterministically across machines. */
+/** Edit distance bounds quadratic work independently of machine speed. */
 export const MAX_FILE_DIFF_EDITS = 2_000;
 
 const MAX_FILE_DIFF_MILLIS = 2_000;
@@ -59,10 +59,7 @@ export const MAX_DIFF_SLICE_EDITS = 6_000;
 
 export const MAX_DIFF_SLICE_BYTES = 256 * 1024;
 
-/**
- * A binary, oversize, or unreadable entry is just a header, so neither budget above stops a
- * run of thousands of them.
- */
+/** Header-only entries can evade the byte and edit budgets. */
 export const MAX_DIFF_SLICE_FILES = 300;
 
 const NO_NEWLINE_MARKER = "\\ No newline at end of file";
@@ -80,17 +77,13 @@ function isBinary(contents: string): boolean {
 
 export const byteLength = (contents: string) => Buffer.byteLength(contents, "utf8");
 
-/**
- * Git anchors empty ranges at the preceding line, including line zero for a new or deleted file.
- */
+/** Git anchors empty ranges at the preceding line, which may be zero. */
 function hunkRange(start: number, lines: number): string {
   if (lines === 0) return `${start - 1},0`;
   return lines === 1 ? String(start) : `${start},${lines}`;
 }
 
-/**
- * Azure omits modes. Quote paths including their prefix so tabs/newlines cannot truncate a header.
- */
+/** Azure omits modes. Quote prefixed paths to preserve tabs/newlines. */
 function patchHeader(change: AzureDevOpsChangeEntry): string {
   const oldSide = quoteGitPatchPath(`a/${change.oldPath}`);
   const newSide = quoteGitPatchPath(`b/${change.path}`);
@@ -148,7 +141,7 @@ export function azureDevOpsFilePatch(input: {
   if (created || deleted) {
     const contents = created ? newContents : oldContents;
     const lines = contentLines(contents);
-    // Account for per-line markers before building a potentially oversized replacement section.
+    // Include per-line markers in the byte budget.
     if (byteLength(contents) + lines.length > MAX_FILE_BYTES) {
       return { section: `${header}\n`, truncated: true, abandoned: false, edits: lines.length };
     }
@@ -172,8 +165,7 @@ export function azureDevOpsFilePatch(input: {
       timeout: MAX_FILE_DIFF_MILLIS,
     },
   );
-  // An edit limit can hit a small corner of a large file; a full replacement would bury the useful
-  // change.
+  // A full replacement could bury a small change that hit the edit limit.
   if (patch === undefined) {
     return {
       section: `${header}\n`,

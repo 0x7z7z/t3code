@@ -229,11 +229,11 @@ export class BitbucketCheckoutError extends Schema.TaggedError<BitbucketCheckout
   }
 }
 
-/** Cursors and redirects come from responses; never forward credentials to an untrusted URL. */
+/** Reject response-supplied URLs that could leak credentials. */
 export class BitbucketUntrustedUrlError extends Schema.TaggedError<BitbucketUntrustedUrlError>()(
   "BitbucketUntrustedUrlError",
   {
-    /** The host only. A rejected hop is often a signed url, whose query carries a credential. */
+    /** Host only; signed URL queries can contain credentials. */
     host: Schema.String,
   },
 ) {
@@ -625,7 +625,7 @@ function responseError(
   });
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const config = yield* BitbucketApiEnvConfig;
   const host = yield* SourceControlHost.SourceControlHost;
@@ -853,10 +853,7 @@ export const make = Effect.gen(function* () {
     return origin !== null && origin === apiOrigin ? value : null;
   };
 
-  /**
-   * The HTTP client forwards auth headers on redirects; follow them only within the configured
-   * Bitbucket.
-   */
+  /** Redirects forward auth headers; restrict them to the configured Bitbucket. */
   const send = (input: {
     readonly method: "GET" | "POST" | "PUT" | "DELETE";
     readonly url: string;
@@ -877,7 +874,7 @@ export const make = Effect.gen(function* () {
           : input.method === "DELETE"
             ? HttpClientRequest.make("DELETE")(url)
             : HttpClientRequest.put(url);
-    // No `Accept: application/json`: the diff endpoints answer with a patch, not JSON.
+    // Diff endpoints return patches, not JSON.
     const withBody =
       input.body === undefined
         ? base
@@ -910,8 +907,7 @@ export const make = Effect.gen(function* () {
     send({ ...input, redirects: 0 }).pipe(
       Effect.flatMap((response) =>
         HttpClientResponse.matchStatus({
-          // Stream the response so the byte limit stops allocation before the full diff is
-          // materialized.
+          // Streaming enforces the byte limit before allocating the full diff.
           "2xx": (success) =>
             collectUint8StreamText({
               stream: success.stream,
@@ -933,7 +929,7 @@ export const make = Effect.gen(function* () {
           orElse: (failed) => responseError("request", failed),
         })(response),
       ),
-      // This also caps redirect hops: no request can finish headers then stall its body forever.
+      // Include redirects and body reads in the timeout.
       Effect.timeout(BITBUCKET_API_REQUEST_TIMEOUT),
       Effect.catchTags({
         TimeoutError: (cause) =>

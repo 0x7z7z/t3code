@@ -1011,8 +1011,7 @@ describe("review thread decoding", () => {
   });
 
   it("keeps the conversation when a reviewer has neither a login nor a team slug", () => {
-    // Unselected GraphQL union members return no selected fields; they must not fail the whole
-    // conversation.
+    // Unselected GraphQL union members return no selected fields.
     const result = expectSuccess(
       decodeReviewThreadsJson(
         reviewJson({

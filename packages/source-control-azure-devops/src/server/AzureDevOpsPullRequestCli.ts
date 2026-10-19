@@ -106,15 +106,15 @@ const REST_API_VERSION = "7.1";
 const PULL_REQUEST_LIST_MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 /** A 2,000-file page exceeds the default 1 MiB output budget. */
 const CHANGE_ENTRIES_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
-/** Azure wraps file content in JSON; escaping and base64 can exceed the decoded file's size. */
+/** JSON escaping and base64 can exceed the decoded file's size. */
 const ITEM_CONTENT_MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
-/** These routes return unpaged review history, which can grow independently of the diff. */
+/** Review history is unpaged and independent of diff size. */
 const REVIEW_HISTORY_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
-/** Azure's own ceiling for one page of an iteration's changes. */
+/** Azure's iteration-change page limit. */
 const CHANGE_ENTRIES_PER_PAGE = 2000;
 
-/** Count raw entries: pages containing only folders or malformed rows must still advance. */
+/** Count raw entries, including folders and malformed rows. */
 const MAX_CHANGE_ENTRIES = 10_000;
 
 export interface AzureDevOpsIterationChanges {
@@ -136,7 +136,7 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
       readonly involvement: PullRequestInvolvement;
       readonly viewer: string;
       readonly limit: number;
-      /** Azure has no date filter; only the cursor's raw row offset applies. */
+      /** Azure supports raw row offsets, not date filters. */
       readonly cursor?: ProviderListCursor | undefined;
     }) => Effect.Effect<
       {
@@ -164,9 +164,7 @@ export class AzureDevOpsPullRequestCli extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<ReadonlyArray<AzureDevOpsIteration>, AzureDevOpsPullRequestCliError>;
 
-    /**
-     * Changes are relative to the merge base, covering the whole PR rather than the previous push.
-     */
+    /** Changes cover the whole PR from its merge base. */
     readonly listIterationChanges: (input: {
       readonly cwd: string;
       readonly location: AzureDevOpsRepositoryLocation;
@@ -270,11 +268,11 @@ function isReviewerName(value: string): boolean {
   return name.length > 0 && !name.startsWith("-");
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const azure = yield* AzureDevOpsCli.AzureDevOpsCli;
 
-  // The remote takes three shapes and only `az` knows how to read all of them.
+  // Let `az` parse all three remote formats.
   const detectArgs = ["--detect", "true"] as const;
 
   const executeJson = (input: {
@@ -288,9 +286,7 @@ export const make = Effect.gen(function* () {
       ...(input.maxOutputBytes === undefined ? {} : { maxOutputBytes: input.maxOutputBytes }),
     });
 
-  /**
-   * `az rest` uses the default tenant's token; `az devops invoke` uses the extension's credentials.
-   */
+  /** Use the extension's credentials; `az rest` uses the default tenant. */
   const invoke = <A>(input: {
     readonly cwd: string;
     readonly operation: string;
@@ -335,7 +331,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /** Azure's items route requires the leading slash omitted from repository-relative paths. */
+  /** Azure's items route requires a leading slash. */
   const toItemPath = (path: string) => (path.startsWith("/") ? path : `/${path}`);
 
   const repositoryRoute = (location: AzureDevOpsRepositoryLocation): ReadonlyArray<string> => [
@@ -351,9 +347,7 @@ export const make = Effect.gen(function* () {
     `pullRequestId=${input.number}`,
   ];
 
-  /**
-   * Advance by raw rows even when decoding drops entries; a short decoded page may not be the last.
-   */
+  /** Decoding can shorten a non-final page; advance by raw rows. */
   const listPullRequestPage = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -460,8 +454,7 @@ export const make = Effect.gen(function* () {
             ? Effect.fail(new AzureDevOpsViewerUnavailableError({ command: "az", cwd: input.cwd }))
             : Effect.succeed(decoded.success);
         }),
-        // `az account show` cannot identify a PAT login; the extension resolves `--creator me`
-        // itself.
+        // `az account show` cannot identify PAT logins; the extension resolves `--creator me`.
         Effect.catchIf(
           (error) => error._tag !== "AzureDevOpsCliUnavailableError",
           () =>
@@ -597,8 +590,7 @@ export const make = Effect.gen(function* () {
           "versionDescriptor.versionType=commit",
           `versionDescriptor.version=${input.commit}`,
           "includeContent=true",
-          // Azure's binary flag requires this option; the encoded content cannot reliably identify
-          // binaries.
+          // Encoded content cannot identify binaries; request Azure's binary flag.
           "includeContentMetadata=true",
           // `az devops invoke` requires JSON; otherwise Azure returns raw file bytes.
           "$format=json",
@@ -661,8 +653,7 @@ export const make = Effect.gen(function* () {
             ...detectArgs,
             "--id",
             String(input.number),
-            // Use one argv entry so leading dashes are values and multi-string `--description`
-            // stays intact.
+            // One argv entry preserves leading dashes and multi-string descriptions.
             ...(input.title === undefined ? [] : [`--title=${input.title}`]),
             ...(input.body === undefined ? [] : [`--description=${input.body}`]),
             "--only-show-errors",

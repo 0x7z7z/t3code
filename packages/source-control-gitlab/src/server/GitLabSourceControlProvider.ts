@@ -108,7 +108,7 @@ export const discovery = {
   executable: "glab",
   versionArgs: ["--version"],
   authArgs: ["auth", "status"],
-  // glab matches its configured hosts by exact name, so ask with the remote's own spelling.
+  // glab host matching requires the remote's exact spelling.
   remoteRefinementArgs: ({ provider, remoteUrl }) => {
     const at = remoteUrl.toLowerCase().indexOf(provider.name.toLowerCase());
     const host = at < 0 ? provider.name : remoteUrl.slice(at, at + provider.name.length);

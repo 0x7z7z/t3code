@@ -8,7 +8,7 @@ interface Entry {
   newPath: string | null;
   deleted: boolean;
   revision: string | null;
-  /** Past the first hunk header every line is content, and content can start like a header. */
+  /** After the first hunk, content can resemble file headers. */
   inBody: boolean;
 }
 
@@ -38,10 +38,7 @@ function headerSide(token: string, prefix: string): string | null {
   return path.startsWith(prefix) ? path.slice(prefix.length) : null;
 }
 
-/**
- * Unquoted paths with spaces are ambiguous; match equal sides, since renames state their paths
- * separately.
- */
+/** Match equal sides for ambiguous unquoted paths; renames state paths separately. */
 function headerPaths(rest: string): readonly [string | null, string | null] {
   if (rest.startsWith(QUOTE)) {
     const end = quotedEnd(rest);
@@ -112,10 +109,7 @@ function parseEntries(patch: string): ReadonlyArray<Omit<Entry, "inBody">> {
   return entries;
 }
 
-/**
- * Head blob IDs keyed by the head path (old path for deletions). Omit entries without an index
- * line; Bitbucket exposes no blob IDs elsewhere.
- */
+/** Head blob IDs by head path (old path for deletions); omit files without index lines. */
 export function parseDiffFileRevisions(patch: string): ReadonlyMap<string, string> {
   const revisions = new Map<string, string>();
   for (const entry of parseEntries(patch)) {

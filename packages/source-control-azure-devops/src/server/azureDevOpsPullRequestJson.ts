@@ -14,9 +14,7 @@ import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
 import { azureDevOpsPullRequestWebUrl } from "./azureDevOpsPullRequests.ts";
 
-/**
- * CLI commands return different subsets of fields; unknown enum values must not fail the payload.
- */
+// CLI fields vary by command; unknown enum values must not fail the payload.
 const RawIdentitySchema = Schema.Struct({
   displayName: Schema.optional(Schema.NullOr(Schema.String)),
   uniqueName: Schema.optional(Schema.NullOr(Schema.String)),
@@ -29,9 +27,7 @@ const RawPullRequestSchema = Schema.Struct({
   description: Schema.optional(Schema.NullOr(Schema.String)),
   status: Schema.optional(Schema.NullOr(Schema.String)),
   isDraft: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  /**
-   * Azure indicates auto-complete by this identity's presence; there is no separate status field.
-   */
+  /** This identity's presence indicates auto-complete. */
   autoCompleteSetBy: Schema.optional(Schema.NullOr(RawIdentitySchema)),
   completionOptions: Schema.optional(
     Schema.NullOr(
@@ -138,7 +134,7 @@ function normalizeRefName(refName: string): string {
   return refName.trim().replace(/^refs\/heads\//, "");
 }
 
-/** A login has to compare against `az account show`, which reports an email. */
+/** Logins must match the email from `az account show`. */
 function toActor(raw: Schema.Schema.Type<typeof RawIdentitySchema> | null | undefined) {
   const login = trimmed(raw?.uniqueName) ?? trimmed(raw?.displayName);
   return login === null
@@ -252,7 +248,7 @@ type DecodeFailure = Cause.Cause<Schema.SchemaError>;
 export interface AzureDevOpsPullRequestBatch {
   readonly items: ReadonlyArray<AzureDevOpsPullRequest>;
   readonly rawIndexes: ReadonlyArray<number>;
-  /** Rows Azure returned, counted before decoding, so a skipped row cannot hide a next page. */
+  /** Count before decoding to avoid ending pagination on skipped rows. */
   readonly rawCount: number;
 }
 
@@ -277,7 +273,7 @@ export function decodePullRequestListJson(
   return Result.succeed({ items, rawIndexes, rawCount: decoded.success.length });
 }
 
-/** Null carries "Azure answered, but with too little to use", which the caller reports. */
+/** Null means Azure returned insufficient data. */
 export function decodePullRequestJson(
   raw: string,
 ): Result.Result<AzureDevOpsPullRequest | null, DecodeFailure> {
@@ -406,10 +402,7 @@ const decodeChangePage = decodeJsonResult(RawChangePageSchema);
 const decodeChangeEntry = Schema.decodeUnknownExit(RawChangeEntrySchema);
 const decodeItemContent = decodeJsonResult(RawItemContentSchema);
 
-/**
- * Strip Azure's leading slash, but preserve spaces because patch paths and viewed marks use exact
- * names.
- */
+/** Preserve whitespace to match patch paths and viewed marks. */
 function toRepositoryPath(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
   const path = value.replace(/^\/+/, "");

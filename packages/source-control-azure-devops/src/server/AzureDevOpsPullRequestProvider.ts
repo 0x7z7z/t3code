@@ -35,10 +35,10 @@ import type {
 } from "./azureDevOpsPullRequestJson.ts";
 import { definition } from "../client/definition.ts";
 
-/** Each file starts two Python processes; serial reads multiply interpreter startup costs. */
+/** Each file pays for two Python startups. */
 const DIFF_FILE_CONCURRENCY = 4;
 
-/** Share one request's spawn budget across readers so concurrent requests cannot multiply it. */
+/** Readers share a spawn budget across requests. */
 export const MAX_DIFF_SPAWNS = 2 * DIFF_FILE_CONCURRENCY;
 
 export const LOCATION_CACHE_CAPACITY = 128;
@@ -47,21 +47,20 @@ const CAPABILITIES: PullRequestCapabilities = {
   diff: true,
   comment: false,
   actions: [...definition.changeRequestActions],
-  // Azure squashes as a completion option; it has no rebase strategy of its own.
+  // Azure has no rebase strategy.
   mergeMethods: ["merge", "squash"],
-  // `az repos pr list` filters by status, creator, reviewer and branch, and by no text at all.
+  // `az repos pr list` has no text filter.
   search: false,
   reactions: false,
   review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
-  // Reviewer candidates require separate identity/graph APIs and permissions; `az repos` cannot
-  // list them.
+  // Reviewer candidates require separate identity/graph APIs and permissions.
   reviewers: { request: true, listCandidates: false },
   edit: { changeRequest: true, comment: false },
   // Azure's viewed marks use an undocumented endpoint and are invalidated by each push.
   viewedFiles: "environment",
 };
 
-/** Azure's CLI omits permissions; resolving security descriptors would add several calls per PR. */
+/** Resolving permissions missing from the CLI would add several calls per PR. */
 const AZURE_DEVOPS_VIEWER_PERMISSIONS: PullRequestViewerPermissions = {
   actions: CAPABILITIES.actions,
   comment: CAPABILITIES.comment,
@@ -91,8 +90,7 @@ function toChangeRequest(pullRequest: AzureDevOpsPullRequest): ProviderChangeReq
     state: pullRequest.state,
     isDraft: pullRequest.isDraft,
     mergeability: pullRequest.mergeability,
-    // Azure omits line counts; computing them would read both sides of every file in every listing
-    // row.
+    // Azure omits line counts; computing them requires both sides of every file.
     additions: 0,
     deletions: 0,
     createdAt: pullRequest.createdAt,
@@ -133,10 +131,7 @@ export const make = Effect.gen(function* () {
 
   const EMPTY_DIFF_SLICE: ProviderDiffSlice = { patch: "", truncated: false, nextCursor: null };
 
-  /**
-   * PR locations cannot change. Cache them with LRU eviction to avoid full PR reads on each
-   * viewed-file check.
-   */
+  // PR locations are immutable; caching avoids full PR reads for viewed-file checks.
   const locations = new Map<string, AzureDevOpsRepositoryLocation>();
 
   const locationOf = (input: { readonly cwd: string; readonly number: number }) => {
@@ -175,7 +170,7 @@ export const make = Effect.gen(function* () {
 
   const EMPTY_ITEM: AzureDevOpsItemContent = { contents: "", isBinary: false };
 
-  /** Azure fails reads of absent files; skip the missing side of additions and deletions. */
+  /** Azure fails reads of absent files. */
   const readTexts = (input: {
     readonly cwd: string;
     readonly location: AzureDevOpsRepositoryLocation;
@@ -206,8 +201,7 @@ export const make = Effect.gen(function* () {
       Effect.map(([oldItem, newItem]): AzureDevOpsFileTexts => ({
         oldContents: oldItem.contents,
         newContents: newItem.contents,
-        // Azure encodes binary content, so trust its metadata rather than inspecting the encoded
-        // bytes.
+        // Encoded bytes cannot identify binaries; trust Azure's metadata.
         binary: oldItem.isBinary || newItem.isBinary,
       })),
     );
@@ -380,8 +374,7 @@ export const make = Effect.gen(function* () {
         let edits = 0;
         let index = cursor?.fileIndex ?? 0;
         let full = false;
-        // Shrink batches as budgets fill: prefetched files beyond the slice are discarded and read
-        // again.
+        // Prefetched files beyond the slice must be read again.
         const batchWidth = () => {
           if (sections.length === 0) return DIFF_FILE_CONCURRENCY;
           const admits = (left: number, spent: number) =>
@@ -402,8 +395,7 @@ export const make = Effect.gen(function* () {
             batch,
             (change) =>
               readTexts({ cwd: input.cwd, location: scope.location, iteration, change }).pipe(
-                // Only file-specific errors become unreadable entries; auth, rate-limit and CLI
-                // failures must reach the caller.
+                // Auth, rate-limit and CLI failures must reach the caller.
                 Effect.catchTags({
                   AzureDevOpsPullRequestNotFoundError: () => Effect.succeed(null),
                   AzureDevOpsCommandFailedError: () => Effect.succeed(null),
@@ -414,7 +406,7 @@ export const make = Effect.gen(function* () {
             { concurrency: DIFF_FILE_CONCURRENCY },
           );
           for (const { change, texts } of read) {
-            // Synchronous diffs need explicit yields so other server work can run between files.
+            // Synchronous diffs need yields to let other server work run.
             yield* Effect.yieldNow;
             const file =
               texts === null
@@ -425,8 +417,7 @@ export const make = Effect.gen(function* () {
             edits += file.edits;
             truncated = truncated || file.truncated;
             index += 1;
-            // Always add one file before checking budgets; otherwise an oversized file would stall
-            // the cursor.
+            // Add a file before checking budgets so oversized files cannot stall the cursor.
             if (
               bytes >= MAX_DIFF_SLICE_BYTES ||
               edits + MAX_FILE_DIFF_EDITS > MAX_DIFF_SLICE_EDITS ||
@@ -467,9 +458,7 @@ export const make = Effect.gen(function* () {
         });
       }).pipe(Effect.mapError(fail("getDiffFileContents"))),
 
-    /**
-     * Only a complete change can identify absent paths as deleted; a truncated read must omit them.
-     */
+    /** Only complete reads can identify absent paths as deleted. */
     getFileRevisions: (input) =>
       Effect.gen(function* () {
         const revisions = new Map<string, string>();

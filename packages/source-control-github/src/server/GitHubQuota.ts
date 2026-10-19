@@ -37,10 +37,7 @@ function quotaFromHeaders(
   return { resource, limit, remaining, resetAtMs: reset * 1_000 };
 }
 
-/**
- * Do not debit locally: 304s and requests that never reach GitHub spend nothing and would cause
- * quota drift.
- */
+/** Local debits would drift: 304s and requests that never reach GitHub spend nothing. */
 export class GitHubQuota extends Context.Service<
   GitHubQuota,
   {
@@ -84,8 +81,7 @@ const make = Effect.gen(function* () {
       const key = keyOf(host, quota.resource, yield* SourceControlRateLimit.CredentialScope);
       yield* Ref.update(snapshots, (current) => {
         const previous = current.get(key);
-        // Regional responses can increase the balance within a window; retaining the minimum would
-        // stall work.
+        // Regional responses can increase the balance within a window.
         if (previous !== undefined && quota.resetAtMs < previous.resetAtMs) return current;
         const next = new Map(current);
         next.set(key, {

@@ -95,7 +95,7 @@ export function retryAtFromHeader(value: string | undefined, now: number): numbe
   return Number.isFinite(retryAt) && retryAt > now ? retryAt : undefined;
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const entries = yield* Ref.make<ReadonlyMap<string, RateLimitEntry>>(new Map());
 

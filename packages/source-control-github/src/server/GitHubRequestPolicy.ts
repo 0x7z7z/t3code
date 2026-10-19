@@ -14,14 +14,11 @@ import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubQuota from "./GitHubQuota.ts";
 
 const DEFAULT_TIMEOUT = Duration.seconds(30);
-/** Polite to GitHub's secondary limits, which punish bursts of concurrent requests. */
+/** GitHub's secondary limits penalize concurrent bursts. */
 const CONCURRENCY = 8;
 const REQUEST_HEADERS = { "x-github-api-version": "2022-11-28", "user-agent": "t3code" };
 
-/**
- * Pin every request to this credential's host to prevent mid-page account switches. Never expose
- * the value in RPCs or cache keys.
- */
+/** Pin requests to this host's credential across account switches. Keep it out of RPCs/cache keys. */
 export const PinnedGitHubCredential = Context.Reference<{
   readonly host: string;
   readonly token: Redacted.Redacted<string>;
@@ -141,10 +138,7 @@ function retryAtFrom(
   return Number.isFinite(reset) && reset > now ? reset : undefined;
 }
 
-/**
- * GraphQL can report rate limits with HTTP 200, via RATE_LIMITED or an untyped error plus quota
- * headers.
- */
+/** HTTP 200 GraphQL rate limits use RATE_LIMITED or untyped errors with quota headers. */
 export function isRateLimited(input: {
   readonly status: number;
   readonly headers: Readonly<Record<string, string | undefined>>;
@@ -188,13 +182,11 @@ export interface GitHubRequest {
   readonly timeout?: Duration.Input | undefined;
 }
 
-/**
- * REST and GraphQL must share credentials, concurrency slots, quota reserves and host-wide pauses.
- */
+/** REST/GraphQL share credentials, slots, quota reserves and host-wide pauses. */
 export class GitHubRequestPolicy extends Context.Service<
   GitHubRequestPolicy,
   {
-    /** send receives required auth/version headers; its own failures pass through unchanged. */
+    /** send receives auth/version headers; its failures pass through unchanged. */
     readonly request: <A, E, R>(
       input: GitHubRequest,
       send: (headers: Readonly<Record<string, string>>) => Effect.Effect<GitHubAnswer<A>, E, R>,
@@ -208,7 +200,7 @@ export class GitHubRequestPolicy extends Context.Service<
   }
 >()("@t3tools/source-control-github/server/GitHubRequestPolicy") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const credentials = yield* GitHubCredentials.GitHubCredentials;
   const quota = yield* GitHubQuota.GitHubQuota;
@@ -246,8 +238,7 @@ export const make = Effect.gen(function* () {
       });
       const { token, fingerprint } = yield* credential(host);
       const scope = yield* SourceControlRateLimit.CredentialScope;
-      // A refusal pauses the whole host, whichever quota it spent: the key PullRequestService
-      // records its own backoff under.
+      // All quota refusals share PullRequestService's host-wide backoff key.
       const key = { provider: SourceControlProviderKind.make("github"), host };
 
       const settle = (lease: number, answer: GitHubAnswer<A>) =>
@@ -302,8 +293,7 @@ export const make = Effect.gen(function* () {
               }),
             ),
           );
-        // Time out headers and body together so a stalled body cannot hold a shared slot for
-        // undici's five-minute timeout.
+        // Bound body reads too; undici's five-minute timeout would hold a shared slot.
         const answer = yield* send({
           ...REQUEST_HEADERS,
           authorization: `Bearer ${Redacted.value(token)}`,

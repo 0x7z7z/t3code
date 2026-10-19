@@ -133,7 +133,7 @@ const mockHttp = Layer.succeed(
         }),
         Effect.orDie,
       );
-      // Mocked {} mutations still need a GraphQL data envelope with the selected root field.
+      // Empty mutation mocks still need the selected GraphQL root field.
       const body =
         answer.body === "{}" && sent.query.startsWith("mutation ")
           ? encodeJson(mutationAnswer(sent.query))
@@ -203,10 +203,6 @@ const rowDefaults = {
 
 const lastPage = { hasNextPage: false, endCursor: null };
 
-/**
- * Overrides accept flat reviewRequests and check states; expand them into GraphQL connection
- * shapes.
- */
 function rows(
   count: number,
   firstNumber: number,
@@ -580,7 +576,7 @@ function workflowApprovalRoutes(
   );
 }
 
-/** The pull request node id lookup, which the layer caches for every test after the first. */
+/** Node IDs stay cached after the first test. */
 const NODE_ID_QUERY = "PullRequestNodeId";
 const nodeIdAnswer = (id: string) => ({ data: { repository: { pullRequest: { id } } } });
 

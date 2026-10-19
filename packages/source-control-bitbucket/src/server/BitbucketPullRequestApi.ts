@@ -120,7 +120,7 @@ const MAX_LIST_PAGES = 10;
 const CONVERSATION_PAGE_SIZE = 50;
 const CONVERSATION_PAGES = 10;
 const DIFF_MAX_BYTES = 8 * 1024 * 1024;
-/** Keep this shorter than the caller's version cache so an explicit refresh reaches Bitbucket. */
+/** Must expire before the caller's version cache so refreshes reach Bitbucket. */
 const REVISION_PATCH_TTL = Duration.seconds(5);
 const REVISION_PATCH_CAPACITY = 16;
 export interface BitbucketPullRequestBatch {
@@ -164,9 +164,7 @@ export class BitbucketPullRequestApi extends Context.Service<
       readonly number: number;
     }) => Effect.Effect<BitbucketDiffStat, BitbucketPullRequestApiError>;
 
-    /**
-     * Returns all parsed file revisions; a truncated patch cannot identify absent paths as deleted.
-     */
+    /** Truncated patches cannot identify absent paths as deleted. */
     readonly getFileRevisions: (input: {
       readonly repository: string;
       readonly number: number;
@@ -339,7 +337,7 @@ function bitbucketReviewPosition(
   }
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const bitbucket = yield* BitbucketApi.BitbucketApi;
 
@@ -405,7 +403,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /** Assemble threads after all pages: replies and their parents can cross page boundaries. */
+  /** Replies and parents can span pages; assemble threads after pagination. */
   const commentsPage = (input: {
     readonly url: string;
     readonly page: number;
@@ -441,7 +439,7 @@ export const make = Effect.gen(function* () {
       body: string,
     ) => Result.Result<{ readonly items: ReadonlyArray<A>; readonly next: string | null }, unknown>;
     readonly items: ReadonlyArray<A>;
-    /** Commit pages are individually oldest-first, so older pages are prepended. */
+    /** Each commit page is oldest-first. */
     readonly prepend: boolean;
   }): Effect.Effect<ReadonlyArray<A>, BitbucketPullRequestApiError> =>
     readPage({ operation: input.operation, url: input.url, decode: input.decode }).pipe(
@@ -497,9 +495,7 @@ export const make = Effect.gen(function* () {
             ),
         );
 
-  /**
-   * Cache parsed revisions to avoid retaining large patch bodies and reparsing them on every tick.
-   */
+  // Cache revisions, not large patch bodies that need reparsing.
   const revisionPatches = yield* Cache.makeWith(
     (key: string) => {
       const [repository, number] = JSON.parse(key) as [string, number];
@@ -535,14 +531,13 @@ export const make = Effect.gen(function* () {
     listPullRequests: (input) =>
       withRepository(input.repository, (path) => {
         const search = input.query?.trim() ?? "";
-        // Include the boundary timestamp so equal-time rows spanning pages are not lost; the caller
-        // deduplicates.
+        // Include equal-time rows across pages; the caller deduplicates.
         const predicates = [
           ...(search.length === 0 ? [] : [searchFilter(search)]),
           ...(input.cursor === undefined ? [] : [`updated_on <= ${input.cursor.updatedBefore}`]),
         ];
         return listPage({
-          // Reviewers are not on a listing by default, and `viewerReviewRequested` needs them.
+          // Listings omit reviewers needed by `viewerReviewRequested`.
           url: `${path}/pullrequests?${stateParams(input.state)
             .map((state) => `state=${state}`)
             .join("&")}&pagelen=${MAX_PAGE_SIZE}&sort=-updated_on&fields=%2Bvalues.reviewers${
@@ -558,14 +553,13 @@ export const make = Effect.gen(function* () {
       withRepository(input.repository, (path) =>
         readPage({
           operation: "getPullRequest",
-          // Bitbucket omits `closed_on` by default; settlement needs this merge/decline timestamp.
+          // Settlement needs `closed_on`, omitted by default.
           url: `${path}/pullrequests/${input.number}?fields=%2Bclosed_on`,
           decode: decodePullRequestJson,
         }),
       ),
 
-    // Permission endpoints may return 403/404/410 (CHANGE-2770). Treat access as unknown and let
-    // writes enforce it.
+    // Permission endpoints may return 403/404/410 (CHANGE-2770); let writes enforce access.
     getRepositoryPermission: (input) =>
       withRepository(input.repository, (_path, workspace, slug) =>
         readPage({
@@ -686,7 +680,7 @@ export const make = Effect.gen(function* () {
           decode: decodePullRequestJson,
         }).pipe(
           Effect.flatMap((current) => {
-            // Bitbucket replaces the entire reviewer list, so preserve the current set.
+            // Bitbucket replaces the entire reviewer list.
             const uuids = new Set(current.reviewerIds);
             for (const reviewer of input.reviewers) {
               if (input.requested) uuids.add(reviewer.id);
@@ -721,7 +715,7 @@ export const make = Effect.gen(function* () {
 
     updateChangeRequest: (input) =>
       withRepository(input.repository, (path) =>
-        // PUT is partial; resending unchanged fields could overwrite concurrent edits.
+        // Partial PUTs preserve concurrent edits to unchanged fields.
         bitbucket
           .request({
             method: "PUT",
@@ -762,7 +756,7 @@ export const make = Effect.gen(function* () {
       withRepository(input.repository, (path) =>
         Effect.gen(function* () {
           const pullRequest = `${path}/pullrequests/${input.number}`;
-          // Submit the verdict last so a partially failed review cannot leave an approval.
+          // A partially failed review must not leave an approval.
           yield* Effect.forEach(
             input.comments,
             (comment) =>

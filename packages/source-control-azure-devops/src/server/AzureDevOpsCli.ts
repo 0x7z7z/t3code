@@ -350,7 +350,7 @@ function decodeAzureDevOpsJson<S extends Schema.Top>(
   );
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const { process } = yield* SourceControlHost.SourceControlHost;
 
@@ -478,8 +478,7 @@ export const make = Effect.gen(function* () {
       ),
     createRepository: (input) => {
       const repository = parseRepositorySpecifier(input.repository);
-      // `az repos create` has no visibility flag; access is controlled by project/organization
-      // permissions.
+      // Project/organization permissions control visibility; `az repos create` has no flag.
       return executeJson({
         cwd: input.cwd,
         args: [

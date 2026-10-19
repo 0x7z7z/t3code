@@ -56,7 +56,7 @@ const RawMergeRequestSchema = Schema.Struct({
   closed_at: Schema.optional(Schema.NullOr(Schema.String)),
   reviewers: Schema.optional(Schema.NullOr(Schema.Array(RawUserSchema))),
   labels: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
-  // A string, and "1000+" past GitLab's counting limit, so it is parsed rather than decoded.
+  // GitLab reports "1000+" past its counting limit.
   changes_count: Schema.optional(Schema.NullOr(Schema.String)),
   head_pipeline: Schema.optional(Schema.NullOr(RawPipelineSchema)),
   user: Schema.optional(
@@ -66,10 +66,7 @@ const RawMergeRequestSchema = Schema.Struct({
   auto_merge_enabled: Schema.optional(Schema.NullOr(Schema.Boolean)),
   squash_on_merge: Schema.optional(Schema.NullOr(Schema.Boolean)),
   squash: Schema.optional(Schema.NullOr(Schema.Boolean)),
-  /**
-   * Only detail reads with include_diverged_commits_count return this expensive count; listings
-   * never do.
-   */
+  /** Only detail reads with include_diverged_commits_count return this expensive count. */
   diverged_commits_count: Schema.optional(Schema.NullOr(Schema.Int)),
 });
 
@@ -197,7 +194,7 @@ export interface GitLabMergeRequestDetail extends GitLabMergeRequestListItem {
   readonly reviewerIds: ReadonlyArray<number>;
   readonly autoMergeEnabled?: boolean;
   readonly autoMergeMethod?: PullRequestMergeMethod;
-  /** Absent means not counted, including on older installs; it does not mean up to date. */
+  /** Absent means not counted, not up to date. */
   readonly divergedCommits?: number;
   readonly headSha?: string;
 }
@@ -366,7 +363,7 @@ type DecodeFailure = Cause.Cause<Schema.SchemaError>;
 
 export interface GitLabProjectUsers {
   readonly candidates: ReadonlyArray<PullRequestReviewerCandidate>;
-  /** Rows GitLab returned, counted before decoding, so a skipped row cannot hide a next page. */
+  /** Count before decoding to avoid ending pagination on skipped rows. */
   readonly rawCount: number;
 }
 
@@ -905,10 +902,7 @@ const RawRepositoryBlobsSchema = Schema.Struct({
 
 const decodeRepositoryBlobs = decodeJsonResult(RawRepositoryBlobsSchema);
 
-/**
- * Null means no answer, not an empty revision; treating it as deleted files would invalidate every
- * viewed mark.
- */
+/** Null means unknown, not deleted; preserve viewed marks. */
 export function decodeRepositoryBlobsJson(
   raw: string,
 ): Result.Result<ReadonlyMap<string, string> | null, DecodeFailure> {

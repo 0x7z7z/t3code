@@ -21,17 +21,17 @@ const CAPABILITIES: PullRequestCapabilities = {
   comment: true,
   actions: [...definition.changeRequestActions],
   mergeMethods: ["merge", "squash", "rebase"],
-  // GitLab updates stale branches by rebasing; it has no merge-target-into-source operation.
+  // GitLab has no merge-target-into-source operation.
   updateMethods: ["rebase"],
   search: true,
   reactions: true,
-  // GitLab's viewed marks live in browser-local storage and cannot be shared through its API.
+  // GitLab's viewed marks live in browser-local storage.
   viewedFiles: "environment",
   review: {
     inlineComment: true,
     reply: true,
     resolve: true,
-    // GitLab has no requested-changes verdict; approvals and unresolved discussions are separate.
+    // GitLab has no requested-changes verdict.
     verdicts: ["comment", "approve"],
   },
   reviewers: { request: true, listCandidates: true },
@@ -46,10 +46,7 @@ const MERGE_ACTIONS: ReadonlySet<string> = new Set([
   "disable-auto-merge",
 ]);
 
-/**
- * REST omits viewer authorship; authors may close/reopen/change draft state regardless of project
- * role.
- */
+/** Authors may close/reopen/change draft state regardless of role; REST omits authorship. */
 export function gitLabViewerPermissions(input: {
   readonly viewerCanMerge: boolean;
 }): PullRequestViewerPermissions {
@@ -198,7 +195,7 @@ export const make = Effect.gen(function* () {
         Effect.map((revisions) => ({ revisions })),
       ),
 
-    // Group approvals belong to approval rules; MR reviewers are users only.
+    // MR reviewers are users; groups belong to approval rules.
     listReviewerCandidates: (input) =>
       cli
         .listReviewerCandidates({

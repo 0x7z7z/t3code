@@ -51,7 +51,6 @@ export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequest
     ...(access.canWrite ? { stackRebase: true } : {}),
     actions: [
       ...(access.canDeleteBranch === true ? (["delete-branch"] as const) : []),
-      // Auto-merge requires the same write access as an immediate merge.
       ...(access.canWrite
         ? ([
             "merge",
@@ -146,7 +145,7 @@ function withWorkflowApprovals(
   ];
 }
 
-/** App logins such as dependabot[bot] have no profile page; guessed avatar URLs would 404. */
+/** App logins have no profile page; guessed avatar URLs 404. */
 export function loginAvatarUrl(login: string, host: string): string | null {
   return /^[a-z0-9][a-z0-9-]{0,38}$/iu.test(login) ? `https://${host}/${login}.png?size=80` : null;
 }
@@ -421,8 +420,7 @@ export const make = Effect.gen(function* () {
           comments: [...pullRequest.comments, ...reviewThreads.comments]
             .map((comment) => ({
               ...comment,
-              // Dismissal reasons live on timeline events. HTML-only bot reviews render empty and
-              // need that fallback too.
+              // Dismissal reasons live on timeline events; HTML-only bot reviews need that fallback too.
               body:
                 comment.kind === "review" &&
                 comment.reviewState?.toUpperCase() === "DISMISSED" &&

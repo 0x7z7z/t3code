@@ -69,11 +69,9 @@ import {
   PullRequestsByHead,
 } from "./sourceControlProvider.graphql.ts";
 
-/**
- * Decode rows individually so one malformed PR cannot fail the other lookups sharing its document.
- */
+// Decode rows separately to isolate malformed PRs within shared documents.
 const LenientPullRequestsByHead = GraphQL.query(PullRequestsByHead.name, {
-  // The template, not the joined text: `GraphQLResolver.aliased` repeats it per lookup.
+  // `GraphQLResolver.aliased` needs a template per lookup.
   document: PullRequestsByHead.template!,
   variables: PullRequestsByHead.variables,
   result: Schema.Struct({
@@ -207,10 +205,7 @@ function environmentTokenVariable(environment: NodeJS.ProcessEnv): string | null
   return ["GH_TOKEN", "GITHUB_TOKEN"].find((name) => environment[name]?.trim()) ?? null;
 }
 
-/**
- * An environment token is checked against the API, since `gh auth status` may
- * not know it.
- */
+// `gh auth status` may not know environment tokens; check the API.
 export const makeDiscovery = Effect.gen(function* () {
   const api = yield* GitHubRest.GitHubRest;
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
@@ -276,10 +271,7 @@ export const makeDiscovery = Effect.gen(function* () {
         },
       } satisfies SourceControlProviderDiscoveryItem;
     }),
-    /**
-     * A host turned off in Settings is claimed too, so its error says so
-     * instead of "unsupported host".
-     */
+    // Claim disabled hosts so errors identify the setting.
     refineUnknownRemote: ({ context }) => {
       const url = URL.parse(context.provider.baseUrl);
       if (!url?.host) return Effect.succeed(null);
@@ -377,14 +369,9 @@ const GRAPHQL_STATES: Record<
   merged: ["MERGED"],
   all: ["OPEN", "CLOSED", "MERGED"],
 };
-/**
- * A 100-lookup document costs one point; 50 keeps responses near half a second at the same cost.
- */
+/** 50 lookups keeps responses near 0.5s at the same one-point cost as 100. */
 const HEAD_LOOKUPS_PER_DOCUMENT = 50;
-/**
- * Git reads stagger background lookups by ~300ms; a longer window avoids paying a point for tiny
- * batches.
- */
+/** Git reads stagger background lookups by ~300ms; gather batches before spending quota. */
 const HEAD_LOOKUP_BATCH_WINDOW = "50 millis";
 const BACKGROUND_HEAD_LOOKUP_BATCH_WINDOW = "500 millis";
 /** For heads matching 100 PRs each, 50 lookups approached GitHub's ~10s limit; 25 took ~7s. */
@@ -397,7 +384,7 @@ function trimmed(value: string): string | null {
   return text.length > 0 ? text : null;
 }
 
-/** Return null for unusable rows so one malformed PR cannot hide the rest of a listing. */
+/** Null isolates unusable PRs from the rest of a listing. */
 function toPullRequestRecord(node: PullRequestNode): NormalizedGitHubPullRequestRecord | null {
   const title = trimmed(node.title);
   const url = trimmed(node.url);
@@ -512,10 +499,7 @@ export const make = Effect.gen(function* () {
   const rest = (input: GitHubRest.GitHubRestInput, notFoundDetail?: string) =>
     api.rest(input).pipe(Effect.mapError((error) => fromGitHubApiError(error, notFoundDetail)));
 
-  /**
-   * Batch by host and credential, isolating missing repositories per lookup. Separate
-   * interactive/background resolvers preserve reserve policy.
-   */
+  // Batch by host/credential; isolate missing repositories and interactive/background reserves.
   const headResolver = GraphQLResolver.aliased(client.PullRequestsByHead, {
     batchKey: GitHubGraphQlClient.batchKey,
   }).pipe(RequestResolver.batchN(HEAD_LOOKUPS_PER_DOCUMENT));
@@ -545,8 +529,7 @@ export const make = Effect.gen(function* () {
         host: locator.host,
         operation: "listPullRequestsByHead",
         allowReserve: input.allowReserve,
-        // Default-branch heads can match 100 fork PRs; 50 such lookups exceed the usual response
-        // cap.
+        // 50 default-branch lookups can each match 100 fork PRs and exceed the usual cap.
         maxResponseBytes: HEAD_LOOKUP_MAX_RESPONSE_BYTES,
       },
       "GitHub returned an invalid change request list.",
@@ -699,8 +682,7 @@ export const make = Effect.gen(function* () {
         const known = remoteFor(baseNameWithOwner);
         return known === null ? git.resolvePrimaryRemoteName(input.cwd) : Effect.succeed(known);
       });
-      // Prefix fork branches that collide with the default branch; fail if its name is unknown
-      // rather than risk resetting it.
+      // Avoid resetting the default branch; prefix colliding forks and fail if it is unknown.
       const defaultBranch = isCrossRepository
         ? yield* readRepository(base).pipe(
             Effect.map((repository) => repository.default_branch ?? null),
@@ -854,8 +836,7 @@ export const make = Effect.gen(function* () {
 
   return SourceControlProvider.SourceControlProvider.of({
     kind: SourceControlProviderKind.make("github"),
-    // GitHub matches bare head names, not owner:branch. Read a full page to disambiguate same-named
-    // fork branches by owner.
+    // GitHub matches bare heads; read a full page to disambiguate forks by owner.
     headBranchProbe: ({ headSelectors }) => ({
       headSelectors: headSelectors.filter((selector) => !selector.includes(":")),
       limit: 100,

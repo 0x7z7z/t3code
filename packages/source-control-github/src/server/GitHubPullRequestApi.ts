@@ -349,7 +349,7 @@ const CHECK_CONTEXT_PAGES = 10;
 export interface GitHubPullRequestListBatch {
   readonly items: ReadonlyArray<GitHubPullRequestListItem>;
   readonly truncated: boolean;
-  /** False for a page GitHub would not search, which came back in `gh`'s own order instead. */
+  /** False for unsearchable pages returned in `gh` order. */
   readonly continues: boolean;
 }
 
@@ -360,11 +360,9 @@ export interface GitHubPullRequestStat {
   readonly deletions: number;
 }
 
-/** For 100 rows, four parallel batches of 25 measured ~2.1s versus ~5.2s for one batch of 100. */
+/** Four parallel batches of 25 took ~2.1s; one batch of 100 took ~5.2s. */
 const STAT_ALIASES_PER_REQUEST = 25;
-/**
- * Cache checks stagger background-sync reads across scheduler ticks; allow time to gather a batch.
- */
+// Cache checks stagger reads across scheduler ticks; allow time to batch.
 const SUMMARY_BATCH_WINDOW = "10 millis";
 
 export interface GitHubPullRequestSearchBatch {
@@ -374,7 +372,7 @@ export interface GitHubPullRequestSearchBatch {
 
 export interface GitHubPullRequestDiffSlice {
   readonly patch: string;
-  /** Files in this slice had their hunks withheld, as opposed to there being more slices. */
+  /** Hunks were withheld within this slice. */
   readonly truncated: boolean;
   readonly nextCursor: string | null;
   readonly omittedFileStats?: ReadonlyArray<PullRequestOmittedFileStat>;
@@ -449,10 +447,7 @@ export class GitHubPullRequestApi extends Context.Service<
       readonly host: string;
       readonly number: number;
     }) => Effect.Effect<ProviderChangeRequestSummary, GitHubPullRequestApiError>;
-    /**
-     * Null when GitHub gave no answer for this pull request, so the watch reads
-     * it in full instead.
-     */
+    /** Null triggers a full watch read when GitHub gives no answer. */
     readonly getPullRequestWatchFingerprint: (input: {
       readonly cwd: string;
       readonly repository: string;
@@ -695,7 +690,7 @@ function parseRepositorySelector(value: string): {
   return { name: parts.at(-1) ?? "", owner: parts.at(-2) ?? "" };
 }
 
-/** The cursor enters a request path; bound its decimal length to prevent exponential notation. */
+/** Bound decimal length to prevent exponential notation in request paths. */
 function diffCursorPage(cursor: string): number | null {
   return /^[1-9][0-9]{0,6}$/.test(cursor) ? Number(cursor) : null;
 }
@@ -716,10 +711,7 @@ const REVIEW_QUALIFIERS = {
   none: "none",
 } as const;
 
-/**
- * Labels and logins cannot contain quotes; remove them so user input cannot terminate the qualifier
- * value.
- */
+/** Labels/logins cannot contain quotes; strip them to prevent qualifier injection. */
 function qualifierValue(value: string): string {
   return `"${value.replaceAll('"', "").trim()}"`;
 }
@@ -730,7 +722,7 @@ function filterQualifiers(
 ): ReadonlyArray<string> {
   if (filters === undefined) return [];
   return [
-    // One qualifier per group, its names joined by commas — GitHub's own OR.
+    // Commas within a qualifier mean OR to GitHub.
     ...(filters.labels ?? []).flatMap((group) =>
       group.length === 0 ? [] : [`label:${group.map(qualifierValue).join(",")}`],
     ),
@@ -791,10 +783,7 @@ function matchesUnsortedListing(
 
 const SEARCH_REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 
-/**
- * Repository names enter repo: qualifiers unquoted; reject names that could inject another
- * qualifier.
- */
+/** Unquoted repo: values must not inject qualifiers. */
 function searchQuery(input: {
   readonly repositories: ReadonlyArray<string>;
   readonly state: PullRequestListState;
@@ -851,7 +840,7 @@ const PullRequestGraphQLGroup = GraphQLGroup.merge(
 /** States in which `gh pr merge --auto` merges at once instead of arming auto-merge. */
 const IMMEDIATELY_MERGEABLE = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const api = yield* GitHubRest.GitHubRest;
   const policy = yield* GitHubRequestPolicy.GitHubRequestPolicy;
@@ -990,9 +979,7 @@ export const make = Effect.gen(function* () {
           )
         : Effect.succeed(value);
 
-  /**
-   * A repeated cursor stops pagination as truncated, even if the requested limit was not reached.
-   */
+  /** Treat repeated cursors as truncation, regardless of the row limit. */
   const readPages = <Page, E, R>(
     stream: Stream.Stream<Page, E | GraphQLClientError.GraphQLClientError, R>,
     options: {
@@ -1029,10 +1016,7 @@ export const make = Effect.gen(function* () {
       return { pages, truncated: repeated || (last !== undefined && options.hasNextPage(last)) };
     });
 
-  /**
-   * PR node IDs never change; cache them to avoid a GraphQL round trip for every viewed-file
-   * toggle.
-   */
+  // Immutable PR node IDs can be cached across viewed-file toggles.
   const nodeIds = new Map<string, string>();
 
   const pullRequestNodeId = (input: {
@@ -1066,9 +1050,7 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  /**
-   * Mutations follow the supplied node ID; verify it belongs to this PR to prevent cross-PR writes.
-   */
+  /** Mutations follow node IDs; reject IDs from other PRs. */
   const subjectBelongsToPullRequest = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -1133,8 +1115,7 @@ export const make = Effect.gen(function* () {
       })
       .pipe(
         Effect.flatMap((response) => {
-          // Checked before decoding: a byte-truncated response is a JSON prefix, which would
-          // fail to parse.
+          // Byte-truncated responses are unparseable JSON prefixes.
           if (response.truncated) {
             return Effect.fail(
               readError(
@@ -1246,13 +1227,10 @@ export const make = Effect.gen(function* () {
         return { oldContents, newContents };
       });
 
-  /** `isRequired` is asked for on github.com only: an older Enterprise server may not know it. */
+  /** Older Enterprise servers may lack `isRequired`. */
   const asksRequired = (host: string) => host.toLowerCase() === "github.com";
 
-  /**
-   * Pin the head on every page; a push during the walk must fail rather than mix checks from two
-   * revisions.
-   */
+  /** Pin each page to the head so pushes cannot mix revisions' checks. */
   const readAllCheckContexts = (
     input: Parameters<GitHubPullRequestApi["Service"]["getPullRequestDetail"]>[0],
     allowReserve: boolean,
@@ -1317,8 +1295,7 @@ export const make = Effect.gen(function* () {
             graphql({ ...input, operation, allowReserve }),
             Effect.map(toPullRequestCore),
             Effect.flatMap(found({ ...input, operation })),
-            // Past a hundred checks the first page would let the rest imply success, so the whole
-            // rollup is walked instead.
+            // Checks beyond the first hundred must not imply success.
             Effect.filterOrElse(
               (core) => !core.checksTruncated,
               (core) =>
@@ -1394,8 +1371,7 @@ export const make = Effect.gen(function* () {
       const known = yield* KnownWorkflowRuns;
       if (known !== null && known.headSha === input.headSha) {
         return known.runs.flatMap((run) =>
-          // Maintainer-gated runs can report completed/action_required; the query matches status or
-          // conclusion.
+          // Maintainer-gated runs can report completed/action_required.
           (run.conclusion === "action_required" || run.status === "action_required") &&
           run.head_branch === input.headBranch
             ? [
@@ -1502,9 +1478,7 @@ export const make = Effect.gen(function* () {
       client.ReopenPullRequest({ pullRequestId }).pipe(Effect.asVoid),
   } satisfies Partial<Record<PullRequestAction, unknown>>;
 
-  /**
-   * Keep policy failures intact; map not-found per lookup and other client failures to read errors.
-   */
+  /** Preserve policy errors; map not-found per lookup and other failures to read errors. */
   const batchedRead = <A, E, R>(
     input: { readonly cwd: string; readonly host: string; readonly operation: string },
     effect: Effect.Effect<A, E, R>,
@@ -1532,10 +1506,7 @@ export const make = Effect.gen(function* () {
       ),
     );
 
-  /**
-   * Batch background-sync summaries by host and credential; one missing PR must not fail the
-   * others.
-   */
+  // Batch by host/credential; isolate missing PRs.
   const summaryResolver = GraphQLResolver.aliased(client.PullRequestSummary, {
     batchKey: GitHubGraphQlClient.batchKey,
   }).pipe(
@@ -1951,8 +1922,7 @@ export const make = Effect.gen(function* () {
               ? filesPage(1)
               : Effect.succeed({ patch: response.body, truncated: false, nextCursor: null }),
           ),
-          // Above 300 changed files, GitHub returns 406 for the full diff; fall back to the paged
-          // files API.
+          // Above 300 changed files, GitHub returns 406; use the paged files API.
           Effect.catchTags({
             GitHubApiResponseError: (error) => filesPage(1).pipe(Effect.mapError(() => error)),
           }),
@@ -2362,8 +2332,7 @@ export const make = Effect.gen(function* () {
       }
       return Effect.gen(function* () {
         const { owner, name } = parseRepositorySelector(input.repository);
-        // Read head and merge-queue state fresh; mutations must target the current revision and
-        // route.
+        // Fresh head and merge-queue state determine the mutation's revision and route.
         const target = { ...input, operation: "runPullRequestAction" };
         const state = yield* client
           .PullRequestActionState({
@@ -2411,8 +2380,7 @@ export const make = Effect.gen(function* () {
             }
           }
         }
-        // Merge queues require auto-merge; enabling auto-merge on an immediately mergeable PR
-        // merges it at once.
+        // Queues require auto-merge, but enabling it on a mergeable PR merges immediately.
         const auto =
           state.isMergeQueueEnabled === true ||
           (action === "enable-auto-merge" &&

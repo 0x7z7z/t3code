@@ -27,7 +27,7 @@ export class GitHubGraphQlTarget extends Context.Service<
   }
 >()("@t3tools/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlTarget") {}
 
-/** A stable short id for a GraphQL document, so traces group by query without its text. */
+// Group traces by query without exposing query text.
 function queryHash(query: string): string {
   let hash = 0x811c9dc5;
   for (let index = 0; index < query.length; index++) {
@@ -42,10 +42,7 @@ export const isNotFoundOnly = (error: unknown): boolean =>
   error.reason._tag === "ResponseError" &&
   error.reason.errors.every((graphQlError) => graphQlError["type"] === "NOT_FOUND");
 
-/**
- * Share REST's credential, slots, quota and pause. Leave non-rate-limit GraphQL errors for
- * per-lookup batch handling.
- */
+/** Share REST's credentials/slots/quota/pause; leave non-rate-limit errors to each lookup. */
 export class GitHubGraphQlAuth extends GraphQLMiddleware.Service<
   GitHubGraphQlAuth,
   { requires: GitHubGraphQlTarget; error: GitHubRequestPolicy.GitHubApiError }
@@ -133,9 +130,7 @@ const refused = (
     return { _tag: tag, status: status ?? 200, headers } as const;
   });
 
-/**
- * Fail oversized responses before parsing; truncation could hide GraphQL errors past the byte cap.
- */
+/** Truncation could hide GraphQL errors; reject oversized responses before parsing. */
 const capResponse = (
   effect: Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>,
 ) =>
@@ -170,10 +165,7 @@ const capResponse = (
     );
   });
 
-/**
- * Resolvers isolate hosts by endpoint URL. Disable client tracing because url.full may expose SHAs
- * or branches.
- */
+// Endpoint URLs isolate hosts. Disable client tracing to protect SHAs and branches in url.full.
 const layerProtocol = GraphQLProtocol.layerHttp({
   url: ({ context }) =>
     GitHubRequestPolicy.gitHubApiUrls(Context.getUnsafe(context, GitHubGraphQlTarget).host).graphql,
@@ -195,9 +187,7 @@ const layerProtocol = GraphQLProtocol.layerHttp({
 
 export const layer = Layer.merge(GitHubGraphQlAuth.layer, layerProtocol);
 
-/**
- * Isolate batches by credential and rate-limit scope; the transport URL already separates hosts.
- */
+/** Isolate credentials/rate-limit scopes; transport URLs already separate hosts. */
 export const batchKey = (context: Context.Context<GitHubGraphQlTarget>) =>
   JSON.stringify([
     Context.getOrElse(context, GitHubRequestPolicy.PinnedGitHubCredential, () => null)
@@ -227,10 +217,7 @@ const fromClientError = (
       });
 };
 
-/**
- * Map GraphQL response errors to policy errors; leave decode errors for the caller's read-error
- * mapping.
- */
+/** Map response errors to policy errors; callers map decode errors to read errors. */
 export const call: {
   (
     target: GitHubGraphQlTarget["Service"],

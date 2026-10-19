@@ -94,10 +94,7 @@ function isGitHubDotCom(host: string): boolean {
   return host === "github.com" || host.endsWith(".ghe.com");
 }
 
-/**
- * Unlike gh, scope GH_ENTERPRISE_TOKEN to GH_HOST so a remote URL cannot send it to an arbitrary
- * host.
- */
+/** Restrict GH_ENTERPRISE_TOKEN to GH_HOST to prevent remote URLs from leaking it. */
 export function environmentToken(
   host: string,
   env: Readonly<Record<string, string | undefined>>,
@@ -114,7 +111,7 @@ export function environmentToken(
   return null;
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const sourceControlHost = yield* SourceControlHost.SourceControlHost;
   const process = sourceControlHost.process;

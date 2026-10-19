@@ -298,10 +298,7 @@ export function probeSourceControlProvider(input: {
 
 const isVcsProcessSpawnError = Schema.is(VcsProcessSpawnError);
 
-/**
- * The spawner checks cwd first, so a ChildProcess NotFound identifies the executable, not the
- * directory.
- */
+/** The spawner checks cwd first, so ChildProcess NotFound identifies the executable. */
 export function isMissingExecutable(error: unknown): boolean {
   return (
     isVcsProcessSpawnError(error) &&
@@ -365,8 +362,7 @@ export const refineUnknownRemoteProvider = Effect.fn("refineUnknownRemoteProvide
     const results = yield* Effect.forEach(input.specs, (spec) =>
       refineWithSpec({ ...input, spec }).pipe(Effect.result),
     );
-    // A claim reached after another integration could not answer is not settled: that one might
-    // have claimed the host first.
+    // An earlier integration that could not answer might have claimed this host.
     let settled = true;
     for (const result of results) {
       if (Result.isFailure(result)) settled = false;

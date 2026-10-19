@@ -178,7 +178,7 @@ export type GitLabPullRequestCliError =
   | GitLabDiffRefsUnavailableError
   | GitLabViewerUnavailableError;
 
-/** GitLab's own ceiling on `per_page`, so a larger page has to be walked. */
+/** GitLab's `per_page` limit. */
 const MAX_PAGE_SIZE = 100;
 const COMMIT_PAGE_SIZE = 100;
 const CONVERSATION_PAGES = 10;
@@ -436,7 +436,7 @@ function actionArgs(
     case "merge":
       return [
         "merge",
-        // glab turns on auto-merge whenever a pipeline is running. The button means merge now.
+        // glab defaults to auto-merge during a running pipeline.
         "--auto-merge=false",
         "--yes",
         ...(mergeMethod === "squash" ? ["--squash"] : []),
@@ -469,7 +469,7 @@ function actionArgs(
   }
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const gitlab = yield* GitLabCli.GitLabCli;
 
@@ -487,8 +487,7 @@ export const make = Effect.gen(function* () {
         "api",
         input.path,
         ...(input.method === undefined ? [] : ["--method", input.method]),
-        // Keep payloads out of argv/logs. glab --input omits Content-Type; GitLab requires it or
-        // returns 415.
+        // glab --input keeps payloads out of argv/logs but omits GitLab's required Content-Type.
         ...(input.stdin === undefined
           ? []
           : ["--input", "-", "--header", "Content-Type: application/json"]),
@@ -511,14 +510,12 @@ export const make = Effect.gen(function* () {
     readonly collected: ReadonlyArray<GitLabMergeRequestListItem>;
     readonly cursorAdvance: number;
   }): Effect.Effect<GitLabMergeRequestListBatch, GitLabPullRequestCliError> => {
-    // Use offsets: GitLab's inclusive timestamp filter has no tie-breaker and can repeat a page of
-    // equal-time rows forever.
+    // GitLab's timestamp filter can repeat equal-time pages forever; use offsets.
     const delivered = input.cursor?.delivered ?? 0;
     const perPage = Math.min(input.limit + 1, MAX_PAGE_SIZE);
     const firstPage = Math.floor(delivered / perPage) + 1;
     const skipOnFirstPage = input.page === firstPage ? delivered % perPage : 0;
-    // Bound raw pages so entirely malformed results cannot recurse forever without a usable
-    // continuation.
+    // Bound raw pages to stop recursion on entirely malformed results.
     const lastPage = Math.floor((delivered + input.limit) / perPage) + 1;
     return api({
       cwd: input.cwd,
@@ -574,7 +571,7 @@ export const make = Effect.gen(function* () {
         }
         const collected = [...input.collected, ...pageItems];
         const consumed = Math.max(0, decoded.success.rawCount - skipOnFirstPage);
-        // Counted before decoding, so a skipped malformed row cannot end paging early.
+        // Count malformed rows to avoid ending pagination early.
         const exhausted = decoded.success.rawCount < perPage;
         if (exhausted) {
           return Effect.succeed({
@@ -641,8 +638,7 @@ export const make = Effect.gen(function* () {
         },
       }),
       Effect.flatMap(({ result, legacy }) => {
-        // Fail byte-truncated JSON; returning no cursor would silently drop this and all subsequent
-        // pages.
+        // Returning no cursor for byte-truncated JSON would lose subsequent pages.
         if (result.stdoutTruncated) {
           return Effect.fail(
             new GitLabMergeRequestReadError({
@@ -765,10 +761,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /**
-   * GitLab resolves a comment's line against these three shas, so a review with line
-   * comments cannot be sent without them.
-   */
+  /** Line comments require all three diff SHAs. */
   const getDiffRefs = (input: {
     readonly cwd: string;
     readonly repository: string;
@@ -963,9 +956,7 @@ export const make = Effect.gen(function* () {
       }),
     );
 
-  /**
-   * GitLab charges by path count and returns one connection page; keep batches within both limits.
-   */
+  // GitLab charges by path count and returns one connection page; respect both limits.
   const BLOB_PATHS_PER_REQUEST = 100;
 
   const blobsAt = (input: {
@@ -1025,8 +1016,7 @@ export const make = Effect.gen(function* () {
               Effect.map((pages) => {
                 const revisions = new Map<string, string>();
                 for (const { paths, page } of pages) {
-                  // An unanswered batch means unknown, not deleted; omit its paths to preserve
-                  // viewed marks.
+                  // Unanswered paths are unknown; omit them to preserve viewed marks.
                   if (page === null) continue;
                   for (const [path, oid] of page) revisions.set(path, oid);
                   for (const path of paths) {
@@ -1087,7 +1077,7 @@ export const make = Effect.gen(function* () {
           });
           return;
         }
-        // Deleting an award requires its ID, so look up the viewer's award by emoji first.
+        // Deleting an award requires its ID.
         const viewer = yield* viewerUsername({ cwd: input.cwd });
         const listed = yield* api({ cwd: input.cwd, path: subject });
         const own = decodeOwnAwardIdJson(listed.stdout.trim(), {
@@ -1245,7 +1235,7 @@ export const make = Effect.gen(function* () {
     setReviewerRequest: (input) =>
       mergeRequestDetail(input).pipe(
         Effect.flatMap((mergeRequest) => {
-          // GitLab replaces reviewer_ids wholesale; preserve reviewers not included in this change.
+          // GitLab replaces reviewer_ids wholesale.
           const ids = new Set(mergeRequest.reviewerIds);
           for (const reviewer of input.reviewers) {
             const id = Number(reviewer.id);
@@ -1298,8 +1288,7 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/notes`,
         method: "POST",
-        // glab coerces raw fields such as true or numbers; JSON preserves comment bodies as
-        // strings.
+        // JSON avoids glab's coercion of numeric/boolean comment bodies.
         stdin: JSON.stringify({ body: input.body }),
       }).pipe(Effect.asVoid),
 
@@ -1319,7 +1308,7 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const project = projectPath(input.repository);
         const mergeRequest = `projects/${project}/merge_requests/${input.number}`;
-        // Submit the verdict last so a partially failed review cannot leave an approval.
+        // A partially failed review must not leave an approval.
         if (input.comments.length > 0) {
           const refs = yield* getDiffRefs(input);
           yield* Effect.forEach(

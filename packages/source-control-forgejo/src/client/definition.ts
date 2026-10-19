@@ -32,14 +32,13 @@ export const definition = defineSourceControlClient({
   icon: "forgejo",
   changeRequest: { shortLabel: "PR", singular: "pull request" },
   repositoryPathHint: "owner/repo",
-  // Forgejo and Gitea are self-hosted, so no hostname names them.
+  // Forgejo and Gitea are self-hosted.
   publicHost: null,
   publishDescription: "Your signed-in server",
   publishHost: (signedInHost) => signedInHost ?? "your server",
   newRepositoryOwner: (account) => (account ? { owner: account } : null),
   defaultCloneTransport: "https",
-  // Prefer the resolved browser URL; HTTP remotes may carry a port, while SSH remotes cannot
-  // identify it.
+  // SSH remotes cannot identify the HTTP port; prefer the resolved browser URL.
   changeRequestUrl: ({ host, repository, number, remoteUrl, webUrl }) => {
     if (webUrl) return `${webUrl.replace(/\/+$/, "")}/pulls/${number}`;
     try {
@@ -55,7 +54,7 @@ export const definition = defineSourceControlClient({
     return `https://${host}/${repository}/pulls/${number}`;
   },
   changeRequestActions: new Set(["merge", "close", "reopen", "update-branch"] as const),
-  // Neither `fj` nor `tea` checks out by number, so fetch the pull ref from the repository itself.
+  // Neither `fj` nor `tea` checks out by number.
   checkoutCommand: ({ number, repositoryUrl }) =>
     repositoryUrl
       ? `git fetch '${repositoryUrl.replaceAll("'", "'\\''")}' refs/pull/${number}/head && git checkout -B pulls/${number} FETCH_HEAD`
