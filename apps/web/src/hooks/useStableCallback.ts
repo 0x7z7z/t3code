@@ -1,7 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
-/** Call only from handlers and effects; render sees the previous commit's fn.
- * The stable forwarder avoids retaining V8's shared render closure scope. */
+/** Call only from handlers and effects; render sees the previous commit's fn. */
 export function useStableCallback<Args extends ReadonlyArray<unknown>, Result>(
   fn: (...args: Args) => Result,
 ): (...args: Args) => Result {

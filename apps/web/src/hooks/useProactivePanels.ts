@@ -96,8 +96,7 @@ export function useProactivePanels(input: {
         linkedThreadPullRequest,
         openSurface,
       );
-    // Following the selected linked PR does not open an unrelated panel, so it
-    // remains available with proactive panels off. It still respects a later choice.
+    // Following the selected PR works with proactive panels off, but still respects later user choices.
     if (followSelectedPullRequest && linkedThreadPullRequest !== null) {
       panels.openProactive(
         threadRef,

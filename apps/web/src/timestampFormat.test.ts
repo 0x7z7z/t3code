@@ -156,8 +156,7 @@ describe("formatExpiresInLabel", () => {
 });
 
 describe("formatDayAwareTimestamp", () => {
-  // Instants are built with the local-time Date constructor so the
-  // calendar-day boundaries hold in any test timezone or locale.
+  // Local-time constructors keep calendar boundaries valid across timezones and locales.
   const iso = (y: number, monthIndex: number, d: number, h: number, mi: number) =>
     new Date(y, monthIndex, d, h, mi).toISOString();
   const now = new Date(2026, 7, 14, 12, 0).getTime();

@@ -27,10 +27,7 @@ export function resolveTimestampLocale(
   if (!tag) return undefined;
 
   try {
-    // Every timestamp in the UI runs through this formatter, so a tag the host
-    // could not normalize falls back rather than throwing. Throws on a
-    // structurally invalid tag; a well-formed tag ICU has no data for resolves
-    // here and is left to ICU's own fallback.
+    // Reject structurally invalid tags; let ICU fall back for valid tags it lacks data for.
     Intl.DateTimeFormat.supportedLocalesOf([tag]);
     return tag;
   } catch {
@@ -53,11 +50,7 @@ type LocaleWithWeekInfo = Intl.Locale & {
   getWeekInfo?: () => { readonly firstDay: number };
 };
 
-/**
- * First weekday of a locale as a `Date#getDay` index (0 is Sunday), or
- * `undefined` when the runtime has no week data, so callers keep their own
- * default.
- */
+/** First weekday as Date#getDay (Sunday=0), or undefined when runtime week data is unavailable. */
 export function resolveWeekStartsOn(locale: string | undefined): WeekdayIndex | undefined {
   try {
     const resolved: LocaleWithWeekInfo = new Intl.Locale(
@@ -104,9 +97,7 @@ export function formatTimestamp(isoDate: string, timestampFormat: TimestampForma
   return getTimestampFormatter(timestampFormat, true).format(date);
 }
 
-// Deliberately not the host locale: the tooltip's ordinal suffix and
-// day-before-month order below are English, so a localized month alone would
-// read "4th Juni 2026".
+// The tooltip uses English ordinals and order, so its month must also be English.
 const monthNameFormatter = new Intl.DateTimeFormat("en-US", { month: "long" });
 
 function ordinalSuffix(day: number): string {
@@ -213,10 +204,7 @@ function relativeTimeUnitMs(elapsedMs: number): number {
   return DAY_MS;
 }
 
-/**
- * Elapsed time floored to the precision `formatRelativeTime` shows, so two
- * instants with the same label return the same number.
- */
+/** Elapsed time floored to formatRelativeTime precision; equal labels yield equal values. */
 export function relativeTimeElapsedMs(isoDate: string, nowMs: number = Date.now()): number | null {
   const date = parseTimestampDate(isoDate);
   if (!date) return null;
@@ -234,8 +222,7 @@ export function msUntilRelativeTimeChange(
   const elapsedMs = Math.max(0, nowMs - date.getTime());
   const unitMs = relativeTimeUnitMs(elapsedMs);
   const nextChangeMs = date.getTime() + (Math.floor(elapsedMs / unitMs) + 1) * unitMs;
-  // setTimeout fires at once past 2^31-1 ms, which would loop on a far-future
-  // timestamp. Waking early is harmless: the caller re-reads and re-schedules.
+  // Delays above 2^31-1 fire immediately; cap safely and let callers reschedule.
   return Math.min(nextChangeMs - nowMs, DAY_MS);
 }
 
@@ -306,9 +293,7 @@ export function formatRelativeTimeUntilLabel(isoDate: string): string {
   return relative.suffix ? `${relative.value} ${relative.suffix}` : relative.value;
 }
 
-/**
- * Pass `nowMs` when a parent tick drives re-renders so the diff matches that snapshot.
- */
+/** Pass nowMs to match a parent-driven render tick. */
 export function formatExpiresInLabel(isoDate: string, nowMs: number = Date.now()): string {
   const date = parseTimestampDate(isoDate);
   if (!date) return "";

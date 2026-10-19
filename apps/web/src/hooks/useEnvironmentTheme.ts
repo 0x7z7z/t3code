@@ -58,8 +58,7 @@ export function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefini
   };
 }
 
-/** Reserved published ids would display one palette but select a built-in,
- * or hijack a stock "light"/"dark" preference. */
+/** Filters reserved ids that would select built-ins instead of the published palette. */
 export function publishedThemeDefinitions(
   themes: ReadonlyArray<EnvironmentTheme>,
 ): ReadonlyArray<ThemeDefinition> {

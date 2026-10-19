@@ -304,8 +304,7 @@ export function mergeEnvironmentSettings(
   serverSettings: ServerSettings,
   clientSettings: ClientSettings,
 ): UnifiedSettings {
-  // Decode drops retired client keys, but older untyped persistence adapters
-  // can still return them. Server-owned values must always win.
+  // Older untyped adapters can return retired client keys; server values must win.
   return {
     ...clientSettings,
     ...serverSettings,
@@ -547,8 +546,7 @@ function useSharedSettingsSyncTargetIds(includePending = false): ReadonlyArray<E
   const results = useAtomValue(environmentSessionStatesAtom(environmentIdsKey(targetIds)));
   return targetIds.flatMap((environmentId, index) => {
     const result = results[index]!;
-    // A cold grant must not drop a shared edit. The server authorizes the
-    // write; mismatch suggestions still wait for a confirmed grant.
+    // Let the server authorize shared edits with cold grants; suggestions still need confirmed grants.
     if (includePending && result._tag === "Initial") {
       return [environmentId];
     }

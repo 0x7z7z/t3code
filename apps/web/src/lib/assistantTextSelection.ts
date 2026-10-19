@@ -183,8 +183,7 @@ function selectedTextBoundary(range: Range, node: Node, last: boolean): Text | n
     const text = node as Text;
     const start = node === range.startContainer ? range.startOffset : 0;
     const end = node === range.endContainer ? range.endOffset : text.length;
-    // Triple-click ranges run through unselectable rows (tool calls, timestamps,
-    // author headings) into the next response; that text is not selected.
+    // Triple-click ranges include unselected text from unselectable rows and the next response.
     return start < end && !isUnselectable(text) ? text : null;
   }
   for (
@@ -210,8 +209,7 @@ export function captureAssistantTextSelection(
   const source = first.parentElement?.closest<HTMLElement>("[data-assistant-citation-source]");
   if (!source || !viewport.contains(source)) return null;
 
-  // Paragraph selection can end at the next block's offset 0 or a parent
-  // boundary. Validate the text actually selected, not that empty endpoint.
+  // Paragraph selections can end at an empty next-block boundary; validate only selected text.
   range.setStart(first, first === range.startContainer ? range.startOffset : 0);
   range.setEnd(last, last === range.endContainer ? range.endOffset : last.length);
   if (!isUsableRange(source, range)) return null;

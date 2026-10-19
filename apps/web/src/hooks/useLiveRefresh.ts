@@ -37,7 +37,7 @@ export function shouldRefreshOnInterval(input: {
   );
 }
 
-/** Survives hook remounts so navigating away and back does not make a fresh read look overdue. */
+// Survive remounts so returning to a view does not make fresh reads look overdue.
 const lastRefreshedAtByView = new Map<string, number>();
 
 let lastInteractedAt = 0;

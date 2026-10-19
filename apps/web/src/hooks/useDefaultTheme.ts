@@ -66,8 +66,7 @@ export function useDefaultThemeAdoption(): void {
     });
     if (generation === null || definition === null) return;
 
-    // Default adoption sets the whole preference and matching appearance;
-    // otherwise a single-appearance theme can be marked applied without changing the UI.
+    // A single-appearance theme needs both preference and appearance writes to take effect.
     if (!setTheme(defaultTheme)) return;
     const half = singleAppearanceOf(definition);
     // Only record adoption after both writes succeed, so an appearance failure remains retryable.

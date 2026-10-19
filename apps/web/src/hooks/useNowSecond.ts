@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-// One shared tick on wall-clock second boundaries: every live duration label
-// updates in the same frame instead of each repainting on its own phase.
+// Share wall-clock ticks so duration labels repaint in one frame.
 
 function currentSecond(): number {
   return Math.floor(Date.now() / 1000) * 1000;

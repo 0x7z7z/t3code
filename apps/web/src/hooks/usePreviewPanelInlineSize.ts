@@ -45,8 +45,7 @@ function useViewportClampedMaxWidth(
   useLayoutEffect(() => {
     if (typeof window === "undefined") return;
     const row = container ?? (enabled ? hostRef?.current?.parentElement : null) ?? null;
-    // Clamp before first paint to avoid flashing over-wide. Store only the cap:
-    // sidebar drags resize the row every frame but rarely change the cap.
+    // Clamp before paint to avoid flashing; store only the cap, which rarely changes during sidebar drags.
     const measure = () => {
       setMaxWidth(getPreviewPanelMaxWidth(window.innerWidth, row?.clientWidth));
     };

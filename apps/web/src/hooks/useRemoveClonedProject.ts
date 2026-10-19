@@ -33,8 +33,7 @@ export function useRemoveClonedProject() {
       return false;
     }
     await waitForProjectRemoval(projectRef);
-    // Read the route after the await: the user may have moved on while the
-    // delete was in flight, and only a draft of this project needs to go.
+    // Re-read the route after deletion; the user may have left this project.
     const routeParams = router.state.matches[router.state.matches.length - 1]?.params ?? {};
     const routeTarget = resolveThreadRouteTarget(routeParams);
     const viewingDraft =

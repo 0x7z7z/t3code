@@ -2,18 +2,12 @@ import { closeHistory, isHistoryTransaction } from "@tiptap/pm/history";
 import type { Transaction } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 
-/** ProseMirror joins adjacent edits until a pause. Whole-document draft rewrites
- * make every later edit adjacent, so change kinds need explicit undo boundaries. */
+// Whole-draft rewrites make all edits adjacent; explicit boundaries keep change kinds separate.
 export const COMPOSER_UNDO_GROUP_DELAY = 1000;
 
 export type ComposerChangeKind = "insert" | "delete" | "other";
 
-/**
- * ProseMirror tags these itself only on its built-in clipboard paths; the
- * composer's `handlePaste` and cut handler replace those paths, so each of
- * their dispatches must call this, or the change merges with the typing or
- * deleting around it.
- */
+/** Tag custom paste/cut dispatches; ProseMirror only tags its built-in paths. */
 export function markAsClipboardEdit(tr: Transaction, event: "paste" | "cut"): Transaction {
   return tr.setMeta("uiEvent", event);
 }
@@ -36,9 +30,7 @@ function changeKindOf(tr: Transaction): ComposerChangeKind | null {
   return kind;
 }
 
-/**
- * Must run before the transaction is applied.
- */
+/** Must run before the transaction is applied. */
 export function groupUndoByChangeKind(
   tr: Transaction,
   previous: ComposerChangeKind | null,

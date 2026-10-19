@@ -24,8 +24,7 @@ function sameIgnoringCheckedAt(previous: object, next: object, nested: boolean):
   });
 }
 
-/** Ignore refreshed checkedAt timestamps to spare views that never show them.
- * Relies on config projection preserving unchanged nested references. */
+/** Ignores checkedAt; requires config projection to preserve unchanged nested references. */
 export function reuseProvidersIgnoringCheckedAt(
   previous: ReadonlyArray<ServerProvider> | null,
   next: ReadonlyArray<ServerProvider>,

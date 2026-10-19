@@ -40,8 +40,7 @@ const resolveEnvironmentPortTarget = (
   const protocol = target.protocol ?? "http";
   const path = target.path?.startsWith("/") ? target.path : `/${target.path ?? ""}`;
   const normalizedEnvironmentHost = environmentUrl.hostname.replace(/^\[|\]$/g, "");
-  // Local loopback environments should advertise `localhost` so Chromium
-  // dual-stack lookup can reach a Vite server bound only to ::1 or 127.0.0.1.
+  // localhost lets Chromium reach loopback servers bound to either IPv4 or IPv6.
   const resolvedHost = isLocalLoopbackHost(normalizedEnvironmentHost)
     ? "localhost"
     : normalizedEnvironmentHost.includes(":")
@@ -79,8 +78,7 @@ export function resolveBrowserNavigationTarget(
   return resolveEnvironmentPortTarget(environmentId, target, readEnvironmentUrl(environmentId));
 }
 
-/** Desktop renders primary and WSL tabs locally, even when the backend URL is a
- * LAN address. A loopback-bound dev server there only answers on localhost. */
+// Desktop renders primary and WSL tabs locally; loopback servers require localhost even for LAN backends.
 const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   isElectron &&
   (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));

@@ -59,8 +59,7 @@ export function resolveRemoteOpenState(input: {
     return LOCAL_EXEC;
   }
   if (target._tag === "PrimaryConnectionTarget") {
-    // The desktop app manages its own primary backend, so it is always on this machine even
-    // when its URL is not loopback (wsl-only mode binds the WSL2 NAT address).
+    // Desktop owns its primary even at a non-loopback WSL2 NAT address.
     if (input.isDesktopRenderer) {
       return LOCAL_EXEC;
     }
@@ -88,8 +87,7 @@ function remoteOpenStatesEqual(previous: RemoteOpenState, next: RemoteOpenState)
   return previous.host.kind === next.host.kind && previous.host.host === next.host.host;
 }
 
-// Config pushes recreate presentations; retain equal resolutions to avoid
-// rerendering file links when their destination has not changed.
+// Config pushes recreate presentations; preserve equal resolutions to avoid re-rendering file links.
 const remoteOpenResolutionAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): RemoteOpenResolution => {
     const presentation = get(environmentPresentations.presentationAtom(environmentId));

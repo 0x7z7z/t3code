@@ -77,8 +77,7 @@ export function useNewThreadHandler() {
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
-    // Read at call time: every provider status push replaces the config map, and
-    // subscribing would hand every sidebar row a new handler.
+    // Read at call time; status pushes replace the config map and would recreate every sidebar handler.
     const environmentServerConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
     const targetServerSettings =
       environmentServerConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
@@ -206,9 +205,7 @@ export function useNewThreadHandler() {
           if (abandonedSinceRequest()) {
             return null;
           }
-          // A concurrent invocation may have opened, promoted, remapped, or populated
-          // the draft. A stale reset or navigation would clobber that newer state;
-          // remapping could also evict and garbage-collect the winning draft.
+          // Concurrent calls may change the draft; stale resets, remaps, or navigation could clobber it.
           const routeTargetNow = getCurrentRouteTarget();
           const openedMeanwhile =
             routeTargetNow?.kind === "draft" &&
@@ -254,8 +251,7 @@ export function useNewThreadHandler() {
             });
           }
         }
-        // A remap to another physical project clears workspace context; pass it
-        // through to preserve the branch and worktree written above.
+        // Remapping physical projects clears workspace context; preserve the branch and worktree.
         setLogicalProjectDraftThreadId(
           logicalProjectKey,
           projectRef,
@@ -323,8 +319,7 @@ export function useNewThreadHandler() {
       if (abandonedSinceRequest()) {
         return null;
       }
-      // A concurrent invocation may have registered a draft while awaiting.
-      // Reuse it rather than evicting it while its navigation is in flight.
+      // Reuse drafts registered while awaiting so their pending navigation cannot lose them.
       const racedDraft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       if (
         racedDraft &&

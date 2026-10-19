@@ -25,9 +25,7 @@ const TERMINAL_GLYPH_FALLBACKS =
   '"Symbols Nerd Font Mono", "Symbols Nerd Font", "JetBrainsMono Nerd Font", ' +
   '"JetBrainsMono NF", "FiraCode Nerd Font", "Hack Nerd Font", "MesloLGS NF", ' +
   '"CaskaydiaCove Nerd Font", "PowerlineSymbols", monospace';
-// The platform's own monospace faces; concrete names only, because an
-// unknown keyword (like ui-monospace) makes canvas font shorthand parsing
-// reject the whole string.
+// Use concrete faces; unknown keywords such as ui-monospace invalidate canvas font shorthand.
 export const DEFAULT_TERMINAL_FONT_FAMILY =
   '"SF Mono", "SFMono-Regular", Menlo, Consolas, "Liberation Mono", ' + TERMINAL_GLYPH_FALLBACKS;
 const CONTENT_PADDING = 4;
@@ -81,8 +79,7 @@ function uncheckedTerminalFontFamily(family?: string): string {
 }
 
 export function terminalFontFamily(family?: string): string {
-  // Quote non-ident names ("3270 Nerd Font", "M+ 1m"): an unquoted one makes
-  // the whole canvas font string invalid and the assignment silently no-ops.
+  // Unquoted non-ident names invalidate canvas font assignment silently.
   const custom = family === undefined ? "" : quoteTerminalFontFamilies(family);
   if (custom.length === 0) return DEFAULT_TERMINAL_FONT_FAMILY;
   if (!isMonospaceFamily(custom)) return DEFAULT_TERMINAL_FONT_FAMILY;
@@ -252,8 +249,7 @@ export function terminalLinkAtPositionWithRange(
     };
   });
   if (!wrappedLine) return null;
-  // Only viewport rows are available: a wrapped line whose head scrolled above
-  // the viewport would resolve a truncated match into a wrong link.
+  // A wrapped line starting above the viewport would produce a truncated, incorrect link.
   const firstSegment = wrappedLine.segments[0];
   if (firstSegment && rows[firstSegment.bufferLineNumber - 1]?.isWrapContinuation) {
     return null;
@@ -307,11 +303,7 @@ export function isTerminalCopyShortcut(
   return isMacPlatform(platform) ? event.metaKey : event.ctrlKey;
 }
 
-/**
- * Canvas terminals have no DOM selection. Native copy and Electron's Edit menu
- * `role: "copy"` both read the focused textarea, so an empty IME field writes
- * blankness to the clipboard.
- */
+/** Primes native and Electron menu copy from the focused textarea; canvas has no DOM selection. */
 export function primeTerminalCopyInput(
   input: Pick<HTMLTextAreaElement, "value" | "select">,
   selection: string,
@@ -325,8 +317,7 @@ export function clearPrimedTerminalCopyInput(
   input: Pick<HTMLTextAreaElement, "value">,
   primedSelection: string,
 ): void {
-  // Only blank the copy we parked. The same textarea holds the IME candidate;
-  // wiping whatever is there would cancel CJK composition.
+  // Only clear the parked copy; other text may be an active CJK composition.
   if (primedSelection.length === 0 || input.value !== primedSelection) return;
   input.value = "";
 }
@@ -354,11 +345,7 @@ export function isTerminalPasteShortcut(
   return isMacPlatform(platform) ? event.metaKey : event.ctrlKey && event.shiftKey;
 }
 
-/**
- * Middle-click paste is an X11/Wayland convention. macOS and Windows have no
- * primary selection and use the button for autoscroll, so only desktops that
- * expect the gesture get it.
- */
+// X11/Wayland expects middle-click paste; macOS and Windows use it for autoscroll.
 function isMiddleClickPastePlatform(): boolean {
   return /linux|bsd/i.test(navigator.platform);
 }
@@ -505,10 +492,7 @@ export interface GhosttyTerminalSurfaceOptions {
   readonly beforeKey: (event: KeyboardEvent) => boolean;
   readonly onLinkActivate: (text: string, event: MouseEvent) => void;
   readonly canActivateLink?: (text: string) => boolean;
-  /**
-   * The host owns the menu, so it also owns preventing the browser default —
-   * whose Paste entry can never reach a canvas terminal.
-   */
+  /** The host must prevent the default menu; native Paste cannot reach a canvas terminal. */
   readonly onContextMenu?: (event: MouseEvent) => void;
 }
 
@@ -595,8 +579,7 @@ export class GhosttyTerminalSurface {
   private lastMouseMotionData = "";
   private mouseAnyEventTracking = false;
   private dprMedia: MediaQueryList | null = null;
-  // Read live on every blink decision, and watched so that dropping the
-  // preference restarts a blink cycle that has no timer left to notice it.
+  // Watch reduced motion changes to restart blink cycles that have no remaining timer.
   private readonly reducedMotionMedia = window.matchMedia?.("(prefers-reduced-motion: reduce)");
   private inputLeft = -1;
   private inputTop = -1;
@@ -673,8 +656,7 @@ export class GhosttyTerminalSurface {
     context.fillRect(0, 0, canvas.width, canvas.height);
     const fontSize = terminalFontSize(options.font?.size);
     try {
-      // Cell metrics must come from the faces that will render; measuring before
-      // the bundled webfonts load would size the grid from a fallback font.
+      // Load bundled fonts before measuring; fallback metrics would size the wrong grid.
       await ensureTerminalSymbolsFont();
     } catch {}
     const fontFamily = await loadTerminalFontFamily(options.font?.family, fontSize);
@@ -754,8 +736,7 @@ export class GhosttyTerminalSurface {
   async setFont(font: GhosttyTerminalFont): Promise<void> {
     if (this.disposed) return;
     const fontSize = terminalFontSize(font.size);
-    // The fields only change together with their metrics after the load, and
-    // the epoch lets the newest overlapping call win regardless of load order.
+    // Commit fields with loaded metrics; the epoch makes the newest overlapping call win.
     const epoch = ++this.fontEpoch;
     this.pendingFontEpoch = epoch;
     const fontFamily = await loadTerminalFontFamily(font.family, fontSize);
@@ -780,16 +761,14 @@ export class GhosttyTerminalSurface {
 
   private readonly onReducedMotionChange = () => {
     if (this.disposed) return;
-    // Nothing else wakes an idle steady cursor: the blink timer only reschedules
-    // from a render, and reduced motion is exactly the state that stopped it.
+    // Restart from render; reduced motion left the steady cursor with no blink timer.
     this.cursorOn = true;
     this.requestRender();
   };
 
   private readonly onFontsLoaded = () => {
     if (this.disposed) return;
-    // The explicit load validates every style and applies the newest request.
-    // Its own loading events must not revalidate the previously applied face.
+    // Explicit loads validate and apply the newest request; ignore their events for the old face.
     if (this.pendingFontEpoch !== null) return;
     const fontFamily = terminalFontFamily(this.requestedFontFamily);
     if (fontFamily !== this.fontFamily) {
@@ -828,9 +807,7 @@ export class GhosttyTerminalSurface {
     const pixelWidth = Math.max(1, Math.round(width * ratio));
     const pixelHeight = Math.max(1, Math.round(height * ratio));
     let shouldRender = false;
-    // The DPR transform must be installed even when the target size happens to
-    // equal the canvas default 300x150 backing store, so the first fit always
-    // schedules a canvas configuration.
+    // First fit must install DPR even if backing size matches the canvas default.
     if (
       this.canvas.width !== pixelWidth ||
       this.canvas.height !== pixelHeight ||
@@ -846,8 +823,7 @@ export class GhosttyTerminalSurface {
     }
     const grid = terminalGridSize(width, height, this.metrics, CONTENT_PADDING);
     this.mountHeight = height;
-    // onResize is the only PTY resize channel, so the first successful fit must
-    // notify even when the measured grid equals the 1x1 construction sentinel.
+    // onResize is the only PTY channel; notify on first fit even when the grid matches its 1x1 sentinel.
     if (grid.cols !== this.cols || grid.rows !== this.rows || !this.resizeNotified) {
       this.cols = grid.cols;
       this.rows = grid.rows;
@@ -857,18 +833,12 @@ export class GhosttyTerminalSurface {
       this.scrollbarDirty = true;
       shouldRender = true;
     }
-    // Rendering synchronously keeps the repaint inside the same frame as the
-    // layout change: ResizeObserver fires before paint, so the browser never
-    // composites the old backing store stretched into the new element box.
+    // Repaint synchronously before paint so resize never stretches the old backing store.
     if (shouldRender || this.forceFullRender) this.renderFrame();
     return true;
   }
 
-  /**
-   * The local grid reflows immediately, but the PTY only hears about settled
-   * dimensions: notifying on every drag step makes the shell reprint its
-   * prompt mid-drag, which reads as jitter.
-   */
+  // Reflow locally during drags; debounce PTY resizes so the shell does not reprint its prompt each step.
   private notifyResize(): void {
     this.resizeNotified = true;
     if (this.resizeNotifyTimer !== null) window.clearTimeout(this.resizeNotifyTimer);
@@ -878,11 +848,7 @@ export class GhosttyTerminalSurface {
     }, 150);
   }
 
-  /**
-   * Releasing a panel, drawer, or split divider settles the size, so the PTY
-   * hears it now instead of after the debounce. Otherwise typing right after
-   * the release reaches a shell that still lays out the old width.
-   */
+  // Flush on release so immediate typing reaches a shell with the settled width.
   private readonly onWindowPointerRelease = () => {
     if (this.disposed || this.resizeNotifyTimer === null) return;
     this.fit();
@@ -897,11 +863,7 @@ export class GhosttyTerminalSurface {
     this.input.focus({ preventScroll: true });
   }
 
-  /**
-   * The read joins the same race the paste shortcut uses — the token is claimed
-   * before it starts — so a shortcut or native paste arriving during the read
-   * supersedes this one instead of both reaching the shell.
-   */
+  /** Claims before reading; later shortcut or native pastes supersede the pending read. */
   async pasteFromClipboard(
     readText: () => Promise<string>,
     isCurrent: () => boolean = () => true,
@@ -915,10 +877,7 @@ export class GhosttyTerminalSurface {
     if (encoded.length > 0) this.options.onData(encoded);
   }
 
-  /**
-   * Middle-click pastes the terminal's own selection, which is the only
-   * primary-selection-like buffer a browser can read.
-   */
+  // The terminal selection is the only browser-readable PRIMARY-like buffer.
   private pasteTerminalSelection(): void {
     const selection = this.getSelection();
     if (selection.length === 0) return;
@@ -1037,16 +996,12 @@ export class GhosttyTerminalSurface {
   }
 
   private readonly onKeyDown = (event: KeyboardEvent) => {
-    // Presses handled outside the terminal must also swallow their release:
-    // beforeKey runs side effects (keybindings, navigation sends), so it cannot
-    // be consulted again on keyup, and Kitty report-event-types sessions would
-    // otherwise receive a release for a press the shell never saw.
+    // beforeKey has side effects; remember swallowed presses so Kitty cannot receive orphan keyups.
     if (isTerminalAltGraphText(event) || !this.options.beforeKey(event)) {
       this.suppressedKeyCodes.add(event.code);
       return;
     }
-    // IME candidates belong to the textarea, even if the key also resembles
-    // a local shortcut. Safari signals the initial composition with code 229.
+    // IME candidates take priority over shortcuts; Safari starts composition with code 229.
     if (isTerminalCompositionKey(event, this.composing)) {
       this.suppressedKeyCodes.add(event.code);
       return;
@@ -1093,25 +1048,18 @@ export class GhosttyTerminalSurface {
       }
     }
     if (isTerminalCopyShortcut(event) && this.hasSelection()) {
-      // WebKit omits the keyboard copy event without a DOM selection, so race the
-      // clipboard write against it the same way paste races its read. Ctrl+Shift+C
-      // and Ctrl+Insert have no native copy event (Chrome binds the former to
-      // inspect), so synthesize one with execCommand("copy").
+      // WebKit can omit copy without DOM selection. Ctrl+Shift+C and Ctrl+Insert need synthesized copy events.
       const selection = this.getSelection();
       this.primeCopy(selection);
       if (event.shiftKey || event.key.toLowerCase() === "insert") {
         event.preventDefault();
         document.execCommand("copy");
       } else {
-        // A plain Ctrl+C is also SIGINT on non-mac: clear the selection once it
-        // copies so the next Ctrl+C reaches the shell.
+        // Clear after plain non-mac Ctrl+C so the next press sends SIGINT.
         this.clearSelectionAfterCopy = !event.shiftKey && !isMacPlatform(navigator.platform);
         const clipboard = navigator.clipboard;
         if (typeof clipboard?.writeText === "function") {
-          // Defer the write past the default action: the native copy event
-          // (dispatched synchronously with the default action) claims the token
-          // first when it actually writes, and the write covers browsers whose
-          // shortcut produces no copy event.
+          // Defer fallback writes until native copy can claim the token; browsers may omit copy events.
           const token = ++this.copyShortcutToken;
           void Promise.resolve().then(() => {
             if (this.disposed || this.copyShortcutToken !== token) return;
@@ -1139,11 +1087,7 @@ export class GhosttyTerminalSurface {
       this.suppressedKeyCodes.add(event.code);
       const clipboard = navigator.clipboard;
       if (typeof clipboard?.readText === "function") {
-        // Race the async clipboard read against the browser's own paste event:
-        // the native event (dispatched synchronously with the default action)
-        // always claims the token first when it fires, and the read covers
-        // browsers whose paste shortcut produces no paste event. Not preventing
-        // the default keeps the native path alive when the read is denied.
+        // Native paste claims the token before async reads complete. Keep default paste available if reads fail.
         const token = ++this.pasteShortcutToken;
         void clipboard.readText().then(
           (text) => {
@@ -1170,8 +1114,7 @@ export class GhosttyTerminalSurface {
     if (isTerminalCompositionKey(event, this.composing)) {
       return;
     }
-    // Ghostty's encoder only emits release codes when the terminal enabled the
-    // Kitty report-event-types flag, so legacy sessions send nothing here.
+    // Ghostty emits release codes only for Kitty report-event-types sessions.
     const data = this.core.encodeKey(event, "release");
     if (data.length === 0) return;
     event.preventDefault();
@@ -1188,9 +1131,7 @@ export class GhosttyTerminalSurface {
   private readonly onBlur = () => {
     this.focused = false;
     this.refreshHoveredLink();
-    // Suppressions survive blur deliberately: a shortcut that moves focus (for
-    // example terminal-toggle) must still swallow its own keyup if focus comes
-    // back before release.
+    // Keep suppressions across blur so focus-changing shortcuts still swallow their keyup.
     this.cursorOn = true;
     this.requestRender();
   };
@@ -1202,8 +1143,7 @@ export class GhosttyTerminalSurface {
 
   private watchDevicePixelRatio(): void {
     this.dprMedia?.removeEventListener("change", this.onDevicePixelRatioChange);
-    // A resolution media query only fires once for the ratio it was created at,
-    // so re-arm it after every change (monitor moves, browser zoom).
+    // Resolution queries track only their initial ratio; re-arm after every change.
     this.dprMedia = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
     this.dprMedia.addEventListener("change", this.onDevicePixelRatioChange);
   }
@@ -1220,15 +1160,12 @@ export class GhosttyTerminalSurface {
 
   private readonly onCopyEvent = (event: ClipboardEvent) => {
     const selection = this.hasSelection() ? this.getSelection() : this.input.value;
-    // Menu-role Copy never hits the keydown primer. The native action reads
-    // this.input, so park the current selection first — including when
-    // clipboardData is missing and we must not preventDefault.
+    // Menu Copy skips keydown; prime the textarea even without clipboardData for the native action.
     this.primeCopy(selection);
     const result = applyTerminalCopyEvent(selection, event.clipboardData);
     if (result.preventDefault) event.preventDefault();
     if (result.claimWriteFallback) {
-      // The native event actually wrote the selection; drop the in-flight
-      // writeText so a late resolution cannot clobber a later user copy.
+      // Native copy wrote successfully; invalidate writeText so it cannot overwrite a later copy.
       this.copyShortcutToken += 1;
       if (this.clearSelectionAfterCopy) {
         this.clearSelectionAfterCopy = false;
@@ -1238,14 +1175,11 @@ export class GhosttyTerminalSurface {
   };
 
   private readonly onPaste = (event: ClipboardEvent) => {
-    // Always suppress the browser's default insertion: content the textarea
-    // would receive (for example an html-only clipboard converted to text)
-    // leaks through onInput without bracketed-paste encoding.
+    // Default textarea insertion would bypass bracketed-paste encoding through onInput.
     event.preventDefault();
     const data = event.clipboardData?.getData("text/plain") ?? "";
     if (data.length === 0) return;
-    // The native paste won the race with actual text; a pending clipboard read
-    // must not double. An empty native paste leaves the read as the only path.
+    // Nonempty native paste wins; empty events leave the async read available.
     this.pasteShortcutToken += 1;
     this.options.onData(this.core.encodePaste(data));
   };
@@ -1320,8 +1254,7 @@ export class GhosttyTerminalSurface {
       return;
     }
     if (event.button === 1 && isMiddleClickPastePlatform()) {
-      // Left uncancelled on purpose: cancelling pointerdown drops the
-      // compatibility mousedown, which is what activates a split pane.
+      // Keep pointerdown uncancelled so compatibility mousedown activates the split pane.
       this.pasteTerminalSelection();
       return;
     }
@@ -1430,8 +1363,7 @@ export class GhosttyTerminalSurface {
         origin.clickCount,
       );
     }
-    // Hover motion is only reportable in any-event tracking (DEC 1003); normal and
-    // button-event tracking never report motion without a captured pressed button.
+    // Only DEC 1003 reports hover motion without a captured pressed button.
     const anyEventTracking = this.synchronizeMouseTrackingState();
     if (
       this.mouseReportingPointerId === event.pointerId ||
@@ -1638,8 +1570,7 @@ export class GhosttyTerminalSurface {
       return;
     }
     if (this.core.isAlternateScreen()) {
-      // The alternate screen has no scrollback: translate wheel motion into
-      // arrow keys so full-screen apps like vim and less scroll, matching xterm.
+      // Alternate screens have no scrollback; send arrow keys like xterm.
       this.options.onData(terminalWheelArrowData(rows, this.core.isApplicationCursorKeys()));
       return;
     }
@@ -1653,11 +1584,7 @@ export class GhosttyTerminalSurface {
     this.focus();
   };
 
-  /**
-   * Chromium pastes PRIMARY into the focused editable on a middle mouseup, and
-   * the hidden textarea is focused, so leaving the default alive would deliver
-   * a second paste through onPaste on top of the one onPointerDown sent.
-   */
+  // Chromium middle mouseup pastes PRIMARY into the focused textarea; prevent a second paste.
   private readonly onMouseUp = (event: MouseEvent) => {
     if (event.button === 1 && isMiddleClickPastePlatform()) event.preventDefault();
   };
@@ -1878,9 +1805,7 @@ export class GhosttyTerminalSurface {
     }
     this.snapshot = this.core.snapshot();
     if (!this.blinkEnabled()) this.cursorOn = true;
-    // The origin only moves together with a forced full repaint: partial
-    // dirty-row redraws must never composite rows at a shifted origin over rows
-    // painted at the previous one.
+    // Move the origin only on full repaint; dirty-row updates cannot mix origins.
     const scrollState = this.readScrollbarState();
     const anchorBottom = scrollState !== null && scrollState.total > scrollState.len;
     const nextOriginY = terminalContentOriginY(
@@ -2062,8 +1987,7 @@ export class GhosttyTerminalSurface {
   }
 
   private synchronizeMouseTrackingState(): boolean {
-    // Output writes can toggle DEC 1003 without moving the pointer. Keep the
-    // previous mode so the next same-cell motion starts a fresh tracking session.
+    // Output can toggle DEC 1003; track the prior mode so same-cell motion can start a new session.
     const tracking = this.core.isMouseAnyEventTracking();
     const state = resolveTerminalMouseTrackingState(
       this.mouseAnyEventTracking,

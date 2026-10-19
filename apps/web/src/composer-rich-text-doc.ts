@@ -40,19 +40,14 @@ const TIPTAP_TO_MARK: Record<string, RichTextMark> = {
   code: "code",
 };
 
-/**
- * Tiptap's code mark excludes every other mark, which rejects the `bold+code`
- * spans markdown like `**\`x\`**` parses into and drops the whole insert.
- */
+// Tiptap rejects mixed code marks and drops the insert unless code allows other marks.
 export const ComposerCodeExtension = Code.extend({
   excludes: "code",
-  // ArrowRight leaves code through the caret stops at styled edges, so the
-  // stock exit (inserting a space at the end of a line) is not needed.
+  // Styled-edge caret stops handle ArrowRight; disable the stock exit that inserts a space.
   exitable: false,
 });
 
-/** Block shortcuts can nest blocks in quotes that the serializer cannot write,
- * silently dropping their text from the stored draft. */
+// Block chords can nest blocks in quotes that the serializer silently drops.
 function withoutBlockChords<Shortcuts extends Record<string, unknown>>(
   shortcuts: Shortcuts | undefined,
   drop: readonly string[],
@@ -62,7 +57,7 @@ function withoutBlockChords<Shortcuts extends Record<string, unknown>>(
   ) as Shortcuts;
 }
 
-/** Markdown can only serialize one paragraph followed by nested lists per item. */
+// Markdown supports one paragraph followed by nested lists per item.
 const LIST_ITEM_CONTENT = "paragraph list*";
 
 /** Task lists come from `- [ ]` alone; Mod-Shift-9 would nest one in a quote. */
@@ -107,10 +102,7 @@ export const ComposerCodeBlockExtension = CodeBlock.extend({
   },
 });
 
-/**
- * Joining the code onto the line above instead would drop the fence from the
- * draft and leave the rest of the code as stray lines.
- */
+// Joining with the previous line would lose the fence and leave stray code lines.
 function unwrapCodeBlockAtStart(editor: Editor): boolean {
   const { $from, empty } = editor.state.selection;
   if (!empty || $from.parent.type.name !== "codeBlock" || $from.parentOffset !== 0) return false;
@@ -137,8 +129,7 @@ function codeBlockSource(
   const language = typeof attrs.language === "string" ? attrs.language : "";
   let close = typeof attrs.close === "string" ? attrs.close : "";
   const content = node.textContent;
-  // Code holding a line that would close the fence, such as a pasted fence, is
-  // written inside a longer one, so the agent reads all of it as code.
+  // Use a longer fence when code contains a closing fence.
   const longest = Math.max(
     0,
     ...content
@@ -150,8 +141,7 @@ function codeBlockSource(
     fence = fence[0]!.repeat(longest + 1);
     if (close) close = `\n${fence}`;
   }
-  // An unclosed fence runs to the end of the draft, so with a block after it
-  // the fence is written closed, or the next rebuild would read that block as code.
+  // Close before a following block so rebuilding does not absorb it as code.
   if (!close && followed) close = `\n${fence}`;
   return { open: `${fence}${language}${content ? "\n" : ""}`, content, close };
 }
@@ -274,8 +264,7 @@ function parseTaskPrefix(head: string): { prefix: TaskLinePrefix; markerLength: 
 }
 
 export function parseOpeningFence(line: string): { fence: string; language: string } | null {
-  // `[^\n]` rather than `.`, here and in the block rules: a CRLF draft's lines
-  // end in `\r`, which `.` refuses, and the `\r` stays in the stored text.
+  // Unlike `.`, `[^\n]` accepts the stored \r in CRLF lines.
   const match = /^(`{3,}|~{3,})([^\n]*)$/.exec(line);
   if (!match) return null;
   const fence = match[1]!;
@@ -423,11 +412,7 @@ function textJsonForSpan(text: string, marks: RichTextMark[]): Record<string, un
   return json;
 }
 
-/**
- * `literalLength` keeps that many leading characters as plain text, for a paste
- * that continues a path query: markers inside a path such as `src/__init__.py`
- * must reach file search unstyled.
- */
+/** Keeps literalLength leading characters unstyled so path queries reach file search unchanged. */
 export function buildTiptapContent(
   value: string,
   skillLabelFor: (name: string) => SkillMeta,
@@ -723,21 +708,14 @@ function pushBreakRun(acc: RichAccumulator, position?: number): void {
   acc.md += 1;
 }
 
-/**
- * A paragraph on the line right after a quote reads as part of it in Markdown
- * (a lazy continuation), so the draft writes a blank line between them. An empty
- * paragraph is that blank line already.
- */
+// Separate prose from quotes to avoid lazy continuation; an empty paragraph already separates them.
 function needsBlankLineAfterQuote(previous: ProseMirrorNode, block: ProseMirrorNode): boolean {
   return (
     previous.type.name === "blockquote" && block.type.name === "paragraph" && block.content.size > 0
   );
 }
 
-/**
- * That blank line, as a run that owns no document characters, like a marker:
- * offsets inside it clamp to the start of the paragraph.
- */
+// Blank-line runs own no document characters; offsets clamp to the paragraph start.
 function pushBlankLineRun(acc: RichAccumulator, pmPos: number): void {
   acc.runs.push({
     kind: "prefix",
@@ -897,11 +875,7 @@ function appendInlineRuns(
 const LIST_NODE_NAMES = new Set(["taskList", "bulletList", "orderedList"]);
 const LIST_ITEM_NODE_NAMES = new Set(["taskItem", "listItem"]);
 
-/**
- * Tiptap moves items between lists without touching these attributes, so without
- * this the stored draft keeps an outdented item at its old depth, and the next
- * rebuild nests it again.
- */
+// Tiptap leaves indent and marker attributes unchanged when moving items; rebuilding would undo the move.
 function alignListItemWithSiblings(tr: Transaction, itemType: string): void {
   const $pos = tr.selection.$from;
   if ($pos.depth < 3 || $pos.node(-1).type.name !== itemType) return;
@@ -1003,10 +977,7 @@ function listItemTypeAt($pos: ResolvedPos): "listItem" | "taskItem" | null {
   return name === "listItem" || name === "taskItem" ? name : null;
 }
 
-/**
- * Tiptap's list keymap, which StarterKit loads, does both by moving nodes
- * without touching their indent or marker, so the composer turns it off.
- */
+/** Updates indent and marker attributes that Tiptap list keymaps leave unchanged. */
 export function backspaceAcrossList(editor: Editor): boolean {
   const { state } = editor;
   const { $from, empty } = state.selection;
@@ -1018,8 +989,7 @@ export function backspaceAcrossList(editor: Editor): boolean {
       if (moved) alignListItemWithSiblings(tr, itemType);
       return moved;
     };
-    // Not `can()` first: a dry run of the lift skips the schema check, so it
-    // says yes to a task under a bullet, which has no list to lift into.
+    // can() skips the schema check and can accept tasks with no parent list to lift into.
     return editor.chain().command(lift).run() || joinBackward(state, editor.view.dispatch);
   }
   const before = $from.depth === 1 ? $from.node(0).maybeChild($from.index(0) - 1) : null;
@@ -1029,10 +999,7 @@ export function backspaceAcrossList(editor: Editor): boolean {
   return false;
 }
 
-/**
- * Tiptap's default would instead nest the next item, or a whole list, under
- * this one at its old indent.
- */
+/** Avoids Tiptap nesting following items under the current item at its old indent. */
 export function deleteAcrossList(editor: Editor): boolean {
   const { state } = editor;
   const { $from, empty } = state.selection;
@@ -1105,8 +1072,7 @@ function walkList(list: ProseMirrorNode, listStart: number, acc: RichAccumulator
   });
 }
 
-/** Code is literal in the editor, but the draft counts each chip's source as
- * one cursor position. Split runs at chip sources to map both spaces. */
+// Code is literal in the editor, but each chip source counts as one draft cursor position.
 function appendCodeBlockRun(
   block: ProseMirrorNode,
   pmPos: number,
@@ -1176,10 +1142,7 @@ function walkBlockquote(quote: ProseMirrorNode, quoteStart: number, acc: RichAcc
   });
 }
 
-/**
- * A slice holds only the content of the blocks the ends share, so items or
- * quote lines arrive without the list or quote that writes their markers.
- */
+/** Restores list and quote markers omitted by slices that contain only shared-block content. */
 export function serializeSelection(doc: ProseMirrorNode, from: number, to: number): string {
   const slice = doc.slice(from, to);
   const $from = doc.resolve(from);
@@ -1278,12 +1241,7 @@ function lastRunEnd(map: RichDocMap, space: "collapsed" | "md"): number {
     : last.mdStart + last.mdLen;
 }
 
-/**
- * The end of a run belongs to the next run, which is how the end of `**bold**`
- * lands after its markers. A fence is the exception: its close is a line of its
- * own, so the end of the code stays inside the block rather than jumping past
- * the closing fence.
- */
+// Run ends belong to the next run, except code ends must stay inside their closing fence.
 function runOwnsOffset(run: RichRun, flatOffset: number): boolean {
   const end = run.flatStart + run.docLen;
   return flatOffset < end || (flatOffset === end && run.nodeName === "codeBlock");
@@ -1364,8 +1322,7 @@ export function pmToFlat(map: RichDocMap, pmPos: number): number {
   return Math.max(0, Math.min(best, map.docLength));
 }
 
-// A styled boundary is one document position but needs two caret stops:
-// one typing with the preceding marks and one with the following marks.
+// Styled boundaries need two caret stops at one position, one for each side's marks.
 
 function styledEdge(state: EditorState) {
   const { selection } = state;

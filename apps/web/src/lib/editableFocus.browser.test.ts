@@ -8,8 +8,7 @@ afterEach(() => {
 
 describe("isEditableFocused", () => {
   it("sees a text field focused inside an open shadow root", () => {
-    // A key event from a shadow input is retargeted to its host, so the host is
-    // what page-level shortcut handlers receive as the event target.
+    // Page shortcuts receive the shadow host as the key event target.
     const host = document.createElement("div");
     const input = document.createElement("input");
     host.attachShadow({ mode: "open" }).append(input);

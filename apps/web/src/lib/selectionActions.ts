@@ -25,10 +25,7 @@ export function resolveSelectionActionPosition(options: {
   };
 }
 
-/**
- * Interactive popovers pass getActionElement to keep editing their fields from replacing the
- * captured source selection.
- */
+/** Pass getActionElement so editing popover fields preserves the captured source selection. */
 export function observeSelectionActions({
   element,
   getActionElement,

@@ -227,7 +227,6 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
   threadContexts: Schema.optionalKey(Schema.Array(ThreadContextRecord)),
-  // Schema.optionalKey only accepts known property keys, not a Record's index signature.
   modelSelectionByProvider: Schema.optionalKey(Schema.Record(ProviderInstanceId, ModelSelection)),
   activeProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
   modelSelectionExplicit: Schema.optionalKey(Schema.Boolean),
@@ -488,10 +487,7 @@ interface ComposerDraftStoreState {
     modelSelection: ModelSelection | null | undefined,
     opts?: {
       explicit?: boolean;
-      /**
-       * Replace the stored entry outright instead of preserving its existing
-       * options when the incoming selection has none.
-       */
+      /** Replace existing options even when the incoming selection has none. */
       replaceOptions?: boolean;
     },
   ) => void;
@@ -600,16 +596,9 @@ interface ComposerDraftStoreState {
     attachments: PersistedComposerImageAttachment[],
   ) => Promise<void>;
   clearComposerContent: (threadRef: ComposerThreadTarget) => void;
-  /**
-   * Clears the prompt text and attachments, preserving terminal / element contexts, preview annotations, and
-   * review comments. Session-bound context stays in the source draft.
-   */
+  /** Clears text and attachments, preserving terminal/element contexts, preview annotations, and review comments. */
   clearComposerPromptAndImages: (threadRef: ComposerThreadTarget) => void;
-  /**
-   * Attachments over the destination limit and uploaded files that belong to
-   * another environment stay in the source draft. Terminal and element
-   * context, preview annotations, and review comments also stay in the source.
-   */
+  /** Keeps attachments over destination limits, other environments' uploads, terminal/element contexts, annotations, and review comments in source. */
   moveComposerPromptAndImages: (from: ComposerThreadTarget, to: ComposerThreadTarget) => void;
 }
 
@@ -682,7 +671,6 @@ function compactStickyOptionsByModel(
   return result as NonNullable<PersistedComposerDraftStoreState["stickyOptionsByModelByProvider"]>;
 }
 
-/** Seed per-model options from the legacy sticky selection to preserve saved traits. */
 function seedStickyOptionsByModel(
   stickySelections: Partial<Record<ProviderInstanceId, ModelSelection>>,
 ): NonNullable<PersistedComposerDraftStoreState["stickyOptionsByModelByProvider"]> {
@@ -766,8 +754,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
 }
 
 function composerImageDedupKey(image: ComposerImageAttachment): string {
-  // Keep this independent from File.lastModified so dedupe is stable for hydrated
-  // images reconstructed from localStorage (which get a fresh lastModified value).
+  // Hydrated images get fresh lastModified values, so exclude it from dedupe.
   return `${image.mimeType}\u0000${image.sizeBytes}\u0000${image.name}`;
 }
 
@@ -1391,7 +1378,6 @@ function createDraftThreadState(
     loadBalancedEnvironmentId?: EnvironmentId | null;
   },
 ): DraftThreadState {
-  // A project or environment change invalidates machine-specific branch and worktree context.
   const projectChanged =
     existingThread !== undefined &&
     (existingThread.environmentId !== projectRef.environmentId ||
@@ -3604,8 +3590,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           const current = get().draftsByThreadKey[threadKey];
           const alreadyPresent =
             current?.previewAnnotations.some((entry) => entry.id === annotation.id) ?? false;
-          // The handler updates the same draft through `setPrompt`. Calling it from
-          // inside the updater lets the outer update overwrite the inserted reference.
+          // The handler calls setPrompt; running it inside the updater would overwrite the inserted reference.
           const placedAtCaret =
             !alreadyPresent &&
             options?.appendReference !== false &&
@@ -3697,8 +3682,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           const shouldPlaceReference =
             options?.appendReference !== false &&
             (!alreadyPresent || options?.allowDuplicateReference === true);
-          // See addPreviewAnnotation: editor insertion writes the prompt through this store and
-          // must complete before the record update reads the draft it is extending.
+          // Editor insertion must finish before this update reads the draft it extends.
           const placedAtCaret =
             shouldPlaceReference &&
             options?.insertAtCaret !== false &&
@@ -4008,8 +3992,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const movedFiles = transferableFiles
               .slice(0, remainingAttachmentSlots - movedImages.length)
               .map((file) => {
-                // Cross-environment moves must re-upload local bytes. A source upload id would
-                // falsely mark the file uploaded after reload with no bytes the destination can reach.
+                // Re-upload local bytes across environments; the destination cannot reach source upload ids.
                 if (
                   file.file === null ||
                   file.uploadEnvironmentId === undefined ||

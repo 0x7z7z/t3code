@@ -121,8 +121,7 @@ export function useOpenChangeRequestLink(
   const openInApp = useClientSettings((settings) => settings.pullRequestLinksOpenInApp);
   return (event, targetUrl, targetThreadRef, targetEnvironmentId) => {
     if (!openInApp || shouldOpenPullRequestExternally(event)) return false;
-    // Read at click time: every provider status push replaces the config map, and
-    // subscribing would hand every rendered link a new handler.
+    // Read at click time; status pushes replace the config map and would recreate every link handler.
     const serverConfigs = appAtomRegistry.get(environmentServerConfigsAtom);
     const resolvedThreadRef = targetThreadRef ?? threadRef;
     const resolvedPanelRef = panelRef ?? resolvedThreadRef;
@@ -131,8 +130,7 @@ export function useOpenChangeRequestLink(
     const reads = (environmentId: string) =>
       serverConfigs.get(environmentId as EnvironmentId)?.environment.capabilities.pullRequests ===
       true;
-    // The panel reads from its thread's environment; matching remote URLs do not
-    // make another environment's project id usable there.
+    // Matching remotes do not make project ids usable outside the panel thread's environment.
     const projects = resolvedThreadRef
       ? allProjects.filter((project) => project.environmentId === resolvedThreadRef.environmentId)
       : targetEnvironmentId
@@ -222,8 +220,7 @@ export function useOpenPrLink(threadRef?: ScopedThreadRef) {
     const openInBrowser = shouldOpenPullRequestExternally(event);
     const isAnchor =
       event.currentTarget instanceof HTMLAnchorElement && event.currentTarget.href.length > 0;
-    // Native links already handle modified clicks through the browser or Electron.
-    // Buttons lack hrefs and still need openExternal.
+    // Native links handle modified clicks; buttons still need openExternal.
     if (openInBrowser && isAnchor) return false;
 
     event.preventDefault();

@@ -1168,8 +1168,7 @@ describe("applyTerminalCopyEvent", () => {
   });
 
   it("leaves the writeText fallback alive when clipboardData is missing", () => {
-    // Electron's edit-menu Copy often delivers a copy event with no
-    // clipboardData.
+    // Electron menu Copy often omits clipboardData.
     expect(applyTerminalCopyEvent("ls -la", null)).toEqual({
       preventDefault: false,
       claimWriteFallback: false,
@@ -1389,8 +1388,7 @@ describe("terminal font resolution", () => {
   });
 
   it("ignores proportional families the cell grid cannot lay out", () => {
-    // Node has no canvas, so the probe answers "monospace" and the
-    // family is kept; the guard is exercised in the browser instead.
+    // Node has no canvas and accepts this face as monospace; the browser exercises the guard.
     const stack = terminalFontFamily("Helvetica Neue");
     expect(stack.endsWith("monospace")).toBe(true);
   });

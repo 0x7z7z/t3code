@@ -590,8 +590,7 @@ export function useThreadActions() {
             : message,
         }),
       );
-      // The thread was deleted. Cleanup has its own toast; returning its
-      // failure would make callers incorrectly report a thread deletion error.
+      // Cleanup has its own toast; reporting its failure would falsely imply deletion failed.
     }
     return deleteResult;
   };
@@ -608,8 +607,7 @@ export function useThreadActions() {
       );
     }
     ThreadUndo.invalidate("settle", scopedThreadKey(target));
-    // reason "user" pins the thread active: auto-settle (PR merged /
-    // inactivity) stays suppressed until real activity clears the pin.
+    // reason "user" pins active until real activity, suppressing auto-settle.
     return unsettleThreadMutation({
       environmentId: target.environmentId,
       input: { threadId: target.threadId, reason: "user" },
@@ -704,13 +702,11 @@ export function useThreadActions() {
     const wokeAt = resolved
       ? threadWokeAt(resolved.thread, { now: new Date().toISOString() })
       : null;
-    // Settling also drops the pin and the snooze server-side, so Undo
-    // has to put those back as well.
+    // Settling drops pin and snooze server-side; Undo must restore both.
     const pinOrderKey = resolved?.thread.pinnedAt != null ? resolved.thread.pinOrderKey : null;
     const wasPinned = resolved?.thread.pinnedAt != null;
     const snoozedUntil = resolved?.thread.snoozedUntil ?? null;
-    // An older unpin/snooze Undo would re-pin or re-snooze, and the server
-    // treats either as a promotion that un-settles; settling supersedes them.
+    // Older pin/snooze Undos would un-settle the thread; settling supersedes them.
     ThreadUndo.invalidate("pin", scopedThreadKey(target));
     ThreadUndo.invalidate("snooze", scopedThreadKey(target));
     const action = ThreadUndo.begin("settle", scopedThreadKey(target));

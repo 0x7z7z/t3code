@@ -10,8 +10,7 @@ import { GhosttyRuntime, loadGhosttyRuntime } from "./runtime";
 const GHOSTTY_SUCCESS = 0;
 const GHOSTTY_OUT_OF_SPACE = -3;
 const MAX_SCROLLBACK_ROWS = 10_000;
-// wasm32 C ABI layout for GhosttyTerminalSelectionFormatOptions at the
-// libghostty-vt revision pinned alongside this module.
+// wasm32 GhosttyTerminalSelectionFormatOptions layout at the pinned libghostty-vt revision.
 const SELECTION_FORMAT_OPTIONS_SIZE = 16;
 const PALETTE_BYTES = 256 * 3;
 
@@ -48,8 +47,7 @@ const CELL_DATA = {
   selected: 7,
 } as const;
 
-// wasm32 arrays for the official row_cells_get_multi API. Optional colors
-// come last because an unset color stops the query at that field.
+// Optional row_cells_get_multi colors must come last; an unset color stops the query.
 const CELL_QUERY = {
   keys: 0,
   values: 20,
@@ -178,8 +176,7 @@ function sameColor(left: GhosttyColor, right: GhosttyColor): boolean {
   return left.r === right.r && left.g === right.g && left.b === right.b;
 }
 
-/** One cell can hold an enormous combining-mark sequence. Bound spread-call
- * arguments to avoid engine limits during String.fromCodePoint. */
+/** Bounds String.fromCodePoint arguments for cells with enormous combining-mark sequences. */
 export function ghosttyCellText(codepointView: DataView, graphemeLength: number): string {
   if (graphemeLength === 1) return String.fromCodePoint(codepointView.getUint32(0, true));
   const CHUNK_SIZE = 4_096;
@@ -349,8 +346,7 @@ export class GhosttyTerminalCore {
   resetAndWrite(data: string): void {
     this.ensureActive();
     this.runtime.call("ghostty_terminal_reset", this.terminal);
-    // RIS returns the cursor to Ghostty's built-in steady default, so the
-    // embedder default has to be applied again before the replay runs.
+    // RIS restores the built-in steady cursor; reapply the embedder default before replay.
     this.applyDefaultCursorBlink();
     this.rows = [];
     if (data.length === 0) return;
@@ -383,11 +379,7 @@ export class GhosttyTerminalCore {
     );
   }
 
-  /**
-   * Option 23 is the embedder's default blink, which is the state a session
-   * starts in and returns to on DECSCUSR reset (CSI 0 q), so programs that ask
-   * for a specific cursor through DECSCUSR or DEC mode 12 still win.
-   */
+  // Option 23 sets blink on startup and DECSCUSR reset; explicit DECSCUSR or DEC mode 12 still wins.
   private applyDefaultCursorBlink(): void {
     const blink = this.runtime.alloc(1);
     this.runtime.bytes(blink, 1)[0] = 1;
@@ -1036,8 +1028,7 @@ export class GhosttyTerminalCore {
             this.graphemes,
           ) === GHOSTTY_SUCCESS
         ) {
-          // Read through a DataView: the byte-array allocator guarantees no
-          // 4-byte alignment, which a Uint32Array view would require.
+          // Byte allocations need not be 4-byte aligned; use DataView instead of Uint32Array.
           const codepointView = this.runtime.view(this.graphemes, bufferSize);
           text = ghosttyCellText(codepointView, graphemeLength);
         }

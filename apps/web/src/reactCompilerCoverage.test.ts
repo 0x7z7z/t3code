@@ -18,8 +18,6 @@ const webSourceFiles = NodeFS.readdirSync(NodePath.join(repoRoot, "apps/web/src"
   .filter((file) => !file.endsWith(".gen.ts"))
   .map((file) => `apps/web/src/${file}`);
 
-// Lint reports most compiler bailouts, but not every one (try/finally, throw
-// inside try). A skipped file still builds, just unmemoized, so check the output.
 describe("React Compiler coverage", () => {
   it.each(webSourceFiles)("compiles %s", async (file) => {
     const absolute = NodePath.join(repoRoot, file);

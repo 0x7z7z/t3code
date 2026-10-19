@@ -49,8 +49,7 @@ function createBrowserLocalApi(): LocalApi {
         }
         return showContextMenuFallback(items, position);
       },
-      // Native menus dismiss on outside interaction; the DOM fallback needs an
-      // explicit dismiss when its underlying state disappears.
+      // Unlike native menus, the DOM fallback needs dismissal when underlying state disappears.
       close: async () => {
         if (!window.desktopBridge) {
           dismissContextMenu();

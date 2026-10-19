@@ -246,7 +246,7 @@ const SORT_OPTIONS = [
 
 const SEARCH_DEBOUNCE_MS = 250;
 const MATCHED_ELSEWHERE_SCORE = 10;
-/** Providers probe with one extra row. GitHub pages at 100, so 99 costs one request instead of two. */
+// Providers probe one extra row; 99 fits in one GitHub request with its 100-row limit.
 const PAGE_SIZE = 99;
 const MAX_PAGE_SIZE = 500;
 const EMPTY_VIEWERS: PullRequestListResult["viewers"] = {};
@@ -311,8 +311,7 @@ export const Route = createFileRoute("/_chat/pull-requests")({
     ...(typeof raw.selectedEnvironmentId === "string" && raw.selectedEnvironmentId
       ? { selectedEnvironmentId: raw.selectedEnvironmentId as EnvironmentId }
       : {}),
-    // Always an own key: the router lays this result over the parent route's unvalidated
-    // search, so leaving out a `q` the URL parser made a number would let the number through.
+    // Always include q to override numeric values in the parent route's unvalidated search.
     q: typeof raw.q === "string" && raw.q ? raw.q.slice(0, 200) : undefined,
     ...(raw.draft === "only" || raw.draft === "hide" ? { draft: raw.draft } : {}),
     ...(raw.review === "approved" ||
@@ -502,8 +501,7 @@ function PullRequestsRouteView() {
   });
   const listQuery = usePullRequestList(listTargets);
 
-  /** Keep a separate baseline query: an answer cannot identify its question,
-   * so mid-switch search data could otherwise be stored under the workspace. */
+  // Keep baseline queries separate; mid-switch search answers cannot identify their question.
   const baselineTargets = environmentQueries.map(({ environmentId, projectIds }) => ({
     environmentId,
     input: {
@@ -539,9 +537,7 @@ function PullRequestsRouteView() {
   const facetQuery = usePullRequestList(facetTargets);
   const partitionsWanted = search.involvement === "all" && typedQuery.length === 0;
   const partitionTargets = (() => {
-    // The main list goes first. Besides putting the visible rows on screen sooner, it proves
-    // which repositories the host search indexes, so an empty partition does not trigger the
-    // expensive per-repository fallback.
+    // Load the main list first to identify indexed repositories and avoid unnecessary per-repo fallback.
     if (
       !partitionsWanted ||
       baselineQuery.data === null ||
@@ -715,8 +711,7 @@ function PullRequestsRouteView() {
     });
     return entries.length === 0 ? null : { ...loaded.data, entries };
   })();
-  // Baseline queries stay at one page; using their answer for grown pages
-  // would discard extra rows from hosts without cursors.
+  // Baselines have one page; reusing them for grown pages drops rows from hosts without cursors.
   const answered =
     (sentQuery.length === 0 && sentCursors === null && pageSize === PAGE_SIZE
       ? baselineQuery.data
@@ -768,8 +763,7 @@ function PullRequestsRouteView() {
     );
   }
 
-  // Use this query's answer, not held rows: a cursor from a prior search
-  // would skip the new search's newest matches.
+  // Use the current answer's cursors; stale cursors skip new-search matches.
   const nextCursors = answered?.nextCursors ?? {};
   const regrown = (answered?.truncatedEnvironments ?? []).filter(
     (environmentId) => nextCursors[environmentId] === undefined,
@@ -1012,8 +1006,7 @@ function PullRequestsRouteView() {
     setMergedStats(stats);
     setStatsByRow((previous) => mergePullRequestDiffStats(previous, stats));
   }
-  // Stable so a refresh that resumes after awaiting the host compares against the scope on screen
-  // by then, not the one it started from.
+  // Resumed refreshes must compare against the current scope after awaiting the host.
   const refreshListAndStats = useStableCallback(
     (
       requestedStatsScope: PullRequestStatsScope = statsScope,
@@ -1510,9 +1503,7 @@ function PullRequestsRouteView() {
       />
     ),
     titlebarControls:
-      // While the panel is closed the strip lives inside the header: a no-drag
-      // descendant beats the header's desktop drag-region, where a floating
-      // sibling loses (app-region hit-testing ignores z-index).
+      // A no-drag descendant beats the header drag-region; floating siblings lose because hit-testing ignores z-index.
       pullRequestsSupported ? (
         rightPanelPresent ? (
           <span
@@ -1711,8 +1702,7 @@ function PullRequestsRouteView() {
               }
               refreshToken={detailRefreshToken}
               onActed={(action, phase = "done") => {
-                // From every row held, not the ones on screen: a pull request closed from an open
-                // list has left the screen, and reopening it has to find it anyway.
+                // Search all held rows so a closed PR can be found when reopening.
                 const acted = heldPullRequestsBySurface.get(
                   pullRequestListEntryId(renderedPullRequestSurface),
                 );
@@ -1798,9 +1788,7 @@ function usePullRequestScope(search: PullRequestsSearch) {
 
   const linkedProjectId = resolveProjectScope(search.selectedProjectId, projects, projectsKnown);
   const selectedProjectId = linkedProjectId ?? projectIdForRepository ?? scopedProjectId;
-  // A named server still connecting is kept named rather than falling back: falling back while it
-  // is merely not ready yet would resolve the project against whatever other server has answered,
-  // which can be the wrong one where two servers share a project id.
+  // Keep named connecting servers selected; fallback could resolve a repeated project id on the wrong server.
   const selectedEnvironmentId = resolveSelectedEnvironmentId(
     search.selectedEnvironmentId,
     knownEnvironmentIds,
@@ -1947,9 +1935,7 @@ function pullRequestGroups({
 
   const entries = (() => {
     const involvementEntries = filterPullRequestsByInvolvement(known, viewers, involvement);
-    // Host searches also match bodies, reviews, and commits; local narrowing
-    // would discard valid matches. Use local filters only while waiting or
-    // for hosts such as Azure DevOps that cannot search text.
+    // Host searches include bodies, reviews, and commits; locally narrow only while waiting or without host search.
     const narrowedEntries = hasLocalFilters
       ? involvementEntries.filter((entry) =>
           matchesPullRequestFilters(entry, localFilters, pullRequestEntryViewer(entry, viewers)),
@@ -2216,10 +2202,7 @@ function ExpandableSearch({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   focusToken: number;
-  /**
-   * An unmount fires no blur, which is the point: whoever unmounted this can still see the reader
-   * was mid-typing and move the focus somewhere that continues the sentence.
-   */
+  /** Unmount emits no blur, preserving typing state so the owner can transfer focus. */
   onFocusWithin?: (focused: boolean) => void;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -2315,8 +2298,7 @@ function PullRequestsColumn({
     observer.observe(marker);
     return () => observer.disconnect();
   }, [scrollRef]);
-  // Typing into the topbar search narrows the list, and a short enough list un-scrolls the
-  // page — which dissolves the condensed topbar and unmounts the very input being typed in.
+  // Filtering can unscroll the page and unmount the condensed topbar input mid-typing.
   const topbarSearchFocusedRef = useRef(false);
   const inFlowSearchRef = useRef<HTMLDivElement | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);

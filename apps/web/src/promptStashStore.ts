@@ -13,8 +13,7 @@ const LEGACY_PROMPT_STASH_STORAGE_KEY = "t3code:prompt-stash:v1";
 const PROMPT_STASH_STORAGE_VERSION = 2;
 
 export const MAX_STASH_ENTRIES = 20;
-/** localStorage shares a ~5MB quota with composer drafts. Drop oversized
- * attachments and record them in droppedImageNames. */
+// Share localStorage's ~5MB quota with drafts; record oversized attachments in droppedImageNames.
 export const MAX_STASH_ENTRY_ATTACHMENT_CHARS = 2_700_000;
 
 const StashEntrySchema = Schema.Struct({
@@ -37,8 +36,7 @@ type PersistedPromptStashState = typeof PersistedPromptStashState.Type;
 
 const decodePersistedPromptStashState = Schema.decodeUnknownSync(PersistedPromptStashState);
 
-/** Pending encoders do not survive reload. Settle orphaned counts so restored
- * entries do not stay "saving" and refuse restoration forever. */
+// Encoders cannot survive reload; clear orphaned counts so entries remain restorable.
 function clearOrphanedPendingImages(
   entries: ReadonlyArray<PromptStashEntry>,
 ): ReadonlyArray<PromptStashEntry> {
@@ -79,7 +77,7 @@ export function partitionStashAttachments(
   return { kept, droppedNames };
 }
 
-/** Accessing localStorage itself can throw SecurityError, before any get/set call. */
+// Accessing localStorage itself can throw SecurityError before get/set.
 function resolveBaseStorage(): { storage: StateStorage; durable: boolean } {
   try {
     if (typeof localStorage !== "undefined") {
@@ -91,8 +89,7 @@ function resolveBaseStorage(): { storage: StateStorage; durable: boolean } {
 
 const { storage: baseStashStorage, durable: storageIsDurable } = resolveBaseStorage();
 
-/** The caller clears the composer only after this write lands; a debounce
- * cannot report durability. Stashing is too infrequent to need coalescing. */
+// Clear the composer only after a durable write; debounce cannot confirm durability.
 function persistEntries(entries: ReadonlyArray<PromptStashEntry>): {
   written: boolean;
   durable: boolean;
@@ -131,16 +128,10 @@ interface PromptStashStoreState {
     evicted: PromptStashEntry | null;
     /** False when the write failed outright (e.g. quota); nothing was kept. */
     written: boolean;
-    /**
-     * False when the write will not survive a reload: either it failed, or it
-     * landed only in the in-memory fallback because localStorage is blocked.
-     */
+    /** False for failed writes or in-memory fallback; the entry will not survive reload. */
     durable: boolean;
   };
-  /**
-   * `durable` is false when the removal could not be persisted, meaning a
-   * reload would resurrect the entry.
-   */
+  /** durable=false means removal was not persisted and reload would restore the entry. */
   takeEntry: (entryId: string) => { entry: PromptStashEntry | null; durable: boolean };
   /** attached=false means the entry disappeared while encoding, so images could not be saved. */
   finalizeEntryImages: (

@@ -7,8 +7,7 @@ import {
 
 import { resolveDiffThemeName } from "./diffRendering";
 
-/** The JS regex engine can hang on backtracking. Every creation site must use
- * WASM because the shared highlighter singleton is first-caller-wins. */
+/** Use WASM at every creation site: the first-caller-wins singleton can hang with JS regex backtracking. */
 export const PREFERRED_HIGHLIGHTER: HighlighterTypes = "shiki-wasm";
 
 const highlighterPromiseCache = new Map<string, Promise<DiffsHighlighter>>();

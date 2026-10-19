@@ -55,10 +55,7 @@ export function resolveProviderCatalogAvailability(input: {
   return input.entries.length === 0 ? "unconfigured" : "unavailable";
 }
 
-/**
- * Disabling an instance updates `enabled` independently, while its previous `ready` probe
- * status can remain in the streamed snapshot until reconciliation.
- */
+/** Disabled instances may retain ready status until reconciliation. */
 export function isProviderInstancePickerReady(entry: ProviderInstanceEntry): boolean {
   return entry.enabled && entry.isAvailable && entry.status === "ready";
 }
@@ -95,8 +92,7 @@ export function deriveProviderInstanceEntries(
   });
 }
 
-/** Instance ids repeat across environments. Keep lookups scoped to avoid
- * clobbering entries or resolving another environment's accent colors. */
+/** Instance ids repeat across environments; lookups must stay scoped. */
 export function deriveProviderEntriesByEnvironment(
   providersByEnvironment: Iterable<
     readonly [
@@ -109,8 +105,7 @@ export function deriveProviderEntriesByEnvironment(
   const byEnvironment = new Map<string, ReadonlyMap<string, ProviderInstanceEntry>>();
   for (const [environmentId, providers, settings] of providersByEnvironment) {
     const derived = deriveProviderInstanceEntries(providers);
-    // One map per environment serves every project with a thread there, so
-    // there is no single project to scope `enabled` to; it stays machine-wide.
+    // This map serves all projects in an environment, so enablement stays machine-wide.
     const entries = settings ? applyProviderInstanceSettings(derived, settings, null) : derived;
     byEnvironment.set(
       environmentId,
@@ -120,8 +115,7 @@ export function deriveProviderEntriesByEnvironment(
   return byEnvironment;
 }
 
-/** projectId applies project enablement overrides; null uses machine settings.
- * Require an explicit choice so project-aware callers cannot silently omit it. */
+/** projectId applies project overrides; explicit null uses machine settings. */
 export function applyProviderInstanceSettings(
   entries: ReadonlyArray<ProviderInstanceEntry>,
   settings: Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">,

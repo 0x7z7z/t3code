@@ -75,8 +75,7 @@ export function getDiffLineStat(files: ReadonlyArray<FileDiffMetadata>): DiffLin
 
 interface RenderablePatchOptions {
   ignoreWhitespace?: boolean;
-  /** Pierre stores source-file offsets, but its partial-patch virtualizer needs compact rows.
-   * Retain collapsedBefore for the unmodified-lines separator. */
+  /** Compact Pierre source offsets for partial-patch rows; retain collapsedBefore for separators. */
   compactPartialHunkOffsets?: boolean;
 }
 
@@ -204,10 +203,7 @@ export function resolveFileDiffPreviousPath(fileDiff: FileDiffMetadata): string 
   return fileDiff.prevName ?? fileDiff.name ?? "";
 }
 
-/**
- * A type change (regular file to symlink) arrives as a deletion and an addition
- * of the same path, so the change type is part of the identity.
- */
+/** Includes change type to distinguish deletion/addition pairs for file-to-symlink changes. */
 export function buildFileDiffIdentityKey(fileDiff: FileDiffMetadata): string {
   return `${resolveFileDiffPreviousPath(fileDiff)}\u0000${resolveFileDiffPath(fileDiff)}\u0000${fileDiff.type}`;
 }
@@ -225,10 +221,7 @@ function hashFileDiffPart(hash: number, value: string | number | boolean | undef
   return fnv1a32(serialized, withLength);
 }
 
-/**
- * Pierre's cache key includes the whole patch, so using it here would repaint
- * every file when one changes.
- */
+// Pierre's whole-patch cache key would repaint every file when one changes.
 export function buildFileDiffContentVersion(fileDiff: FileDiffMetadata): number {
   let hash = FNV_OFFSET_BASIS_32;
   const append = (value: string | number | boolean | undefined) => {

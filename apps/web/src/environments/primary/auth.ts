@@ -429,8 +429,7 @@ export async function revokeOtherServerClientSessions(): Promise<number> {
 }
 
 export async function resolveInitialServerAuthGateState(): Promise<ServerAuthGateState> {
-  // Explicit pairing replaces existing grants. Preserve that intent after
-  // stripping the token triggers another auth-gate load.
+  // Preserve explicit grant replacement across the auth-gate reload triggered by token removal.
   if (window.location.pathname.replace(/\/+$/, "") !== "/pair") {
     explicitPairingRequested = false;
   } else if (peekPairingTokenFromUrl()) {

@@ -402,7 +402,6 @@ describe("findProjectForChangeRequest", () => {
   });
 
   it("matches an Azure repository cloned over SSH, whose remote shares no part with its URL", () => {
-    // Azure SSH and web URLs use different host and path spellings for the same repository.
     const canonicalKey = normalizeGitRemoteUrl("git@ssh.dev.azure.com:v3/T3Tools/Platform/T3Code");
     const projects = [
       project({

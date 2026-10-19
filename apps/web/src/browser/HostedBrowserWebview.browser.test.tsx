@@ -108,8 +108,7 @@ describe("HostedBrowserWebview settings hydration", () => {
       .mockReturnValueOnce(retryRead.promise);
     mocks.createTab.mockReturnValueOnce(tabCreation.promise);
     const acquire = vi.mocked(desktopTabLifetime.acquireDesktopTab);
-    // Chromium treats <webview> as an unknown element; give it the one Electron method the
-    // host calls once the guest attaches.
+    // Chromium has no Electron webview API; stub the method called on attachment.
     const createElement = document.createElement.bind(document);
     const createGuest = vi.spyOn(document, "createElement").mockImplementation(((
       tagName: string,

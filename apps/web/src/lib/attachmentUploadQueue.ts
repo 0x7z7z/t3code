@@ -47,10 +47,7 @@ interface UploadJob {
   /** Original owner; completion resolves the current owner because uploads can outlive draft moves. */
   readonly draftTarget?: ComposerThreadTarget;
   readonly previous?: ReadyAttachmentUpload;
-  /**
-   * The draft owns this id; the queue never deletes it on cancel or retry.
-   * Deleting it goes through `releasePersistedAttachmentUpload` only.
-   */
+  /** Draft-owned; delete only through releasePersistedAttachmentUpload, never queue cancel/retry. */
   readonly persistedAttachmentId?: string;
   readonly settled: Promise<void>;
   resolveSettled: () => void;
@@ -212,8 +209,7 @@ async function runUpload(job: UploadJob): Promise<void> {
       }
     }
     if (verification.status === "failed" || !job.image.file) {
-      // Retry and release delete failed-state ids. A persisted id is a hydrated
-      // file's only server copy, so transient verification failure must not put it here.
+      // Failed-state ids get deleted on retry/release; exclude persisted ids after transient verification failure.
       setUploadState(job.image.id, {
         status: "failed",
         environmentId: job.environmentId,
@@ -463,8 +459,7 @@ export function startAttachmentUpload(input: {
     const reconnected = connected && !wasConnected;
     wasConnected = connected;
     if (!reconnected) return;
-    // The HTTP failure can arrive after the socket has already reconnected.
-    // Wait for that attempt, then retry only if this job still owns the file.
+    // HTTP failures can follow reconnection; await the attempt and retry only if this job still owns the file.
     void job.settled.then(() => {
       if (
         jobsByImageId.get(job.image.id) === job &&
@@ -563,10 +558,7 @@ export function retryAttachmentUpload(input: {
   startAttachmentUpload(input);
 }
 
-/**
- * Pending uploads are swept after 24 hours, so a stash restore asks first
- * instead of handing the composer a dead reference.
- */
+/** Verifies uploads before stash restore; pending uploads expire after 24 hours. */
 export function verifyStashedAttachmentUpload(input: {
   readonly environmentId: EnvironmentId;
   readonly attachmentId: string;

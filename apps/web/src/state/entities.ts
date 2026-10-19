@@ -225,11 +225,7 @@ export function waitForProject(
   });
 }
 
-/**
- * Resolves once a deleted project leaves the live client store. The delete
- * command returns before the shell stream does, so anything that picks a
- * project in between (the index route's draft landing) still sees it.
- */
+/** Waits for removal from the live store; delete replies arrive before the shell stream. */
 export function waitForProjectRemoval(ref: ScopedProjectRef, timeoutMs = 5_000): Promise<boolean> {
   return waitForAtomValue({
     registry: appAtomRegistry,
@@ -341,8 +337,7 @@ function shellParentThreadId(
     : thread.lineage.parentThreadId;
 }
 
-/** Retain reachable relationship shells while unchanged, so unrelated streaming
- * threads do not rerender the panel. */
+/** Retains unchanged reachable shells so unrelated streams do not re-render the panel. */
 export function selectThreadRelationshipShells(
   threadId: ThreadId,
   projection: Pick<

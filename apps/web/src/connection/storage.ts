@@ -192,8 +192,7 @@ const makeDatabaseHandle = Effect.fn("web.connectionStorage.makeDatabaseHandle")
   return { handle, close };
 });
 
-/** Browsers may close a connection without delivering "close". Retry InvalidStateError
- * on a fresh connection so subsequent operations are not permanently broken. */
+// Browsers can omit close events; retry InvalidStateError with a fresh connection.
 function withDatabase<A>(
   database: DatabaseHandle,
   use: (opened: IDBDatabase) => Effect.Effect<A, ConnectionTransientError>,
@@ -244,8 +243,7 @@ function writeDatabaseValueOnConnection(
   return Effect.callback<void, ConnectionTransientError>((resume) => {
     try {
       const transaction = database.transaction(storeName, "readwrite");
-      // Every failed write fires "abort". A failed commit, such as
-      // QuotaExceededError, fires only "abort" and no "error".
+      // Commit failures can fire abort without error; every failed write fires abort.
       transaction.addEventListener("abort", () => {
         resume(
           Effect.fail(catalogError("write", transaction.error ?? "Unknown IndexedDB write error")),
@@ -594,8 +592,7 @@ export function makeBrowserGitHubRoutingPermissions(
   });
 }
 
-// MessageChannel yields to input and rendering without nested-timer clamping
-// or background-tab timer throttling.
+// MessageChannel yields without nested-timer clamping or background throttling.
 const yieldToBrowserTask = Effect.callback<void>((resume) => {
   const { port1, port2 } = new MessageChannel();
   port1.addEventListener(

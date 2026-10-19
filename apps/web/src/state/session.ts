@@ -90,10 +90,7 @@ export function readPreparedConnection(environmentId: EnvironmentId) {
   );
 }
 
-/**
- * `data` stays populated across SWR revalidations; `isPending` is only
- * meaningful before the first resolve.
- */
+/** data survives SWR revalidation; isPending applies only before first resolve. */
 export function useEnvironmentSessionState(environmentId: EnvironmentId) {
   const result = useAtomValue(environmentSession.sessionStateAtom(environmentId));
   return {

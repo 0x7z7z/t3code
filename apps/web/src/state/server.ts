@@ -24,9 +24,7 @@ import { primaryEnvironmentIdAtom } from "./primaryEnvironment";
 import { environmentSession } from "./session";
 import { reuseProvidersIgnoringCheckedAt } from "./serverProviders.logic";
 
-// Only the primary environment's themes are rendered, but which environment is primary changes
-// at runtime and the subscription payload is fixed when it is established -- gating on "primary
-// right now" would leave a newly promoted environment with no themes until it reconnected.
+// Subscribe to every environment's themes; primary can change without reconnecting or updating the subscription.
 export const serverEnvironment = createServerEnvironmentAtoms(connectionAtomRuntime, {
   initialConfigValueAtom: environmentSession.initialConfigValueAtom,
   environmentThemes: true,

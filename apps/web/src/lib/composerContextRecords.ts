@@ -43,7 +43,7 @@ import type { ReviewCommentContext } from "~/reviewCommentContext";
 
 const PREVIEW_LABEL_MAX_CHARS = 48;
 
-/** Selections can exceed wire bounds; truncate here to avoid a send-time encoding failure. */
+// Truncate selections to wire bounds before persistence to avoid send-time encoding failures.
 const TRUNCATION_MARKER = "\n… truncated …";
 
 function clampContextText(value: string, max: number): string {

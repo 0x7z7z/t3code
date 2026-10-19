@@ -65,7 +65,7 @@ function readStoredThemeHalves(): ThemeHalves | null {
   }
 }
 
-/** Merging over a pruned parse would erase published halves whose palettes have not arrived. */
+// Pruning unresolved published palettes would erase their halves when merging.
 function readStoredThemeHalvesRaw(): { light?: string; dark?: string } {
   try {
     const value: unknown = JSON.parse(
@@ -394,8 +394,7 @@ if (typeof document !== "undefined" && typeof window !== "undefined") {
 
 function getSnapshot(): ThemeSnapshot {
   if (typeof window === "undefined") return DEFAULT_THEME_SNAPSHOT;
-  // Reading the preference hits localStorage, so only recompute after a
-  // change was signalled; useTheme consumers call this on every render.
+  // Cache localStorage reads until signalled; useTheme calls this every render.
   if (!snapshotStale && lastSnapshot) return lastSnapshot;
   snapshotStale = false;
   const theme = getStored();

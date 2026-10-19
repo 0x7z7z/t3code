@@ -7,8 +7,6 @@ import {
   type ThreadRouteTarget,
 } from "../threadRoutes";
 
-// Router selectors use === on every store update. Select primitive ids so
-// unrelated updates do not reach consumers.
 function useThreadRouteIds() {
   const environmentId = useParams({ strict: false, select: (params) => params.environmentId });
   const threadId = useParams({ strict: false, select: (params) => params.threadId });

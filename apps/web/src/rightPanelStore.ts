@@ -57,10 +57,7 @@ export type RightPanelSurface =
       revealLine: number | null;
       revealRequestId: number;
       attachment?: ChatFileAttachment;
-      /**
-       * Set when breadcrumbs moved a folder browser up from a deeper path: the
-       * deepest workspace path the breadcrumbs keep offering on the way back down.
-       */
+      /** Deepest workspace path retained for navigating back down after moving up. */
       folderTrail?: string;
     }
   | {
@@ -108,10 +105,7 @@ interface RightPanelStoreState {
   userActionRevisionByThreadKey: Record<string, number>;
   closeRevisionByThreadKey: Record<string, number>;
   getUserActionRevision: (ref: ScopedThreadRef) => number;
-  /**
-   * Refused when the user made a panel choice after
-   * `expectedUserActionRevision` was read.
-   */
+  /** Refused if the user chose a panel after expectedUserActionRevision was read. */
   openProactive: (
     ref: ScopedThreadRef,
     surface: Extract<RightPanelSurface, { kind: "diff" | "pull-request" | "pull-requests" }>,
@@ -125,12 +119,7 @@ interface RightPanelStoreState {
   renameDevice: (ref: ScopedThreadRef, surfaceId: string, title: string) => void;
   openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;
   openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;
-  /**
-   * Moves the folder browser in `surfaceId` to `relativePath` in place, so walking
-   * the breadcrumbs does not leave a tab behind per folder. `""` is the workspace
-   * root, which is the files explorer. `folderTrail` is kept for the way back down.
-   * `keepSource` opens the folder beside the source tab instead, for a file preview.
-   */
+  /** Moves in place; "" opens the root explorer. folderTrail keeps the return path; keepSource opens beside the source. */
   navigateFolder: (
     ref: ScopedThreadRef,
     surfaceId: string,

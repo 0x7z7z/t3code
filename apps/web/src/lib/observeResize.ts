@@ -55,8 +55,7 @@ function deliver(entries: readonly ResizeObserverEntry[]) {
   });
 }
 
-/** ResizeObserver fires before paint, but ordinary React updates commit after it.
- * Batch all callbacks in one flushSync to avoid a stale frame and repeated renders. */
+/** Flushes callbacks together before paint; ordinary React updates would leave a stale frame. */
 export function observeResize(
   elements: Element | readonly Element[],
   callback: ResizeCallback,

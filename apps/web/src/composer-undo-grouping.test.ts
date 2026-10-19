@@ -47,8 +47,7 @@ function composer(text = "") {
       }
       return api;
     },
-    /** Composer handles paste before ProseMirror's built-in path, so it must tag
-     * the insert itself to keep clipboard edits out of adjacent undo groups. */
+    // The custom paste path bypasses ProseMirror's clipboard tagging.
     paste: (s: string) => {
       clock += 80;
       dispatch(markAsClipboardEdit(state.tr.insertText(s), "paste"));

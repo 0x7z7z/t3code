@@ -250,8 +250,7 @@ async function encodeWithinBudget(
   const target = createCanvas(width, height);
   if (!target) return null;
 
-  // Probe WebP once; JPEG (no alpha) needs a white matte, so the fill has to
-  // happen before drawing and depends on which codec we end up using.
+  // Probe the codec before drawing; JPEG needs a white matte because it has no alpha.
   const mimeType =
     preferredMimeType ??
     ((await encodeCanvas(target.canvas, QUALITY_STEPS[0], "image/webp"))
@@ -295,8 +294,7 @@ async function reencodeWithinBudget(
   }
 
   try {
-    // Shrink from the previous target; scaling MAX_DIMENSION would leave
-    // smaller images unchanged across every fallback pass.
+    // Shrink the previous target; using MAX_DIMENSION leaves smaller images unchanged.
     const baseDimension = Math.min(MAX_DIMENSION, Math.max(bitmap.width, bitmap.height));
     let encodeFailed = false;
     for (const dimensionScale of [1, ...FALLBACK_SCALE_STEPS]) {

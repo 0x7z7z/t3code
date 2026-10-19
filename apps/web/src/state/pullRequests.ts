@@ -91,8 +91,7 @@ export function pullRequestListEntryToSummary(entry: PullRequestListEntry): Pull
   };
 }
 
-// A project has one remote, so its id already pins the host. Leaving the host out lets a list
-// row, a hostless legacy reference and a URL-derived thread reference share one entry.
+// Project ids pin the remote host; omit host so legacy, URL, and list references share entries.
 function pullRequestSummaryKey(environmentId: EnvironmentId, reference: PullRequestRef): string {
   return JSON.stringify([
     environmentId,
@@ -215,7 +214,6 @@ export function useSharedPullRequestSummary(
         : savedPullRequestKey(environmentId, reference),
     ),
   );
-  // Keyed structurally so a fresh reference object for the same pull request is a no-op.
   useLayoutEffect(() => {
     if (key === "none" || current === null || observedAt === null) return;
     observePullRequestSummary(key, current, observedAt);
@@ -244,8 +242,7 @@ interface MergedEnvironmentQueryView<A> {
   readonly observations: ReadonlyArray<readonly [EnvironmentId, A, number]>;
 }
 
-/** Variable-length fan-out needs one derived atom. Failed environments
- * contribute no rows so one unreachable machine cannot hide the others. */
+// Use one derived atom for variable fan-out; unreachable environments must not hide other rows.
 function createMergedEnvironmentQuery<Input, A>(
   label: string,
   atomFor: (

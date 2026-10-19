@@ -87,10 +87,7 @@ export function useEnvironmentQueryIsNewer(
   );
 }
 
-/**
- * The query's refresh, plus its pending state read when called rather than
- * subscribed to, for callers that only gate a refresh on it.
- */
+/** Returns refresh and call-time pending state without subscribing to it. */
 export function useEnvironmentQueryRefresh<A, E>(
   atom: Atom.Atom<AsyncResult.AsyncResult<A, E>> | null,
 ): { readonly refresh: () => void; readonly isPending: () => boolean } {
