@@ -305,9 +305,7 @@ const runProcessCore = Effect.fn("processRunner.runProcessCore")(function* (
     )
     .pipe(
       Effect.mapError(toSpawnError),
-      // Node's spawn can also throw synchronously, e.g. ENOTDIR when a PATH
-      // entry is a file. That arrives as a defect, which `mapError` never sees,
-      // so callers that recover from spawn failures would be bypassed.
+      // Synchronous spawn throws arrive as defects; recover them too so callers see typed spawn failures.
       Effect.catchDefect((cause) => Effect.fail(toSpawnError(cause))),
     );
 

@@ -1851,8 +1851,7 @@ it.layer(
         yield* manager.open(openInput());
         const process = ptyAdapter.processes[0]!;
         process.onKill = () => process.emitExit({ exitCode: 0, signal: 15 });
-        // Vary the caller's operation budget to cover child completion before
-        // and after the parent resumes its registration step.
+        // Vary yield budgets to exercise child completion racing parent registration.
         yield* manager
           .close({ threadId: "thread-1" })
           .pipe(Effect.provideService(References.MaxOpsBeforeYield, budget));

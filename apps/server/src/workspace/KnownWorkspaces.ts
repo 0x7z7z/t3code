@@ -1,9 +1,4 @@
-/**
- * Clients can set thread worktree paths, so they count as known workspaces
- * only under a managed folder or when Git lists them for the thread's project.
- *
- * @module KnownWorkspaces
- */
+// Client-supplied worktrees count only under managed folders or when Git lists them for the project.
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -31,7 +26,7 @@ export class UnknownWorkspaceError extends Schema.TaggedError<UnknownWorkspaceEr
   }
 }
 
-/** Whether `candidate` is `root` or inside it. Resolve both the same way first. */
+/** Resolve candidate and root consistently before checking containment. */
 export const isWithinRoot = (path: Path.Path, candidate: string, root: string) => {
   const relative = path.relative(root, candidate);
   return (
@@ -43,7 +38,7 @@ export const isWithinRoot = (path: Path.Path, candidate: string, root: string) =
 export class KnownWorkspaces extends Context.Service<
   KnownWorkspaces,
   {
-    /** Whether a symlink-resolved path is inside a known workspace. */
+    /** Takes a symlink-resolved path. */
     readonly contains: (realPath: string) => Effect.Effect<boolean>;
     /** Fails unless `cwd` exists and resolves inside a known workspace. */
     readonly assertContains: (cwd: string) => Effect.Effect<void, UnknownWorkspaceError>;
@@ -60,8 +55,7 @@ export const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const git = yield* GitVcsDriver.GitVcsDriver;
 
-  // A root that does not exist yet keeps its lexical path. One that cannot be
-  // resolved for another reason, or resolves to a filesystem root, grants nothing.
+  // Missing roots keep lexical paths; other resolution failures and filesystem roots grant nothing.
   const resolveRoot = (value: string) => {
     const resolvedPath = path.resolve(value);
     return fileSystem.realPath(resolvedPath).pipe(
@@ -123,8 +117,7 @@ export const make = Effect.gen(function* () {
         return real !== null && listed.includes(real);
       });
       for (const { worktreePath, projectId } of threads) {
-        // A relative path would resolve against the server's own cwd. One under a
-        // managed folder is still resolved: it can be a symlink to a checkout elsewhere.
+        // Relative paths use server cwd; managed paths still need resolution to reject symlinks elsewhere.
         if (!path.isAbsolute(worktreePath)) continue;
         if (!within(yield* resolveRoot(worktreePath))) continue;
         const lexical = path.resolve(worktreePath);

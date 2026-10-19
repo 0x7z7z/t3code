@@ -1,7 +1,4 @@
-/**
- * serve-sim's preview socket accepts shell commands, so proxying it would grant
- * arbitrary host execution to environment sessions. Run typed actions instead.
- */
+// serve-sim's preview socket accepts shell commands; use typed actions to avoid arbitrary host execution.
 import {
   type DeviceActionInput,
   type DeviceActionType,
@@ -248,8 +245,7 @@ const runIos = Effect.fn("DeviceActions.runIos")(function* (
       return;
     case "setPermission": {
       if (input.permission === "notifications") {
-        // simctl has no notification permission verb; serve-sim's CLI edits
-        // the BulletinBoard plist for it.
+        // simctl lacks notification permissions; serve-sim edits the BulletinBoard plist.
         yield* serveSimPermissions(ready, udid, input);
         return;
       }
@@ -367,9 +363,7 @@ const runAndroid = Effect.fn("DeviceActions.runAndroid")(function* (
         reason: "unsupported",
       });
     case "setOrientation": {
-      // `user-rotation lock` only rotates window content on recent images; the display the
-      // encoder captures stays put. Tilting the emulator's accelerometer rotates it for real, so
-      // that is used whenever the target is an emulator.
+      // On recent images, user-rotation lock leaves captures unchanged; tilt the emulator's accelerometer.
       if (serial.startsWith("emulator-")) {
         yield* shell(["settings", "put", "system", "accelerometer_rotation", "1"], "orientation");
         yield* shell(["cmd", "window", "user-rotation", "free"], "orientation");
@@ -396,8 +390,7 @@ const runAndroid = Effect.fn("DeviceActions.runAndroid")(function* (
       );
       return;
     case "clearLocation":
-      // The emulator has no "clear"; leaving the fix in place is the closest
-      // behavior, so this is a no-op that still refreshes the reading.
+      // The emulator cannot clear location; keep the fix and refresh the reading.
       return;
     case "setPermission": {
       const permissions = ANDROID_PERMISSIONS[input.permission];
@@ -522,8 +515,7 @@ const readAndroid = Effect.fn("DeviceActions.readAndroid")(function* (run: Runne
       shell(["settings", "get", "system", "font_scale"]),
       shell(["settings", "get", "global", "animator_duration_scale"]),
       shell(["settings", "get", "global", "wifi_on"]),
-      // `dumpsys window windows` stopped printing the focus on API 36; the
-      // unfiltered dump still does.
+      // API 36 dropped focus from `dumpsys window windows`; use the unfiltered dump.
       shell(["dumpsys", "window"]),
     ],
     { concurrency: 5 },

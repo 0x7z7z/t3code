@@ -68,7 +68,7 @@ type Respond = (
   request: HttpClientRequest.HttpClientRequest,
 ) => Effect.Effect<HttpClientResponse.HttpClientResponse, HttpClientError.HttpClientError>;
 
-/** The connection drops after the endpoint read the batch, so it may be stored. */
+// The endpoint may have stored the batch before the connection drops.
 const connectionReset: Respond = (request) =>
   Effect.fail(
     new HttpClientError.HttpClientError({

@@ -69,7 +69,7 @@ it.effect("publishes file accounting and the doctor command after each pass", ()
     assert.isNotNull(before);
     assert.isAbove(before!.databaseBytes, 1048576);
     assert.isTrue(before!.incrementalVacuumEnabled);
-    // Quoting follows the host shell, so check each word on its own.
+    // Host shell quoting varies; inspect words separately.
     assert.include(before!.compactCommand, "doctor");
     assert.include(before!.compactCommand, "--base-dir");
     assert.include(before!.compactCommand, config.baseDir);
@@ -94,8 +94,7 @@ it.effect("publishes nothing when doctor would repair a different database", () 
   }).pipe(
     Effect.provide(
       storageLayer(
-        // A dev server without an explicit home keeps state in <baseDir>/dev,
-        // while `doctor --base-dir` targets <baseDir>/userdata.
+        // Implicit dev homes use <baseDir>/dev, but doctor --base-dir targets userdata.
         Layer.effect(
           ServerConfig.ServerConfig,
           Effect.gen(function* () {

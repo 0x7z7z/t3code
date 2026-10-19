@@ -27,12 +27,7 @@ export function ownedAgentSlice(stateDir: string): string {
 
 const GiB = 1024 ** 3;
 
-/**
- * Agents together leave about 6 GB free before they are throttled and 4 GB
- * before the kernel kills one, so the server, sshd, and tailscaled keep
- * working. Small machines still give agents at least half of RAM before
- * throttling and three quarters before a kill.
- */
+/** Agents leave 6 GB before throttling and 4 GB before kills; minimum budgets are 1/2 and 3/4 of RAM. */
 export function agentSliceMemoryLimits(totalBytes: number) {
   return {
     high: Math.max(totalBytes - 6 * GiB, Math.floor(totalBytes / 2)),
@@ -48,11 +43,7 @@ export interface ScopeState {
   readonly populated: boolean | undefined;
 }
 
-/**
- * Our pipe can close before systemd handles the kill, so a scope that is
- * still stopping, is empty, or already counted an OOM kill is "stopping":
- * systemd records `Result=oom-kill` for it in a moment.
- */
+/** Pipes can close before systemd records oom-kill; stopping, empty or OOM-counted scopes remain pending. */
 export function classifyScope(state: ScopeState): "oom-killed" | "gone" | "running" | "stopping" {
   if (state.result === "oom-kill") return "oom-killed";
   if (
@@ -82,8 +73,7 @@ function parseCgroupCounter(text: string, key: string): number | undefined {
   return match === null ? undefined : Number(match[1]);
 }
 
-// A stop sends SIGTERM, then SIGKILL after this long. systemd's 90 s default
-// would outlast the wait for a previous server's agents below.
+// systemd's default 90 s stop timeout would outlast our leftover-agent wait.
 const STOP_TIMEOUT_OPTION = "--property=TimeoutStopSec=10s";
 const STOPPING_POLL_INTERVAL = "100 millis";
 const STOPPING_POLL_ATTEMPTS = 20;
@@ -118,9 +108,7 @@ export const make = Effect.gen(function* () {
       .readFileString(path.join("/sys/fs/cgroup", controlGroup, file))
       .pipe(Effect.orElseSucceed(() => ""));
 
-  // Old agents keep their scopes when the server is killed, and the restarted
-  // server resumes their sessions. Stop them first, so two copies of one
-  // session never work in the same worktree.
+  // Server death leaves agent scopes running; stop them before resuming sessions in the same worktrees.
   const stopLeftoverAgents = (systemctl: string) =>
     Effect.gen(function* () {
       const shown = yield* run(systemctl, [
@@ -166,9 +154,7 @@ export const make = Effect.gen(function* () {
           "--",
           "true",
         ]).pipe(Effect.map((result) => result._tag === "Some" && result.value.code === 0));
-      // Stop the whole scope when the kernel kills one of its processes, and
-      // record the result as oom-kill. Scopes take OOMPolicy from systemd 253;
-      // older user managers still get scopes, without the OOM label.
+      // OOMPolicy=stop kills the whole scope and records oom-kill; pre-253 systemd lacks this label.
       const stopOptions = [STOP_TIMEOUT_OPTION];
       const oomOptions = [...stopOptions, "--property=OOMPolicy=stop"];
       const scopeOptions = (yield* probe(oomOptions))
@@ -330,8 +316,7 @@ export const make = Effect.gen(function* () {
         runtimeDir: scope.runtimeDir,
         slice: survivesRestart === true ? AGENT_SLICE : ownedSlice,
         unit,
-        // Without a thread nothing reads the result, so let systemd unload
-        // the unit even when it fails.
+        // Without a thread no one reads the result; unload even failed units.
         options: threadId === undefined ? [...scope.scopeOptions, "--collect"] : scope.scopeOptions,
       };
       return agentScopeCommand({ command: resolved, args, scope: systemdScope });

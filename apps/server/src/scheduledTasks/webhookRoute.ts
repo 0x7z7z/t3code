@@ -17,7 +17,7 @@ import * as ScheduledTaskService from "./ScheduledTaskService.ts";
 /** The relay enforces the same cap. */
 export const WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
 
-/** Response header naming what happened to the request; the relay records it. */
+// The relay records this outcome header.
 const WEBHOOK_OUTCOME_HEADER = "x-t3-hook-outcome";
 
 const json = (status: number, body: Record<string, string>, outcome: string) =>
@@ -29,10 +29,7 @@ export const layer = HttpApiBuilder.group(
   Effect.fnUntraced(function* (handlers) {
     const scheduledTasks = yield* ScheduledTaskService.ScheduledTaskService;
     const relayDeliveryProof = yield* RelayDeliveryProof.RelayDeliveryProof;
-    /**
-     * The endpoint is raw so the signature is checked over the exact body
-     * bytes; the service checks the token and signature.
-     */
+    // Preserve raw body bytes for signature verification.
     const handler = ({
       params,
       request,
@@ -69,15 +66,12 @@ export const layer = HttpApiBuilder.group(
           if (typeof value === "string") headers[name.toLowerCase()] = value;
         }
         const queryIndex = request.url.indexOf("?");
-        // The relay's delivery id and receive time count only with its signed
-        // proof; the URL can also be called directly. The receive time matters
-        // for requests the relay held while we were offline.
+        // Trust relay ids/times only with proof; receive time accounts for offline-held requests.
         const relay = yield* relayDeliveryProof.verify({ headers, hookId: params.hookId });
         const relayDeliveryId = Option.isSome(relay) ? relay.value.deliveryId : undefined;
         const relayReceivedAt = Option.isSome(relay) ? relay.value.receivedAt : undefined;
 
-        // A relay delivery joins the relay's trace, and goes to the T3 Connect
-        // tracer with it. Anyone else's traceparent is never trusted.
+        // Only signed relay deliveries may join the relay's trace and T3 Connect tracer.
         const relayParent = Option.isSome(relay)
           ? HttpTraceContext.fromHeaders(request.headers)
           : Option.none<Tracer.ExternalSpan>();

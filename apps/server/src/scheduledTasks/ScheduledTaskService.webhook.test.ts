@@ -133,7 +133,6 @@ it.effect("dispatches exactly the rendered prompt and logs the delivery", () =>
       assert.equal(delivery.body, new TextDecoder().decode(pullRequestBody));
       assert.equal(delivery.renderedPrompt, launched.initialMessage?.text);
 
-      // Each delivery gets its own frame, so a request can't predict the tag that closes it.
       yield* service.triggerWebhook(requestFor(task));
       const next = framed.exec((yield* Queue.take(launches)).initialMessage?.text ?? "")?.[1];
       assert.isDefined(next);
@@ -500,7 +499,7 @@ it.effect("logs a body's first 64 KiB by bytes, not characters", () =>
 it.effect("counts the prompt as the provider does, without surrounding whitespace", () =>
   withService(({ service, launches }) =>
     Effect.gen(function* () {
-      // Values are framed, so only an empty placeholder can leave padding at the edge.
+      // Framed values leave edge padding only through empty placeholders.
       const { task } = yield* service.upsert(
         yield* webhookTaskInput({ prompt: `{{body.none}}${" ".repeat(2_000)}{{body.text}}` }),
       );

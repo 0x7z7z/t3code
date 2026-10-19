@@ -1,11 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
-/**
- * V2 copies the V1 database but only imports threads, messages and pull request links;
- * nothing reads these projections. Builds before 0.1.0 use `state.sqlite`, so dropping
- * these tables does not affect rollback.
- */
+// V2 never reads these copied V1 projections; pre-0.1.0 builds use state.sqlite, preserving rollback.
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
 

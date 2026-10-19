@@ -423,8 +423,7 @@ function modeState(): AcpCompat.SessionModeState {
   };
 }
 
-// Mirrors the real Grok ACP: it advertises versioned model ids, never the CLI's own
-// "grok-build" product name.
+// Grok ACP advertises versioned model ids, never the CLI product name.
 const grokAcpModels: ReadonlyArray<AcpCompat.ModelInfo> = [
   {
     modelId: process.env.T3_ACP_GROK_MODEL ?? "grok-4.6",
@@ -529,8 +528,7 @@ const program = Effect.gen(function* () {
     }),
   );
 
-  // Mirrors the real Antigravity agent: the API key method reads
-  // GEMINI_API_KEY from the process environment and rejects when it is missing.
+  // Antigravity requires GEMINI_API_KEY for API key authentication.
   yield* agent.handleAuthenticate((request) =>
     Effect.gen(function* () {
       if (antigravityProfile) {
@@ -1379,9 +1377,7 @@ const program = Effect.gen(function* () {
             const detachedCommand = runningCommandIgnoresTerm
               ? 'trap "" TERM; bash -c \'trap "" TERM; while :; do sleep 1; done\' & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; wait "$child"'
               : 'sleep 120 & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; wait "$child"';
-            // Nested bash publishes "$PPID $$ $child" once it starts. Do not
-            // write the launcher PID alone here: that races with bash and can
-            // clobber the triple that interrupt tests wait for.
+            // Writing the launcher PID would race with bash publishing the PID triple interrupt tests need.
             const detachedLauncher = NodeChildProcess.spawn(
               process.execPath,
               ["-e", launcher, "bash", "-c", detachedCommand, "bash", runningCommandPidPath],
@@ -2179,7 +2175,7 @@ const program = Effect.gen(function* () {
       }
 
       if (emitXAiPlanMdWrite) {
-        // Match Grok's real session layout so isGrokPlanMarkdownPath accepts it.
+        // isGrokPlanMarkdownPath requires Grok's session layout.
         const planRoot = process.env.T3_ACP_PLAN_ROOT ?? "/tmp/mock-home/.grok";
         const planPath = `${planRoot}/sessions/${requestedSessionId}/plan.md`;
         const planBody = "# Mock plan\n\n- Write the feature\n- Add a test\n- Ship it\n";

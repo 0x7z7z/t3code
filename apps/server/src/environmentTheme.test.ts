@@ -206,8 +206,7 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
   );
 });
 
-// Kept outside the it.layer block above because only the top-level `it` exposes
-// `live`.
+// Only top-level it exposes live.
 describe("environment theme watching", () => {
   it.live("streams a set for every change to the directory", () =>
     Effect.gen(function* () {

@@ -4,15 +4,11 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 
 const DEFAULT_POLL_INTERVAL = Duration.seconds(2);
 
-// Sampled when this module loads, before config resolution and the bootstrap
-// read, so a launcher that dies during startup is still noticed.
+// Capture before config and bootstrap reads to detect launcher loss during startup.
 const startupParentPid = process.ppid;
 
-/**
- * A lost launcher leaves this backend holding its ownership lock, blocking replacements.
- * Any parent change counts because Linux may reparent to a subreaper rather than init.
- * Windows retains the original parent id after exit; backends started under init have no launcher.
- */
+/** Detects any parent change, including reparenting to subreapers, to release the backend lock.
+ * Windows retains exited parent ids; init-started backends have no launcher. */
 export const awaitLauncherLoss = (options?: {
   readonly launcherPid?: number;
   readonly getParentPid?: () => number;

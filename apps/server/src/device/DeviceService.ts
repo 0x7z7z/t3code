@@ -613,10 +613,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
     }
   });
 
-  /**
-   * Android AVDs change id when they boot (AVD name to emulator serial), so the
-   * returned id is authoritative.
-   */
+  /** Android AVD ids change on boot; use the returned id. */
   const boot = Effect.fn("DeviceService.boot")(function* (
     ready: DeviceReadiness,
     device: DeviceSummary,
@@ -644,8 +641,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
       });
     }
     if (device.platform === "ios") {
-      // Booting alone does not attach a serve-sim helper; the grid start
-      // does both and is idempotent for a booted simulator.
+      // Grid start attaches the serve-sim helper as well as booting, and is idempotent.
       yield* HttpClientRequest.post(
         `${ready.hub.origin}${vendorPrefix("ios")}/grid/api/start`,
       ).pipe(
@@ -776,10 +772,8 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
               ),
         ),
       );
-    // serve-sim's shutdown closes its in-process capture session before it runs
-    // `simctl shutdown`; the hub's generic shutdown can leave that session cached
-    // across a reboot. serve-sim runs simctl bare, though, so a simulator that is
-    // already off fails there.
+    // serve-sim closes cached capture before shutdown; generic shutdown can leave it stale across reboots.
+    // Its bare simctl call fails for already-off simulators.
     yield* platform === "ios"
       ? postShutdown(`${vendorPrefix("ios")}/grid/api/shutdown`, { udid: deviceId }).pipe(
           Effect.catch((cause) =>
@@ -804,8 +798,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         (session) => !(session.hostId === ready.hostId && session.deviceId === deviceId),
       ),
     }));
-    // Discovery can stall while an emulator saves its snapshot. A failed
-    // refresh must not turn an accepted shutdown into an action failure.
+    // Snapshot saves can stall discovery; refresh failure must not fail an accepted shutdown.
     yield* refresh(ready).pipe(
       Effect.catch((cause) =>
         Effect.logWarning("Device discovery unavailable after shutdown", { cause }),
@@ -1192,8 +1185,7 @@ export const layer = Layer.effect(DeviceService, make).pipe(Layer.provide(LocalD
 export const stateStream = (service: DeviceService["Service"]): Stream.Stream<DeviceServiceState> =>
   Stream.unwrap(
     Effect.gen(function* () {
-      // Subscribe before reading the snapshot so no change between the two
-      // is lost; the scope lives as long as the stream does.
+      // Subscribe before reading so no change is lost.
       const subscription = yield* service.subscribe;
       const initial = yield* service.state;
       return Stream.concat(Stream.make(initial), Stream.fromSubscription(subscription));

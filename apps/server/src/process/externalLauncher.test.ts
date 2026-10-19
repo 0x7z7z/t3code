@@ -22,10 +22,7 @@ import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
 import * as ExternalLauncher from "./externalLauncher.ts";
 
-// Tests below write `#!/bin/sh` stubs into a real temp dir and hand that
-// directory to a posix-mocked resolver as PATH. On a Windows host the temp
-// path carries a drive letter, so the posix `:` split shatters it; there is
-// no posix executable to find there anyway.
+// Windows drive letters break mocked POSIX PATH splitting; these tests also require /bin/sh stubs.
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 interface MockSpawnResult {
@@ -418,8 +415,7 @@ it.effect("reveals a file in File Explorer through PowerShell on Windows", () =>
     const path = yield* Path.Path;
     const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-editors-" });
     yield* fileSystem.writeFileString(path.join(binDir, "explorer.CMD"), "@echo off\r\n");
-    // resolvePowerShellPath builds `${SYSTEMROOT}\System32\...` with Windows
-    // separators, which on the posix test filesystem is one file name.
+    // Windows separators from resolvePowerShellPath form one filename on the POSIX test filesystem.
     const systemRoot = path.join(binDir, "system-root");
     const powerShellPath = `${systemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
     yield* fileSystem.makeDirectory(path.dirname(powerShellPath), { recursive: true });
@@ -541,8 +537,7 @@ for (const kind of ["browser", "reveal"] as const) {
           );
         } finally {
           watcher.close();
-          // The recording stub's cmd.exe can still hold the directory for a
-          // moment after it publishes its output, which Windows reports as EPERM.
+          // cmd.exe may briefly hold the directory after output, causing Windows EPERM.
           NodeFS.rmSync(tempDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
         }
       }),

@@ -63,12 +63,8 @@ const GITHUB_PROCESS_CONCURRENCY = 4;
 
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
 
-/**
- * Appends after inherited Git config without writing the user's config. On
- * Windows, update every casing of GIT_CONFIG_COUNT using the last inherited
- * spelling's value, since Node may retain any spelling. Invalid counts are
- * left for Git to reject.
- */
+/** Appends without writing user config; invalid counts stay for Git to reject.
+ * Windows updates every GIT_CONFIG_COUNT casing from the last inherited value because Node may retain any spelling. */
 export const gitConfigEnv = (
   env: NodeJS.ProcessEnv,
   key: string,
@@ -83,8 +79,7 @@ export const gitConfigEnv = (
   if (
     inherited !== undefined &&
     inherited !== "" &&
-    // Git parses the count with strtoul: leading whitespace, an optional sign
-    // (only -0 is non-negative), digits, and nothing after them.
+    // Match Git's strtoul count syntax, including whitespace, signs and non-negative -0.
     /^[ \t\r\n\v\f]*(?:\+?\d+|-0+)/.exec(inherited)?.[0] !== inherited
   ) {
     return {};
@@ -97,13 +92,8 @@ export const gitConfigEnv = (
   };
 };
 
-/**
- * Git otherwise opens any folder holding `HEAD`, `objects/` and `refs/` as a
- * bare repository and applies its `config`, including commands such as
- * `core.fsmonitor`. Files saved in a project or checked out from a clone can
- * form one, so git started by T3 (or by gh and friends) only opens a bare
- * repository named with `--git-dir` or `GIT_DIR`. Git before 2.38 ignores it.
- */
+/** Require explicit --git-dir/GIT_DIR for bare repos so cloned/planted files cannot supply executable config.
+ * Git before 2.38 ignores this setting. */
 export const explicitBareRepositoryEnv = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform) =>
   gitConfigEnv(env, "safe.bareRepository", "explicit", platform);
 

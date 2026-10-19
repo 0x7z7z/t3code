@@ -363,8 +363,7 @@ it.live.each(["thread", "shell"] as const)(
     }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
 
-// Clients append messages on first sight, so compaction must retain each
-// message's oldest event as well as its newest to preserve order on replay.
+// Clients append on first sight; compaction needs oldest and newest message events to preserve replay order.
 it.effect("thread resume across compacted history keeps message order and final state", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;

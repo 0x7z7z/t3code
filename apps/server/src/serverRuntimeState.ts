@@ -110,10 +110,7 @@ export const clearPersistedServerRuntimeState = (path: string) =>
     );
   });
 
-/**
- * Signal 0 delivers nothing; it only reports whether the pid exists. EPERM
- * means it exists but belongs to another user, which still counts as alive.
- */
+/** Signal 0 only probes existence; EPERM still means alive. */
 export const isProcessAlive = (pid: number): boolean => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {

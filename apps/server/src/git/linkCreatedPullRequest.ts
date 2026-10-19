@@ -44,10 +44,7 @@ export function createdPullRequestKey(
   };
 }
 
-/**
- * Never fails: the git action already succeeded and its result is on its way to the client, so
- * a link that cannot be made is logged and dropped.
- */
+/** Never fails; logs and drops link failures after the git action has succeeded. */
 export const linkCreatedPullRequest = <E>(input: {
   readonly threadId: ThreadId;
   readonly result: Pick<GitRunStackedActionResult, "pr">;

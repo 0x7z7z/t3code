@@ -458,8 +458,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
 
   if (config.desktopTelemetryFd !== undefined) {
     const fd = config.desktopTelemetryFd;
-    // The parent waits for this server before closing its pipe. Socket reads
-    // can be cancelled; filesystem reads would keep process.exit waiting.
+    // The parent waits before closing; use cancellable socket reads so filesystem reads cannot block exit.
     const readable = yield* Effect.acquireRelease(
       Effect.try({
         try: () => new NodeNet.Socket({ fd, readable: true, writable: false }),

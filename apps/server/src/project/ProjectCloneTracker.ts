@@ -43,10 +43,7 @@ export class ProjectCloneTracker extends Context.Service<
     /** Interrupts a running clone and deletes the partial checkout. */
     readonly cancel: (projectId: ProjectId) => Effect.Effect<boolean>;
     readonly retry: (projectId: ProjectId) => Effect.Effect<boolean, SourceControlRepositoryError>;
-    /**
-     * Stops tracking a project's clone, interrupting it if it still runs and
-     * removing an unfinished checkout.
-     */
+    /** Stops tracking, interrupts any running clone and removes unfinished checkouts. */
     readonly discard: (projectId: ProjectId) => Effect.Effect<void>;
     readonly get: (projectId: ProjectId) => Effect.Effect<ProjectCloneSnapshot | null>;
     readonly stream: Stream.Stream<ReadonlyArray<ProjectCloneSnapshot>>;
@@ -95,8 +92,7 @@ export const make = Effect.gen(function* () {
   let sequence = 0;
   const cloneScope = yield* Scope.make("parallel");
   yield* Effect.addFinalizer(() => Scope.close(cloneScope, Exit.void));
-  // start/cancel/retry/discard mutate the same entry and the same directory;
-  // one at a time keeps a double-clicked Retry from racing two clones into it.
+  // Serialize actions on the shared entry and directory so retries cannot race clones.
   const actionLock = yield* Semaphore.make(1);
   const locked = <A, E, R>(effect: Effect.Effect<A, E, R>) => actionLock.withPermits(1)(effect);
 
@@ -188,7 +184,7 @@ export const make = Effect.gen(function* () {
       if (phase === "done") yield* scheduleRemoval(projectId);
     });
 
-  /** Mark the clone done before post-clone hooks so a late cancel cannot delete a complete checkout. */
+  // Complete before hooks so late cancels cannot delete a finished checkout.
   const runClone = (projectId: ProjectId, tracked: TrackedClone) =>
     repositories
       .cloneRepository(
@@ -271,14 +267,11 @@ export const make = Effect.gen(function* () {
           detail: "A clone into this destination is already in progress.",
         });
       }
-      // Everything after the claim runs to completion even if the requesting
-      // connection drops: a claimed entry with no fiber could neither be
-      // cancelled nor retried. Any failure in here releases the claim.
+      // Finish or release the claim despite disconnects; a claim without a fiber cannot be cancelled or retried.
       yield* Effect.uninterruptible(
         Effect.gen(function* () {
           yield* clearRetention(input.projectId);
-          // The entry is registered before the project exists so a
-          // thread.create or project.delete racing this call already sees it.
+          // Register before creation so racing thread.create and project.delete see the clone.
           yield* hooks.createProject({
             projectId: input.projectId,
             title: input.title,
@@ -306,8 +299,7 @@ export const make = Effect.gen(function* () {
       const current = yield* Ref.get(clones);
       const tracked = current.get(projectId);
       if (!tracked || tracked.snapshot.phase !== "running" || !tracked.fiber) return false;
-      // Uninterruptible past this point: a client that disconnects mid-cancel
-      // must not leave a dead fiber behind a "running" snapshot.
+      // Finish cancellation despite disconnects to avoid dead fibers behind running snapshots.
       yield* Effect.uninterruptible(
         Effect.gen(function* () {
           yield* Fiber.interrupt(tracked.fiber!);
@@ -355,8 +347,7 @@ export const make = Effect.gen(function* () {
       const tracked = current.get(projectId);
       if (!tracked) return;
       if (tracked.fiber) yield* Fiber.interrupt(tracked.fiber);
-      // Git may have finished while the interrupt was landing; the project
-      // is going away either way, but a complete checkout is the user's.
+      // Git may finish during interruption; preserve complete checkouts even when discarding the project.
       const after = yield* get(projectId);
       if (after?.phase !== "done") {
         yield* repositories.discardClone(tracked.input.destinationPath).pipe(Effect.ignore);
@@ -394,11 +385,7 @@ export const make = Effect.gen(function* () {
 
 const isSourceControlRepositoryError = Schema.is(SourceControlRepositoryError);
 
-/**
- * Every dispatch transport (WebSocket, HTTP) runs this before normalizing so no
- * client can start a thread on an empty tree, and no attachment copies are made
- * for a command that is about to be refused.
- */
+/** Run on every transport before normalization to reject empty-tree threads before copying attachments. */
 export const rejectCommandsDuringClone = (
   tracker: ProjectCloneTracker["Service"],
   command: { readonly type: string; readonly projectId?: ProjectId; readonly bootstrap?: unknown },

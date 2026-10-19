@@ -69,11 +69,7 @@ export interface IssuedBearerSession {
   readonly expiresAt: DateTime.Utc;
 }
 
-/**
- * They are accepted only by `/mcp`, where every action is capped by the access
- * the user approved; the HTTP API and WebSocket reject them so an agent token
- * cannot reach the full RPC surface around that cap.
- */
+// MCP client tokens are restricted to /mcp; HTTP API and WebSocket RPC would bypass their access cap.
 const MCP_CLIENT_SUBJECT = "mcp-client";
 const MCP_CLIENT_SESSION_TTL = Duration.days(30);
 
@@ -561,12 +557,7 @@ export class EnvironmentAuth extends Context.Service<
       { readonly token: string; readonly expiresAt: DateTime.DateTime },
       ServerAuthInternalError
     >;
-    /**
-     * Spends a one-time pairing code as approval for an MCP client with the
-     * given access; the code must hold every scope that access grants.
-     * Proof-bound codes (T3 Connect) are refused without being spent, and
-     * desktop bootstrap grants never qualify.
-     */
+    /** Spends a code covering all granted scopes. Rejects desktop grants and leaves refused proof-bound codes unspent. */
     readonly consumeMcpApprovalCode: (
       code: string,
       access: AuthMcpClientAccess,
@@ -688,14 +679,8 @@ function firstHeaderValue(value: string | undefined): string | undefined {
   return first && first.length > 0 ? first : undefined;
 }
 
-/**
- * Browsers send `Origin` on WebSocket upgrades, cross-origin requests, and
- * non-GET requests, so an absent header means a same-origin read or a
- * non-browser client. Otherwise the request must be same-origin by the
- * browser's own `Sec-Fetch-Site` (which survives the dev proxy rewriting
- * `Host`), come from this server's own host (directly or behind a proxy that
- * reports `X-Forwarded-Host`), or come from one of the trusted app origins.
- */
+// Missing Origin allows same-origin reads and non-browser clients; otherwise require
+// same-origin Sec-Fetch-Site, this server's host (including X-Forwarded-Host), or a trusted app origin.
 function isBrowserOriginAllowed(
   request: HttpServerRequest.HttpServerRequest,
   trustedOrigins: ReadonlySet<string>,
@@ -772,9 +757,7 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  // Pages the server or its dev setup serves itself. Other origins on the same
-  // site (another localhost port, a LAN IP's other ports) still get the cookie,
-  // so cookie sessions must not authenticate their requests or sockets.
+  // Cookies span ports; reject cookie-authenticated requests and sockets from other same-site origins.
   const trustedBrowserOrigins = new Set<string>([
     ...(config.devUrl ? [config.devUrl.origin] : []),
     ...DESKTOP_RENDERER_ORIGINS,

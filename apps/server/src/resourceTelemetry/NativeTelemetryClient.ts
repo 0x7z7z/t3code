@@ -259,8 +259,7 @@ function isThermallyConstrained(snapshot: HostPowerSnapshot): boolean {
   return snapshot.thermalState === "serious" || snapshot.thermalState === "critical";
 }
 
-// Without a live subscriber the sidecar does not sample on a timer, so an idle server
-// never walks the process table. History then covers only time with a subscriber.
+// No subscribers means no timed process scans; history covers only subscribed periods.
 export function resolveNativeSampleIntervalMs(
   snapshot: HostPowerSnapshot,
   liveSubscriberCount: number,

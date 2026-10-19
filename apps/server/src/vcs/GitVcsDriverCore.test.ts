@@ -493,8 +493,7 @@ it.effect("coalesces concurrent ref pages into one repository snapshot", () =>
 );
 
 describe("pull output beyond the output cap", () => {
-  // A fast-forward that prints over 1 MB takes thousands of files, so the real pull's output is
-  // padded past the cap instead.
+  // Pad real pull output past 1 MB instead of creating thousands of files.
   const withPaddedPull = (stream: "stdout" | "stderr") =>
     Effect.gen(function* () {
       const delegate = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -914,8 +913,7 @@ it.effect("backs off and logs failed fetch attempts across linked worktrees", ()
         "rev-parse",
         "--git-common-dir",
       ])).stdout.trim();
-      // Native realpath, since git reports the long form of a directory the
-      // temp dir may name by its 8.3 short form on Windows.
+      // Native realpath matches git's long paths when Windows temp dirs use 8.3 names.
       assert.equal(
         NodeFS.realpathSync.native(pathService.resolve(cwd, rootCommonDir)),
         NodeFS.realpathSync.native(pathService.resolve(worktreePath, linkedCommonDir)),
@@ -3474,9 +3472,7 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const fileSystem = yield* FileSystem.FileSystem;
         const pathService = yield* Path.Path;
 
-        // Git refuses `file:` submodule transports by default (CVE-2022-39253)
-        // and ignores repo-level config for it, so a local fixture needs the
-        // env allowance. Real submodules are https/ssh and need none of this.
+        // Git blocks file submodule transports (CVE-2022-39253) despite repo config; local fixtures need env permission.
         const previousAllowedProtocol = process.env.GIT_ALLOW_PROTOCOL;
         process.env.GIT_ALLOW_PROTOCOL = "file";
         yield* Effect.addFinalizer(() =>

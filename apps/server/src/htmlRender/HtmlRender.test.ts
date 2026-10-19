@@ -54,10 +54,7 @@ const layerTest = layerHtmlRender();
 
 const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-/**
- * A stand-in browser that reads T3's first command off its debugging pipe,
- * then runs `exit`. Reading it first keeps the pipe from resetting.
- */
+// Read the first CDP command before exit to avoid resetting the pipe.
 const exitingBrowser = (exit: string) =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
@@ -320,7 +317,6 @@ describe("HtmlRender", () => {
             capturedHeight: 300,
             missingImages: ["/nonexistent/t3-missing.png"],
           });
-          // Headless Chrome prefers light, so a dark background proves the theme fragment applied.
           expect(preview.consoleMessages).toEqual(
             expect.arrayContaining([
               { level: "log", text: "ready 3" },

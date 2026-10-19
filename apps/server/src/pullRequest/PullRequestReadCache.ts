@@ -24,14 +24,10 @@ import * as ServerConfig from "../config.ts";
 import { forkParked } from "../serverActivation.ts";
 
 const CONCURRENT_READS = 512;
-// Persistence prefixes every entry key with the store id, so each entry file
-// name starts with it. The scope `revisions` file does not.
+// Entry filenames have the store-id prefix; the scope revisions file does not.
 const STORE_ID = "pr-v2";
 const ENTRY_FILE_NAME = new RegExp(`^${STORE_ID}[0-9a-f]{64}$`);
-/**
- * A file untouched for a day is long expired; the day only leaves slack for
- * clock changes.
- */
+// One day leaves clock-change slack beyond entry expiry.
 export const ENTRY_FILE_MAX_AGE = Duration.days(1);
 type ReadError = PullRequestOperationError | PullRequestUnavailableError;
 const revisionCodec = Schema.fromJsonString(
@@ -175,10 +171,7 @@ export const make = Effect.gen(function* () {
   });
 });
 
-/**
- * The persisted cache drops an expired entry only when it is read again, so
- * files for PRs nobody reopens would otherwise stay forever.
- */
+/** Prunes expired files the cache retains until their keys are read again. */
 export const pruneExpiredEntryFiles = Effect.fn("PullRequestReadCache.pruneExpiredEntryFiles")(
   function* (directory: string) {
     const fileSystem = yield* FileSystem.FileSystem;

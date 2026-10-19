@@ -9,7 +9,7 @@ import { rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts"
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
-/** Trace queries and dashboards depend on these labels, including differences from method prefixes. */
+// Trace queries and dashboards depend on these labels, including deviations from method prefixes.
 const RPC_AGGREGATES = {
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",
@@ -220,10 +220,7 @@ const RPC_METHODS_WITH_TRACING_DISABLED: ReadonlySet<string> = new Set([
   WS_METHODS.serverSignalProcess,
 ]);
 
-/**
- * `ws.ts` adds it to the server's group after `RpcScopeAuthorization`, so it wraps
- * authorization and also records rejected calls.
- */
+/** Add after RpcScopeAuthorization to wrap authorization and record rejected calls. */
 export class RpcInstrumentation extends RpcMiddleware.Service<RpcInstrumentation>()(
   "t3/server/RpcInstrumentation",
 ) {}

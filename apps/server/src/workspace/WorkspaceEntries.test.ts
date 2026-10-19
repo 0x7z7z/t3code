@@ -184,8 +184,7 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
             ? [
                 // git refuses to classify paths beyond a symlink, so nothing there is labelled.
                 { directoryPath: "node_modules/link", ignored: false, except: [] },
-                // A leading `:` is pathspec magic, so git reads `:foo/pkg-0.js` as `foo/pkg-0.js`,
-                // which `!foo/` keeps unignored.
+                // Leading : is pathspec magic; Git sees foo/pkg-0.js, unignored by !foo/.
                 { directoryPath: ":foo", ignored: false, except: [] },
               ]
             : []),

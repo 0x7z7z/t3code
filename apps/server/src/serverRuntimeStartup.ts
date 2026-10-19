@@ -341,18 +341,13 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
     : yield* serverAuth.issueStartupPairingUrl(baseTarget);
 });
 
-/**
- * Prints the startup pairing URL to stdout, where `t3` users and the dev runner
- * read it. The URL carries a one-time admin token, so it skips the logger: log
- * records also land in the trace file and any configured OTLP collector.
- */
+/** Prints the one-time admin pairing URL to stdout only; logger records reach trace files and collectors. */
 export const announceStartupPairingUrl = (pairingUrl: string) =>
   Effect.logInfo("Authentication required. Open T3 Code using the pairing URL.").pipe(
     Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
   );
 
-// No URL here: the browser target carries the pairing token, which
-// announceStartupPairingUrl has already printed to stdout.
+// Pairing tokens belong only in announceStartupPairingUrl's stdout output.
 export const logBrowserAutoOpenUnavailable = Effect.logInfo("browser auto-open unavailable", {
   hint: "Open the pairing URL above in your browser.",
 });
@@ -366,8 +361,7 @@ export const maybeOpenBrowser = (target: string) =>
     const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
 
     yield* externalLauncher.launchBrowser(target).pipe(
-      // The target carries the pairing token, and a failed launch records its
-      // command line on the span, so this call stays out of traces.
+      // Failed launches put token-bearing command lines on spans; disable tracing.
       Effect.withTracerEnabled(false),
       Effect.catch(() => logBrowserAutoOpenUnavailable),
     );
@@ -375,9 +369,7 @@ export const maybeOpenBrowser = (target: string) =>
 
 const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
-    // Attributes on the span itself, not annotateSpans: an annotation follows
-    // every fiber forked inside the phase, such as the effect worker, for the
-    // life of the server.
+    // Use span attributes; annotations would follow long-lived forked fibers for the server's lifetime.
     Effect.withSpan(`server.startup.${phase}`, { attributes: { "startup.phase": phase } }),
   );
 

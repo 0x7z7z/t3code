@@ -32,9 +32,7 @@ export interface ProjectSetupScriptRunnerResultStarted {
   readonly terminalId: string;
   readonly cwd: string;
   readonly async: boolean;
-  /**
-   * The exit code is null when the terminal exited or was closed before the sentinel arrived.
-   */
+  /** Null exit code means the terminal exited or closed before the sentinel. */
   readonly completion?: Effect.Effect<ProjectSetupScriptCompletion>;
 }
 
@@ -114,7 +112,7 @@ export class ProjectSetupScriptRunner extends Context.Service<
 >()("t3/project/ProjectSetupScriptRunner") {}
 
 /** @public */
-/** A per-run random token prevents script output from spoofing completion. */
+// Random per-run tokens prevent script output from spoofing completion.
 const COMPLETION_SENTINEL_PREFIX = "__T3_SETUP_DONE__";
 const OUTPUT_LINE_MAX_LENGTH = 400;
 const PARTIAL_LINE_MAX_LENGTH = 4_096;
@@ -154,12 +152,7 @@ function resolveCompletionShell(
   return "posix";
 }
 
-/**
- * The command runs inside a block and the block closes on its own line, so a trailing `# comment`
- * or a heredoc terminator in the command cannot swallow the sentinel. The shell reads the whole
- * block before running any of it, so a script that reads stdin cannot consume the sentinel line
- * either.
- */
+// A block with its own closing line protects the sentinel from trailing comments, heredocs and scripts reading stdin.
 function wrapCommandForCompletion(
   command: string,
   shell: CompletionShell,
@@ -199,8 +192,7 @@ export const make = Effect.gen(function* () {
     Effect.gen(function* () {
       const startedAtMs = yield* Clock.currentTimeMillis;
       const done = yield* Deferred.make<ProjectSetupScriptCompletion>();
-      // The shell redraws its prompt just after the sentinel. Closing before
-      // that would read the redraw as new activity and keep an idle shell.
+      // Wait for the prompt redraw; closing earlier mistakes it for activity and preserves an idle shell.
       const promptReturned = yield* Deferred.make<void>();
       let lineBuffer = "";
       let settled = false;
@@ -242,13 +234,10 @@ export const make = Effect.gen(function* () {
         }
         if (event.type === "output") {
           lineBuffer += event.data;
-          // A bare carriage return is how installers redraw a progress line in
-          // place; each redraw becomes a short line of its own instead of being
-          // glued into one long one.
+          // Bare CR redraws progress in place; split redraws instead of growing one line.
           const lines = lineBuffer.split(/\r\n|\r|\n/);
           lineBuffer = lines.pop() ?? "";
-          // A script that never prints a newline must not grow this forever.
-          // The sentinel is always on its own line, so keeping the tail is safe.
+          // Bound newline-free output; the sentinel has its own line, so retaining the tail is safe.
           if (lineBuffer.length > PARTIAL_LINE_MAX_LENGTH) {
             lineBuffer = lineBuffer.slice(-PARTIAL_LINE_MAX_LENGTH);
           }
@@ -342,8 +331,7 @@ export const make = Effect.gen(function* () {
       } as const;
     }
 
-    // A thread settles again after it is resumed, and an earlier settle shell
-    // may still be busy; typing into it would feed its foreground program.
+    // Earlier settle shells may still run foreground programs; do not type resumed settles into them.
     const terminalId =
       input.preferredTerminalId ??
       (trigger === "settle"
@@ -355,8 +343,7 @@ export const make = Effect.gen(function* () {
         project: { cwd: project.workspaceRoot },
         worktreePath: input.worktreePath,
       }),
-      // Setup can run before a client attaches. Truecolor probes in tools such
-      // as Vite+ wait for terminal replies that nobody can send at that point.
+      // Before client attachment, truecolor probes wait for terminal replies nobody can send.
       COLORTERM: "",
     };
     const observe = input.observeCompletion;

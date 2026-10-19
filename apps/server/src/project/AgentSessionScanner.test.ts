@@ -2114,8 +2114,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
               payload: { type: "user_message", message: "Future work" },
             }),
           ].join("\n"),
-          // Node's BigInt stat floors sub-millisecond precision, so a one-millisecond
-          // offset can round back to `nowMs`; use a full second to stay clear of the clock.
+          // BigInt stat floors sub-ms precision; use a full second to avoid rounding back to nowMs.
           mtimeMs: nowMs + 1_000,
         });
 

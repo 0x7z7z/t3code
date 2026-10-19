@@ -135,10 +135,7 @@ export class GitManager extends Context.Service<
       input: VcsStatusInput,
       options?: GitRemoteStatusOptions,
     ) => Effect.Effect<VcsStatusRemoteResult | null, GitManagerServiceError>;
-    /**
-     * `refresh` asks the host again. `freshGitState` rereads the branch's git
-     * state without forcing a host refresh; use it before persisting a result.
-     */
+    /** refresh queries the host; freshGitState rereads only git state and is required before persisting. */
     readonly branchPullRequest: (
       input: { readonly cwd: string; readonly branch: string },
       options?: { readonly refresh?: boolean; readonly freshGitState?: boolean },
@@ -178,7 +175,6 @@ const PR_LOOKUP_CACHE_CAPACITY = 2_048;
 const PR_LOOKUP_GIT_STATE_TTL = Duration.minutes(5);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
-/** Back off repeated failures per branch to keep retries below the healthy polling rate. */
 export function prLookupFailureTtl(consecutiveFailures: number): Duration.Duration {
   const exponent = Math.max(0, consecutiveFailures - 1);
   const backoffMs = Duration.toMillis(PR_LOOKUP_FAILURE_BASE_TTL) * Math.pow(2, exponent);
@@ -954,11 +950,8 @@ export const make = Effect.gen(function* () {
             branch: localBranch,
           })
           .pipe(
-            // Azure DevOps, GitLab and Bitbucket publish no `refs/pull/<n>/head`. A head in the
-            // same repository is a branch on the primary remote, so it is fetched by name instead,
-            // but only when that remote is the pull request's own repository: Azure finds a pull
-            // request by number anywhere in the organization. Only while it is open, too: the
-            // branch of a closed one may have moved on past the head it was closed with.
+            // Azure, GitLab and Bitbucket lack refs/pull/<n>/head; fetch branches only for open, same-repository PRs.
+            // Azure PR numbers are organization-wide; verify the primary remote matches the PR repository.
             Effect.catch((cause) =>
               pullRequest.isCrossRepository === true || pullRequest.state !== "open"
                 ? Effect.fail(cause)
@@ -1235,11 +1228,7 @@ export const make = Effect.gen(function* () {
       return null;
     }
 
-    // Both sides must be resolved before treating a mismatch as real:
-    // `readConfigValueNullable` swallows any git-config read failure into
-    // `null`, so a transient failure to resolve the *current* remote URL must
-    // read as "unknown", not as "no remote" — the latter would otherwise drop
-    // an already-known PR badge on every hiccup.
+    // Config read failures become null; require both remote URLs before treating a mismatch as real.
     if (lastKnown.headRemoteUrlKey !== null && current.headRemoteUrlKey !== null) {
       return lastKnown.headRemoteUrlKey === current.headRemoteUrlKey ? lastKnown.pr : null;
     }
@@ -1264,8 +1253,7 @@ export const make = Effect.gen(function* () {
     },
     refreshMissingPullRequest = false,
   ) {
-    // Keyed by (cwd, branch) only: the upstream ref changing (e.g. a first
-    // `push -u`) must not orphan the fallback value for the same branch.
+    // Upstream changes must not orphan the same branch's fallback value.
     const branchKey = `${cwd}\u0000${details.branch}`;
     const cacheKey = prLookupCacheKey(cwd, details);
     if (refreshMissingPullRequest) {
@@ -1377,11 +1365,8 @@ export const make = Effect.gen(function* () {
   const readConfigValueNullable = (cwd: string, key: string) =>
     gitCore.readConfigValue(cwd, key).pipe(Effect.orElseSucceed(() => null));
 
-  // Whether the GitHub provider creates PRs in the only remote. It picks GH_REPO when that
-  // parses, else what resolveGitHubRepository makes of the remote and its gh-resolved mark from
-  // `gh repo set-default`, given the host the provider's context gets from the remote URL. An
-  // HTTPS remote keeps a non-default port there, and the provider then ignores the mark. With no
-  // answer at all, the provider falls back to the remote itself.
+  // Mirror the GitHub provider's GH_REPO/gh-resolved target selection.
+  // Its remote-derived host retains HTTPS ports, which make it ignore gh-resolved.
   const targetsOnlyRemote = Effect.fn("targetsOnlyRemote")(function* (
     cwd: string,
     remoteName: string,
@@ -1504,9 +1489,7 @@ export const make = Effect.gen(function* () {
       remoteName,
     );
 
-    // With no origin to compare against, the only remote is the repository gh targets
-    // unless GH_REPO or `gh repo set-default` (gh-resolved) names another, so a branch on it
-    // is not a fork. With several remotes, or with that other target, it may still be a fork.
+    // A sole remote is not a fork unless GH_REPO or gh-resolved targets another repository.
     const isOnlyRemote =
       remoteName !== null &&
       remoteName !== "origin" &&
@@ -1579,8 +1562,7 @@ export const make = Effect.gen(function* () {
     } satisfies BranchHeadContext;
   });
 
-  // Remote names may contain slashes, so refs are matched literally per remote
-  // instead of with a glob.
+  // Remote names can contain slashes; match refs literally.
   const findRemoteTrackingRemote = Effect.fn("findRemoteTrackingRemote")(function* (
     cwd: string,
     branch: string,
@@ -1679,11 +1661,7 @@ export const make = Effect.gen(function* () {
             })
             .pipe(
               Effect.flatMap((result) => {
-                // `merge-base --is-ancestor` reports 0 for ancestor and 1
-                // for not-ancestor; any other non-zero exit is a failed
-                // probe, not a negative result. A failed probe rejects the
-                // whole inference instead of letting a surviving probe win
-                // by default and attach the wrong fork's PR.
+                // Exit 1 means non-ancestor; other failures must reject inference rather than pick another fork.
                 if (result.exitCode === 0) return Effect.succeed(remote.name);
                 if (result.exitCode === 1) return Effect.succeed(null);
                 return new GitCommandError({
@@ -1706,10 +1684,7 @@ export const make = Effect.gen(function* () {
     return remoteUrl === null ? null : remoteName;
   });
 
-  // `git worktree add -b feature origin/main` makes the new local branch track
-  // origin/main. That upstream is the branch's base, not its published PR head.
-  // Looking up PRs for it can attach an old reverse merge from main and
-  // auto-settle an unrelated feature thread.
+  // worktree add can set origin/main as upstream; this base is not the branch's published PR head.
   const resolveLookupHeadContext = Effect.fn("resolveLookupHeadContext")(function* (
     cwd: string,
     details: {
@@ -2327,9 +2302,7 @@ export const make = Effect.gen(function* () {
     });
     return mergeGitStatusParts(local, remote);
   });
-  // A merged or closed answer can settle a thread or remove its worktree, so
-  // branchPullRequest confirms one against fresh reads, and discovery asks for
-  // fresh reads (`freshGitState`) before it persists an answer.
+  // Closed PR results can settle threads or remove worktrees; confirm fresh git state before persisting.
   const prLookupGitStateByKey = new Map<
     string,
     { readonly readAtMs: number; readonly value: string | null }
@@ -2351,8 +2324,7 @@ export const make = Effect.gen(function* () {
       ) {
         return remembered.value;
       }
-      // invalidateStatus bumps the epoch. A read that started before a T3 git
-      // action, or before a newer read finished, must not replace their state.
+      // Reads predating git actions or newer reads must not overwrite their state.
       const epoch = prLookupEpoch(cwd);
       const value = yield* read;
       const latest = prLookupGitStateByKey.get(entryKey);
@@ -2524,9 +2496,7 @@ export const make = Effect.gen(function* () {
       if (Option.isSome(cached)) yield* Cache.invalidate(prLookupCache, cacheKey);
     }
     let cached = yield* getPrLookup(cacheKey);
-    // The cached head context may have resolved on a different remote than
-    // the saved upstream: a branch tracking origin/main but pushed to a fork
-    // is looked up on the fork. Verify against the remote the lookup used.
+    // Lookup may use a fork instead of the saved upstream; verify the remote actually queried.
     const identityRemoteName = (headContext: BranchHeadContext) =>
       headContext.remoteName ?? remoteName ?? undefined;
     const currentIdentity = yield* resolvePrLookupRepositoryIdentity(
@@ -2584,8 +2554,7 @@ export const make = Effect.gen(function* () {
       closedAt: latest.closedAt ?? null,
       mergedAt: latest.mergedAt ?? null,
       headSha: latest.headSha ?? null,
-      // Hosting CLIs can select an upstream repository instead of origin.
-      // The returned PR URL names the repository that actually owns it.
+      // Hosting CLIs may target upstream; the PR URL identifies its actual repository.
       repositoryKey: pullRequestRepositoryKey(latest.url),
     };
   });
@@ -2713,17 +2682,13 @@ export const make = Effect.gen(function* () {
       const localPullRequestBranch =
         resolvePullRequestWorktreeLocalBranchName(pullRequestWithRemoteInfo);
 
-      // Git refuses to move a branch that is checked out in a worktree, so the
-      // reuse paths cannot go through materializePullRequestHeadBranch and instead
-      // advance the checkout from inside the worktree.
+      // Git refuses to move checked-out branches; advance reused checkouts from inside their worktree.
       const reuseExistingWorktree = Effect.fn("reuseExistingWorktree")(function* (
         worktreePath: string,
         checkedOutBranch: string,
       ) {
         if (checkedOutBranch !== localPullRequestBranch) {
-          // findLocalHeadBranch also accepts a branch that merely shares the head's bare name —
-          // a fork PR opened from "main" matches the user's own local main. That checkout is
-          // somebody else's work, so it keeps its tracking config and nothing else.
+          // Bare-name matches may be unrelated local branches; preserve their work and tracking config.
           return {
             pullRequest,
             branch: localPullRequestBranch,
@@ -2732,9 +2697,7 @@ export const make = Effect.gen(function* () {
           };
         }
 
-        // Read before ensureExistingWorktreeUpstream: it force-updates the remote-tracking ref,
-        // and once that has jumped to a rewritten head there is no way left to tell a checkout
-        // that holds nothing of its own from one carrying local commits.
+        // Capture upstream before its forced fetch so rewritten heads remain distinguishable from local commits.
         const upstreamCommitBeforeFetch = yield* gitCore
           .resolveCommit({ cwd: worktreePath, revision: "@{upstream}" })
           .pipe(
@@ -2745,15 +2708,10 @@ export const make = Effect.gen(function* () {
         yield* ensureExistingWorktreeUpstream(worktreePath);
 
         const refreshed = yield* gitCore
-          // The pull request's own ref, because it is the only thing that certainly names its
-          // head. The branch's upstream does not: configuring it is best-effort, so a branch cut
-          // from `origin/main` whose head branch has since been deleted still resolves — and
-          // following it would move the checkout onto main and call that the pull request.
+          // Use the PR's own ref; best-effort upstream config may still point to its base after head deletion.
           .fetchPullRequestHeadCommit({ cwd: worktreePath, prNumber: pullRequest.number })
           .pipe(
-            // A host that publishes no `refs/pull/<n>/head` leaves the remote-tracking branch,
-            // taken only where it is the head branch's own rather than whatever the checkout
-            // happened to be cut from.
+            // Without refs/pull/<n>/head, accept only the head's tracking branch, never the checkout's base.
             Effect.catch(() =>
               Effect.gen(function* () {
                 const details = yield* gitCore.statusDetails(worktreePath);
@@ -2792,8 +2750,7 @@ export const make = Effect.gen(function* () {
             ),
           );
 
-        // Only when the checkout actually moved: another thread may be running in this worktree,
-        // and re-running the setup script under it buys nothing when the code did not change.
+        // Setup can disrupt other threads using this worktree; rerun only when the checkout moved.
         if (refreshed.moved) {
           yield* maybeRunSetupScript(worktreePath);
         }

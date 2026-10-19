@@ -27,8 +27,7 @@ if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
   );
 }
 
-// tsdown's executable step requires a single chunk and counts sourcemaps as
-// chunks. It also needs Node >=25.7 for `--build-sea`, so it runs separately.
+// tsdown SEA needs one chunk (sourcemaps count) and Node >=25.7, so package separately.
 const packExecutable = process.env.T3CODE_PACK_EXE === "1";
 const SEA_NODE_VERSION = "26.8.2";
 const SEA_TARGETS = {
@@ -67,8 +66,7 @@ export default mergeConfig(
       },
     },
     pack: {
-      // The executable embeds one entry; the history worker becomes a hidden
-      // subcommand there instead of a sibling script.
+      // SEA embeds one entry; expose the history worker as a hidden subcommand.
       entry: packExecutable ? ["src/bin.ts"] : ["src/bin.ts", "src/claude-history-worker.ts"],
       outDir: packExecutable ? "dist-exe" : "dist",
       sourcemap: !packExecutable,
@@ -79,15 +77,13 @@ export default mergeConfig(
               fileName: "t3",
               outDir: "dist-exe",
               ...(packExecutableTargets ? { targets: packExecutableTargets } : {}),
-              // Node's SEA docs: `import()` does not work when useCodeCache is
-              // true, and the server reaches several modules that way.
+              // Node SEA useCodeCache breaks import(), which the server needs.
               seaConfig: { useCodeCache: false },
             },
           }
         : {}),
       deps: {
-        // `alwaysBundle: false` means "no opinion", so transitive native loaders
-        // still need `neverBundle` to retain native acceleration.
+        // alwaysBundle=false has no opinion; neverBundle must retain transitive native acceleration.
         alwaysBundle: shouldBundleCliDependency,
         neverBundle: (id: string) => isExternalCliDependency(id),
         onlyBundle: false,
@@ -117,11 +113,9 @@ export default mergeConfig(
       },
     },
     test: {
-      // The server suite exercises sqlite, git, temp worktrees, and orchestration
-      // runtimes heavily. Running files in parallel introduces load-sensitive flakes.
+      // Parallel sqlite/git/worktree/orchestration tests introduce load-sensitive flakes.
       fileParallelism: false,
       sequence: { sequencer: WeightedShardSequencer },
-      // Appended to the root setup, which mergeConfig concatenates.
       setupFiles: ["./src/testUtils/gitConfig.setup.ts"],
       hookTimeout: 120_000,
       testTimeout: 120_000,

@@ -338,7 +338,7 @@ const startSingleBranchRun = (input: {
     };
   });
 
-// Runs drive real git, which the test clock does not advance, so waits use real time.
+// Real git runs need wall-time waits; the test clock does not advance them.
 it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideService", (it) => {
   it.effect.each([
     {
@@ -556,8 +556,7 @@ it.layer(layerBase, { excludeTestServices: true })("PullRequestReviewGuideServic
           );
         const stored = yield* Deferred.make<void>();
 
-        // Built in this test's scope: runs are forked into the service's scope and must outlive
-        // the call that obtains the service.
+        // Build in the test scope so forked runs outlive service acquisition.
         const context = yield* Layer.build(
           makeLayer({
             ...repositories,

@@ -45,10 +45,7 @@ const CLAUDE_INVESTIGATION_ALLOWED = [
   "Bash(git log:*)",
   "Bash(git show:*)",
 ].join(",");
-/**
- * The allowed git commands accept any trailing arguments, and `--output` makes each of them write
- * a file anywhere. Deny rules win over allow rules, so this keeps the investigation read-only.
- */
+// Denies override allows; block git --output/-o because allowed trailing args can otherwise write anywhere.
 const CLAUDE_INVESTIGATION_DENIED = ["Bash(git * --output*)", "Bash(git * -o *)"].join(",");
 
 const ClaudeOutputEnvelope = Schema.Struct({
@@ -69,10 +66,7 @@ const ClaudeErrorResult = Schema.Struct({ is_error: Schema.Literal(true), result
 const isClaudeErrorResult = Schema.is(ClaudeErrorResult);
 const decodeJsonOption = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 
-/**
- * The error a failed `claude -p --output-format json` run reports on stdout. Stderr may only
- * hold notices from a wrapper around the binary, so the caller prefers this when present.
- */
+// Claude reports JSON errors on stdout; stderr may contain only wrapper notices.
 function claudeErrorResult(stdout: string): string | undefined {
   const output = Option.getOrUndefined(decodeJsonOption(stdout));
   const messages: ReadonlyArray<unknown> = Array.isArray(output) ? output : [output];
@@ -219,8 +213,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
               ]
             : ["--tools", ""]),
           "--disable-slash-commands",
-          // Claude refuses this flag next to a managed-mcp.json, which already keeps the
-          // user's own MCP servers out.
+          // managed-mcp.json already isolates servers and makes Claude reject this flag.
           ...(managedMcpConfig ? [] : ["--strict-mcp-config"]),
           "--permission-mode",
           "dontAsk",

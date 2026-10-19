@@ -96,10 +96,7 @@ const layerConfig = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =
     }),
   ).pipe(Layer.provide(NodePath.layer));
 
-/**
- * The export is asserted after the layer's scope closes, which is where the
- * exporter flushes whatever the interval did not.
- */
+// Closing the layer flushes exports the interval has not sent.
 const logThrough = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =>
   Effect.gen(function* () {
     const requests: Array<ExportedRequest> = [];

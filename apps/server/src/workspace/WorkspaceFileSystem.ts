@@ -27,8 +27,7 @@ import { fileHeaderMimeType } from "./fileHeaderMimeType.ts";
 
 const PROJECT_READ_FILE_MAX_BYTES = 1024 * 1024;
 
-// Windows also reaches `.git` through trailing dots or spaces, a `:` stream
-// suffix, or the 8.3 short name `GIT~1`. Names compare upcased, as NTFS does.
+// NTFS reaches .git through trailing dots/spaces, stream suffixes and GIT~1; compare uppercased names.
 const isGitMetadataName = (segment: string) => {
   const name = (segment.split(":")[0] ?? "").replace(/[. ]+$/, "").toUpperCase();
   return name === ".GIT" || name === "GIT~1";
@@ -193,13 +192,8 @@ export const make = Effect.gen(function* () {
     );
   };
 
-  /**
-   * Git runs config and hooks from its own folders, so a write never lands in one:
-   * a `.git` entry, or a repository folder under another name such as `.bare`.
-   * Folders are checked upward to a linked worktree's top, which holds a `.git`
-   * file, since worktrees can sit inside a bare repository. `absolutePath` must
-   * be normalized.
-   */
+  // Reject Git folders, including renamed bare repos whose config/hooks can execute; paths must be normalized.
+  // Stop at linked worktrees' .git files since worktrees can sit inside bare repos.
   const isInGitFolder = async (absolutePath: string) => {
     if (absolutePath.split(path.sep).some(isGitMetadataName)) return true;
     for (let folder = path.dirname(absolutePath); ; folder = path.dirname(folder)) {
@@ -212,18 +206,13 @@ export const make = Effect.gen(function* () {
           }),
         ),
       );
-      // What git reads as a repository: HEAD, plus objects and refs here or in
-      // the folder a `commondir` file names, as in a linked worktree's git folder.
+      // Git recognizes HEAD with commondir or objects/refs as a repository.
       if (head && (commondir || (objects && refs))) return true;
       if (dotGit?.isFile() || path.dirname(folder) === folder) return false;
     }
   };
 
-  /**
-   * Workspace-relative paths must stay inside the root, symlinks included. An
-   * absolute path reads a host file in place, such as a report an agent wrote to a
-   * temp directory; it gets no root check.
-   */
+  // Relative reads must remain under root after resolving symlinks; absolute reads may target any host file.
   const resolveReadTarget = Effect.fn("WorkspaceFileSystem.resolveReadTarget")(function* (
     input: ProjectReadFileInput,
   ) {
@@ -292,8 +281,7 @@ export const make = Effect.gen(function* () {
 
     return yield* Effect.acquireUseRelease(
       Effect.tryPromise({
-        // Non-blocking so a FIFO cannot hang the open; the stat below rejects
-        // it. Regular files ignore the flag. Windows lacks it.
+        // Non-blocking opens prevent FIFO hangs before stat rejects them; Windows lacks the flag.
         try: () =>
           NodeFSP.open(
             realTargetPath,
@@ -377,10 +365,7 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  /**
-   * Resolve the deepest existing ancestor before the root check so symlinks
-   * cannot redirect file or directory creation outside the root. Reject dangling links.
-   */
+  // Resolve existing ancestors and reject dangling links so creation cannot follow symlinks outside root.
   const resolveWriteTarget = Effect.fn("WorkspaceFileSystem.resolveWriteTarget")(function* (
     input: ProjectWriteFileInput,
   ) {

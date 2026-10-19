@@ -11,11 +11,7 @@ import { writeFileStringAtomically } from "@t3tools/shared/atomicWrite";
 import * as ServerConfig from "../config.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-/**
- * Codex writes `tokens` only for ChatGPT logins and omits the key for API-key,
- * agent-identity, and personal-access-token logins, so its absence is a
- * supported install and not a malformed file.
- */
+// Only ChatGPT Codex logins write tokens; API-key, agent-identity and PAT installs legitimately omit them.
 const CodexAuthJsonSchema = Schema.Struct({
   tokens: Schema.optionalKey(
     Schema.Struct({

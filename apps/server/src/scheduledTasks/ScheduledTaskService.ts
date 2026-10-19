@@ -59,7 +59,7 @@ const WEBHOOK_DELIVERY_RETENTION = 50;
 const WEBHOOK_DELIVERY_LOG_BODY_LIMIT = 64 * 1024;
 const WEBHOOK_DELIVERY_LOG_PROMPT_LIMIT = 64 * 1024;
 const WEBHOOK_MAX_QUEUED_PER_TASK = 20;
-/** Accepted deliveries per task per minute, enforced here as well as on the relay because the tunnel hostname is public too. */
+// Enforce the relay's per-task/minute limit here too; tunnel hostnames are public.
 const WEBHOOK_RATE_LIMIT_PER_MINUTE = 60;
 
 interface WebhookOrigin {
@@ -217,11 +217,7 @@ export class ScheduledTaskService extends Context.Service<
     readonly getWebhookDelivery: (
       input: ScheduledTaskGetWebhookDeliveryInput,
     ) => Effect.Effect<ScheduledTaskGetWebhookDeliveryResult, ScheduledTaskError>;
-    /**
-     * Verifies, logs and dispatches one webhook request. Returns as soon as the
-     * delivery is logged; the run itself continues in the background so senders
-     * with short timeouts get their answer immediately.
-     */
+    /** Verifies, logs and dispatches; returns after logging while the run continues in the background. */
     readonly triggerWebhook: (
       request: WebhookTriggerRequest,
     ) => Effect.Effect<WebhookTriggerResult, ScheduledTaskError>;
@@ -247,8 +243,7 @@ function nextRunAt(
   from: DateTime.DateTime,
 ): string | null {
   if (!task.enabled) return null;
-  // A stored interval can decode yet overflow the representable DateTime
-  // range; an unrepresentable occurrence means the task has no next run.
+  // Decoded intervals can overflow DateTime; unrepresentable occurrences have no next run.
   try {
     const next = nextScheduledRunAt(task.schedule, from);
     return next !== null && Number.isFinite(DateTime.toEpochMillis(next)) ? iso(next) : null;
@@ -334,9 +329,7 @@ export const listDueTasks = Effect.fn("ScheduledTaskService.listDueTasks")(funct
     const decoded = yield* Effect.result(decodeRow(row));
     if (Result.isSuccess(decoded)) {
       const task = decoded.success;
-      // next_run_at is a freeform string at the schema level; a stored value
-      // that cannot parse as a DateTime would defect the poll below, so the
-      // row is skipped here like any other corrupt row.
+      // next_run_at is freeform; skip unparseable values before they defect the poll.
       if (task.nextRunAt === null || Option.isSome(DateTime.make(task.nextRunAt))) {
         tasks.push(task);
       } else {
@@ -367,14 +360,11 @@ export const layer = Layer.effect(
     const webhookPermits = yield* Ref.make<ReadonlyMap<ScheduledTaskId, Semaphore.Semaphore>>(
       new Map(),
     );
-    // Keyed by task id and creation time, so deliveries of a deleted task that
-    // finish late release their own count, never a recreated task's.
+    // Include creation time so late deliveries cannot decrement a recreated task's count.
     const webhookQueued = yield* Ref.make<ReadonlyMap<string, number>>(new Map());
     const webhookRateWindows = yield* Ref.make<ReadonlyMap<ScheduledTaskId, RateWindow>>(new Map());
     const activeRuns = yield* Ref.make<ReadonlySet<ScheduledTaskId>>(new Set());
-    // Sliding(1) coalesces the dirty-signal: every notification triggers a
-    // full list() re-emit anyway, so a slow subscriber only ever needs the
-    // latest signal — an unbounded backlog would just grow memory.
+    // Notifications re-emit the full list; slow subscribers need only the newest dirty signal.
     const changesPubSub = yield* PubSub.sliding<void>(1);
     const notifyChanged = PubSub.publish(changesPubSub, undefined).pipe(Effect.asVoid);
 
@@ -476,11 +466,8 @@ export const layer = Layer.effect(
       return task;
     });
 
-    // Run-state columns (last_run_*, run_count) are intentionally absent from
-    // the conflict clause: they are owned by the run transitions below, and a
-    // concurrent settings save must not overwrite an in-flight increment.
-    // Check existence in the write itself so an edit cannot undo a deletion
-    // that landed after upsert loaded the previous task.
+    // Run transitions own run-state columns; settings saves must not overwrite them.
+    // Check existence in the write so edits cannot undo concurrent deletion.
     const saveTask = (
       task: ScheduledTask,
       requireExisting: boolean,
@@ -632,11 +619,7 @@ export const layer = Layer.effect(
         ),
       );
 
-    // Best-effort escape hatch: if anything fails between markRunning and
-    // markCompleted, write a full terminal record so runDueTasks neither skips
-    // the task forever (it filters out 'running' rows) nor re-fires it
-    // immediately: the dispatch may already have gone out, so next_run_at must
-    // advance and run_count must count the attempt.
+    // On mid-run failure, record a terminal attempt and advance the schedule; dispatch may already have occurred.
     const releaseStuckRun = (task: ScheduledTask, message: string) =>
       Effect.gen(function* () {
         const now = yield* localNow;
@@ -684,9 +667,7 @@ export const layer = Layer.effect(
         const startedAt = yield* localNow;
         const startedAtIso = iso(startedAt);
 
-        // The in-memory snapshot may be stale: re-read before touching run
-        // state. The task may have been deleted, paused, or postponed since
-        // the poll loaded it — none of those may fire.
+        // Re-read stale poll snapshots so deleted, paused or postponed tasks cannot fire.
         const active = yield* findTask(task.id);
         if (active === null) {
           if (webhook !== undefined) {
@@ -709,9 +690,7 @@ export const layer = Layer.effect(
         ) {
           return active;
         }
-        // A queued delivery must not run a task that was paused, deleted and
-        // recreated under the same id, or switched to another trigger while
-        // it waited for its turn.
+        // Reject queued deliveries after pause, same-id recreation or trigger changes.
         if (webhook !== undefined) {
           const reason =
             active.createdAt !== task.createdAt
@@ -736,9 +715,7 @@ export const layer = Layer.effect(
         // A webhook prompt was rendered from the row when the request arrived.
         const prompt = webhook?.prompt ?? active.prompt;
 
-        // Effect.exit (not Effect.result) so defects and interruptions in the
-        // dispatch are also captured and recorded as a failed run instead of
-        // aborting before markCompleted.
+        // Capture defects and interrupts too so dispatch failures still reach markCompleted.
         const result =
           active.threadId === null
             ? yield* Effect.exit(
@@ -792,9 +769,7 @@ export const layer = Layer.effect(
           runCount: scheduleSource.runCount + 1,
         };
         if (current !== null) {
-          // startedAtIso in the guard ensures this writes only to the row this
-          // run marked as running — a task deleted mid-run and recreated with
-          // the same id (idempotent commandId replay) must not be stamped.
+          // Guard by startedAtIso so completion cannot stamp a deleted-and-recreated task.
           yield* markCompleted({
             id: task.id,
             completedAtIso: completed.updatedAt,
@@ -865,8 +840,7 @@ export const layer = Layer.effect(
       );
     });
 
-    // Recover from a crash or hard shutdown mid-run: rows stuck in 'running'
-    // would otherwise be skipped by the due-task filter forever.
+    // Recover crash-left running rows that the due-task filter would otherwise skip forever.
     yield* Effect.gen(function* () {
       const rows = yield* selectAllRows();
       const stuck = rows.filter((row) => row.last_run_status === "running");
@@ -922,8 +896,7 @@ export const layer = Layer.effect(
     const subscribeList: ScheduledTaskService["Service"]["subscribeList"] = () =>
       Stream.unwrap(
         Effect.gen(function* () {
-          // Subscribe before taking the snapshot so a change landing between
-          // the two is buffered by the subscription rather than dropped.
+          // Subscribe before reading to buffer concurrent changes.
           const subscription = yield* PubSub.subscribe(changesPubSub);
           return Stream.concat(
             Stream.fromEffect(list()),
@@ -950,13 +923,9 @@ export const layer = Layer.effect(
           ScheduledTaskId.make(
             input.commandId ? `scheduled-task:${input.commandId}` : `scheduled-task:${uuid}`,
           );
-        // Look up by the *resolved* id so idempotent creates (commandId replays)
-        // keep their run history, and so real load failures propagate instead
-        // of silently resetting an existing row.
+        // Use the resolved id to preserve replayed creates' run history; propagate load failures.
         const existingTask = yield* findTask(id);
-        // Keep the existing next_run_at when the schedule itself is untouched:
-        // editing a title or prompt must not postpone (or resurrect) a due
-        // run — only schedule/enabled changes restart the clock.
+        // Only schedule/enabled changes restart the clock; title/prompt edits must preserve pending runs.
         const schedule: ScheduledTask["schedule"] =
           input.schedule.type === "webhook"
             ? {
@@ -979,9 +948,7 @@ export const layer = Layer.effect(
                 const token = existing?.token ?? (yield* newWebhookToken);
                 const signature =
                   input.schedule.type === "webhook" ? input.schedule.signature : null;
-                // A secretRef is a value the user entered for an agent; this
-                // save consumes it, so it cannot be used again. A replay of a
-                // save that already used it keeps the secret that save stored.
+                // SecretRefs are one-use; replayed saves retain the secret already stored.
                 const replay = input.commandId !== undefined && existing?.secret != null;
                 const fromRef =
                   signature?.secretRef === undefined
@@ -995,8 +962,7 @@ export const layer = Layer.effect(
                               : Effect.fail(taskError(error.message, { taskId: id })),
                           ),
                         );
-                // A ref, when given, is the only source: a plain secret sent
-                // alongside it must not replace what a replayed save stored.
+                // A supplied ref is authoritative; plain secrets must not overwrite replayed values.
                 const provided = signature?.secretRef === undefined ? signature?.secret : fromRef;
                 const secret = signature == null ? null : (provided ?? existing?.secret ?? null);
                 const secretChanged =
@@ -1048,8 +1014,7 @@ export const layer = Layer.effect(
         if (existing.enabled === input.enabled) return { task: existing };
         const now = yield* localNow;
         const next = nextRunAt({ enabled: input.enabled, schedule: existing.schedule }, now);
-        // RETURNING so a task deleted between the load and this UPDATE is a
-        // visible not-found error, not a false success.
+        // RETURNING detects deletes racing the load instead of falsely reporting success.
         const updated = yield* sql<{ task_id: string }>`
           UPDATE scheduled_tasks
           SET enabled = ${input.enabled ? 1 : 0},
@@ -1115,8 +1080,7 @@ export const layer = Layer.effect(
         }
         const token = yield* newWebhookToken;
         const now = yield* localNow;
-        // Matching created_at keeps a rotation from landing on a task deleted
-        // and recreated under the same id since it was loaded.
+        // Guard by created_at so rotation cannot affect a deleted-and-recreated task.
         const updated = yield* sql<{ task_id: string }>`
           UPDATE scheduled_tasks
           SET webhook_token = ${token}, updated_at = ${iso(now)}
@@ -1207,8 +1171,7 @@ export const layer = Layer.effect(
       return sql
         .withTransaction(
           Effect.gen(function* () {
-            // Conditional on the task existing, so a delivery racing a delete
-            // cannot leave rows that a recreated task with the same id would show.
+            // Require the task to exist so deletes cannot leave deliveries for a recreated task.
             yield* sql`
               INSERT INTO scheduled_task_webhook_deliveries (
                 delivery_id, task_id, received_at, method, query, headers_json, body,
@@ -1261,10 +1224,7 @@ export const layer = Layer.effect(
         WHERE delivery_id = ${deliveryId}
       `.pipe(Effect.ignore);
 
-    /**
-     * Sliding one-minute window counting every request with a valid token,
-     * including ones the signature check later rejects.
-     */
+    // Count every valid-token request in the sliding minute, even if signature verification fails.
     const takeRateSlot = (id: ScheduledTaskId, nowMs: number) =>
       Ref.modify(
         webhookRateWindows,
@@ -1355,8 +1315,7 @@ export const layer = Layer.effect(
           ),
         );
         const row = rows[0];
-        // A wrong token is indistinguishable from an unknown hook, so the URL
-        // does not reveal which hooks exist.
+        // Hide hook existence by treating wrong tokens as unknown hooks.
         if (
           row === undefined ||
           row.webhook_token === null ||
@@ -1370,9 +1329,7 @@ export const layer = Layer.effect(
         if (schedule.type !== "webhook") return yield* notFound;
 
         const now = yield* localNow;
-        // Anyone can reach the tunnel directly and set the relay's header, so
-        // a receive time is never later than now: a future one would pin the
-        // delivery in the log and slip past the task's max age.
+        // Direct callers can forge relay headers; clamp future receive times to prevent max-age bypass and log pinning.
         const receivedAt =
           request.receivedAt === undefined
             ? now
@@ -1393,10 +1350,7 @@ export const layer = Layer.effect(
                 )}`
             : `delivery:relay:${request.relayDeliveryId}`,
         );
-        // Claimed in its own table, kept longer than the relay holds a request,
-        // because the delivery log is trimmed. A rate-limited delivery stays
-        // held on the relay, so it must give up its claim or the next pass
-        // would treat it as already delivered.
+        // Retain claims beyond relay hold time despite log trimming; rate-limited deliveries must release claims for retry.
         const releaseClaim = <A>(result: A) =>
           request.relayDeliveryId === undefined
             ? Effect.succeed(result)
@@ -1404,10 +1358,7 @@ export const layer = Layer.effect(
                 DELETE FROM scheduled_task_webhook_relay_deliveries
                 WHERE relay_delivery_id = ${request.relayDeliveryId}
               `.pipe(Effect.ignore, Effect.as(result));
-        // From the claim until the run is forked nothing may interrupt: a
-        // request dropped in between (the relay hangs up after its timeout)
-        // would leave a claimed delivery that never runs, or a queue slot that
-        // is never released.
+        // Claim through fork must be uninterruptible so relay disconnects cannot strand deliveries or queue slots.
         return yield* Effect.uninterruptible(
           Effect.gen(function* () {
             if (request.relayDeliveryId !== undefined) {
@@ -1452,8 +1403,7 @@ export const layer = Layer.effect(
                 ...(details.error === undefined ? {} : { error: details.error }),
               });
 
-            // Only the first rejected request in a window is logged, so a flood
-            // cannot write rows or push the real deliveries out of the log.
+            // Log only the first rejection per window so floods cannot evict real deliveries.
             const slot = yield* takeRateSlot(task.id, DateTime.toEpochMillis(now));
             if (slot !== "allowed") {
               if (slot === "first_rejected") yield* log("rate_limited");
@@ -1500,8 +1450,7 @@ export const layer = Layer.effect(
               Effect.mapError((cause) => taskError("Could not generate frame id.", { cause })),
             );
             const rendered = renderWebhookPrompt(task.prompt, request, frameId);
-            // Providers trim the prompt before checking, so whitespace around
-            // it is free.
+            // Providers trim before checking prompt size.
             if (rendered.prompt.trim().length > PROVIDER_SEND_TURN_MAX_INPUT_CHARS) {
               yield* log("dispatch_failed", {
                 signatureVerified: signature !== null,
@@ -1512,8 +1461,7 @@ export const layer = Layer.effect(
               yield* observe("prompt_too_long");
               return { _tag: "accepted" as const, deliveryId, outcome: "prompt_too_long" as const };
             }
-            // Bound the deliveries one task holds, so steady traffic to a stuck
-            // task cannot pile up parked fibers.
+            // Bound queued deliveries so stuck tasks cannot accumulate parked fibers.
             const queueKey = `${task.id}\u0000${task.createdAt}`;
             const queued = yield* Ref.modify(webhookQueued, (counts) => {
               const count = counts.get(queueKey) ?? 0;
@@ -1561,8 +1509,7 @@ export const layer = Layer.effect(
                     Effect.andThen(markDeliveryFailed(deliveryId, skipped.reason)),
                   ),
               }),
-              // The log is readable over RPC, so it gets a fixed reason; the
-              // cause, which can carry request data, stays in the server log.
+              // RPC-readable logs get fixed reasons; request-bearing causes stay in server logs.
               Effect.catchCause((cause) =>
                 Effect.logWarning("Webhook dispatch failed", { taskId: task.id, cause }).pipe(
                   Effect.andThen(runOutcome("failed")),

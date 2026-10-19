@@ -55,11 +55,7 @@ const MAX_METADATA_OPERATIONS_PER_SOURCE = MAX_TRANSCRIPTS_PER_SOURCE * 4;
 const MAX_METADATA_RECORDS_PER_SOURCE = 100_000;
 const MAX_METADATA_RECORDS_PER_TRANSCRIPT = 1_000;
 const RECENT_THREAD_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
-/**
- * Large tool results (especially screenshots) can make an otherwise ordinary
- * Codex transcript several GiB. Streaming field selection avoids allocating
- * those payloads.
- */
+// Screenshot-heavy transcripts can reach GiB; select fields while streaming to avoid allocating payloads.
 const MAX_IMPORTED_TRANSCRIPT_BYTES = 4 * 1024 * 1024 * 1024;
 const MAX_IMPORTED_MESSAGES = 200;
 const MAX_IMPORT_HISTORY_BYTES = 32 * 1024 * 1024;
@@ -247,8 +243,7 @@ function codexTurnId(metadata: unknown): string | null {
   return decoded.value.turn_id;
 }
 
-// Codex records setup context as user text ahead of the real request. Skip
-// these leading blocks when deriving a title; imported messages keep them.
+// Skip Codex's leading setup text for titles only; imported messages retain it.
 const CODEX_TITLE_PREAMBLE =
   /^(?:\s*(?:<(recommended_plugins|environment_context|user_instructions|INSTRUCTIONS|in-app-browser-context)(?:\s[^>]*)?>[\s\S]*?<\/\1>|# AGENTS\.md instructions\b[^\n]*|## My request for Codex:))+/;
 
@@ -273,8 +268,7 @@ function parseAgentSessionRecords(
   records: ReadonlyArray<DecodedTranscriptRecord>,
 ): AgentSessionThread | null {
   const fallbackTimestamp = DateTime.formatIso(DateTime.makeUnsafe(input.lastActiveAtMs));
-  // Claude filenames are session IDs. Codex rollout filenames include extra
-  // timestamp text, so only transcript metadata can provide a resumable ID.
+  // Claude filenames are session ids; Codex rollout names include timestamps, so read resumable ids from metadata.
   let providerSessionId = input.source === "codex" ? "" : input.fallbackSessionId;
   let title: string | null = null;
   let derivedTitle: string | undefined;
@@ -380,8 +374,7 @@ function parseAgentSessionRecords(
       if (record.sessionId?.trim()) providerSessionId = record.sessionId.trim();
       if (record.aiTitle?.trim()) title = record.aiTitle.trim();
       const messageModel = record.message?.model?.trim();
-      // Claude uses this sentinel for local error responses. It is not a
-      // model ID that can be selected when the imported session resumes.
+      // Claude's local-error sentinel is not a resumable model id.
       if (messageModel && messageModel !== "<synthetic>") model = messageModel;
       if (record.type !== "user" && record.type !== "assistant") {
         continue;
@@ -413,9 +406,7 @@ function parseAgentSessionRecords(
     if (record.type === "event_msg" && record.payload?.type === "user_message") {
       const text = record.payload.message ?? "";
       if (text.trim().length === 0) continue;
-      // Codex can write the same prompt as both a response item and an event.
-      // Remove only the matching response copy so mixed-format logs keep every
-      // distinct user message.
+      // Codex can duplicate prompts across formats; remove only matching response copies.
       for (let index = messages.length - 1; index >= 0; index--) {
         const message = messages[index];
         if (message?.role === "assistant") break;
@@ -579,8 +570,7 @@ function sameTranscriptIdentity(
 /** @public */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
-  // Different project imports can arrive concurrently from multiple clients.
-  // Only one transcript may hold its selected-history budget at a time.
+  // Concurrent client imports must not hold multiple selected-history budgets.
   const importReadLock = yield* Semaphore.make(1);
   const path = yield* Path.Path;
   const serverConfig = yield* ServerConfig.ServerConfig;
@@ -635,11 +625,7 @@ export const make = Effect.gen(function* () {
     return `path:${normalizeProjectPathForComparison(realPath)}`;
   });
 
-  /**
-   * When it points into a `worktrees/` directory the checkout is a linked worktree, which
-   * onboarding skips because its history belongs to the main checkout. Submodules use the same
-   * pointer shape but live under `modules/`, and are offered like any other repository.
-   */
+  // Skip linked worktrees under worktrees/ because their history belongs to the main checkout; retain modules/ submodules.
   const readGitIdentity = Effect.fn("AgentSessionScanner.readGitIdentity")(function* (
     directory: string,
   ): Effect.fn.Return<
@@ -1155,8 +1141,7 @@ export const make = Effect.gen(function* () {
         const realPath = yield* fileSystem
           .realPath(resolved)
           .pipe(Effect.orElseSucceed(() => resolved));
-        // A symlink can point into the worktrees directory even when its own
-        // spelling doesn't; check again with links resolved.
+        // Symlinks can disguise excluded worktree paths; re-check their targets.
         if (isExcludedProjectPath(realPath)) {
           key = "";
         } else {
@@ -1193,8 +1178,7 @@ export const make = Effect.gen(function* () {
           : Math.max(existing.lastActiveAtMs, candidate.lastActiveAtMs);
     }
 
-    // Resolve persisted roots too. A project and a transcript can name
-    // different symlinks to the same directory.
+    // Resolve persisted roots too; transcripts may use different symlinks to the same directory.
     const importedProjects = yield* projectStore
       .listShells()
       .pipe(

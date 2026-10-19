@@ -376,9 +376,7 @@ export function makeTraceDiagnosticsAggregator(
   return { addLine, finish };
 }
 
-/**
- * Succeeds with false when the file does not exist.
- */
+/** Succeeds with false if the file is absent. */
 export function streamTraceFileLines(
   fileSystem: FileSystem.FileSystem,
   path: string,

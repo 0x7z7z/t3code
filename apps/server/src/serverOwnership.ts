@@ -25,8 +25,7 @@ export class ServerAlreadyRunningError extends Schema.TaggedError<ServerAlreadyR
   "ServerAlreadyRunningError",
   { stateDir: Schema.String },
 ) {
-  // Distinct process exit code so a supervisor can tell "owned by another
-  // server" apart from a crash and stop restarting.
+  // Distinct exit codes let supervisors stop restarting an already-owned server.
   override readonly [Runtime.errorExitCode] = SERVER_EXIT_CODE_STATE_DIR_OWNED;
 
   override get message(): string {
@@ -48,10 +47,7 @@ const isSqliteBusy = (cause: unknown) =>
   (("errcode" in cause && cause.errcode === 5) ||
     ("code" in cause && cause.code === "SQLITE_BUSY"));
 
-/**
- * Servers from before this lock only publish `server-runtime.json`. Treat
- * their record as stale only when the process start time proves PID reuse.
- */
+// Pre-lock servers publish only runtime state; require start-time proof of PID reuse before treating it as stale.
 const legacyOwnerIsLive = Effect.fn("legacyOwnerIsLive")(function* (
   state: PersistedServerRuntimeState,
 ) {
@@ -83,12 +79,8 @@ const legacyOwnerIsLive = Effect.fn("legacyOwnerIsLive")(function* (
   return !Number.isFinite(startedAt) || startedAt <= recordedAt + 1_000;
 });
 
-/**
- * Hold an exclusive lock on the state directory until the scope closes. The
- * lock is an exclusive transaction on `server-owner.sqlite`, which never holds
- * data and must never be unlinked: the OS releases it when the process exits,
- * even on SIGKILL, so a crashed owner never blocks the next start.
- */
+/** Holds a data-free SQLite exclusive lock until scope close; never unlink it.
+ * The OS releases it even on SIGKILL, allowing crash recovery. */
 export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(function* (
   statePath: string,
 ) {

@@ -37,10 +37,7 @@ const decodeRateLimit = Schema.decodeUnknownSync(
   ),
 );
 
-/**
- * What one GraphQL answer spent: how far it moved `used` past the highest value seen, so requests
- * answered out of order still add up to the window's total. A new window starts from zero.
- */
+// Count only increases in `used` so out-of-order answers do not double-count quota.
 function graphqlCost(headers: Readonly<Record<string, string | undefined>>): number {
   const used = Number(headers["x-ratelimit-used"]);
   const reset = headers["x-ratelimit-reset"] ?? "";

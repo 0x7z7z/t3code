@@ -6,16 +6,12 @@ import { BaseSequencer, type TestSpecification } from "vite-plus/test/node";
 
 import shardWeights from "./shardWeights.json" with { type: "json" };
 
-// The median recorded file, for files added since the weights were recorded.
+// Use the recorded median for new files.
 const UNRECORDED_FILE_SECONDS = 0.6;
 
 const recordedSeconds: Readonly<Record<string, number>> = shardWeights;
 
-/**
- * Weights include import time, about a third of each CI shard; test durations
- * alone underestimate shards with many small files. Every shard must derive
- * the same split so each file runs exactly once.
- */
+// Include import time (~1/3 of CI shards) in weights; derive identical splits so each file runs once.
 export class WeightedShardSequencer extends BaseSequencer {
   override async shard(files: TestSpecification[]) {
     const { index, count } = this.ctx.config.shard ?? { index: 1, count: 1 };

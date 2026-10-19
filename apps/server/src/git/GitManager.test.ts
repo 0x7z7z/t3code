@@ -271,8 +271,7 @@ function initRepo(
     yield* runGit(cwd, ["init", "--initial-branch=main"]);
     yield* runGit(cwd, ["config", "user.email", "test@example.com"]);
     yield* runGit(cwd, ["config", "user.name", "Test User"]);
-    // Machine-global core.autocrlf=true on Windows breaks LF exact-content assertions.
-    // Local config also covers linked worktrees.
+    // Override global autocrlf on Windows for LF assertions, including linked worktrees.
     yield* runGit(cwd, ["config", "core.autocrlf", "false"]);
     yield* fs.writeFileString(NodePath.join(cwd, "README.md"), "hello\n");
     yield* runGit(cwd, ["add", "README.md"]);
@@ -2332,9 +2331,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* runGit(repoDir, ["checkout", "-b", "feature/merged-branch-deleted"]);
       yield* runGit(repoDir, ["push", "-u", "origin", "feature/merged-branch-deleted"]);
 
-      // GitHub commonly deletes a pull request's head branch after merge. Git
-      // removes the remote-tracking ref, but preserves the local branch's
-      // remote and merge configuration as evidence that it was published.
+      // Deleting a merged head removes its tracking ref but leaves remote/merge config proving publication.
       yield* runGit(repoDir, ["push", "origin", "--delete", "feature/merged-branch-deleted"]);
       const configuredRemote = yield* runGit(repoDir, [
         "config",
@@ -3802,8 +3799,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("t3code-git-manager-");
       yield* initRepo(repoDir);
-      // Patch generation would invoke this unavailable converter. A supplied
-      // message must commit without generating a patch it will not use.
+      // An unavailable converter exposes unused patch generation when committing a supplied message.
       NodeFS.writeFileSync(
         NodePath.join(repoDir, ".git/info/attributes"),
         "README.md diff=probe\n",
@@ -4342,8 +4338,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
 
       const { manager, ghCalls } = yield* makeManager({
         ghScenario: {
-          // Mirrors a provider that cannot report a default branch, as the Azure
-          // DevOps CLI does when it cannot detect the repository.
+          // Azure DevOps can report no default branch when it cannot detect the repository.
           defaultBranch: "",
           prListSequence: [
             "[]",
