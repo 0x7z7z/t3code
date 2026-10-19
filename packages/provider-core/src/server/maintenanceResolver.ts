@@ -215,11 +215,6 @@ function isMiseCommandPath(commandPath: string): boolean {
   return normalized.includes("/mise/installs/") || normalized.includes("/mise/shims/");
 }
 
-/**
- * WinGet's Claude Code install under its user root (`<drive>:\Users\<name>\AppData\Local\Microsoft\WinGet`)
- * or machine root (`<drive>:\Program Files\WinGet`): the `Links\claude.exe` link or the binary in the
- * `Packages\Anthropic.ClaudeCode_…` directory.
- */
 const winGetClaudeCommandPath =
   /^[a-z]:\/(?:users\/[^/]+\/appdata\/local\/microsoft|program files(?: \(x86\))?)\/winget\/(?:links|packages\/anthropic\.claudecode_[^/]+)\/claude\.exe$/;
 
@@ -293,7 +288,6 @@ const HomebrewInfoResponse = Schema.Struct({
 
 const decodeHomebrewInfo = Schema.decodeUnknownOption(Schema.fromJsonString(HomebrewInfoResponse));
 
-/** Cask versions may carry a build suffix after a comma (`1.2.3,456`). */
 export function parseHomebrewLatestVersion(
   infoJson: string,
   ownership: HomebrewOwnership,
@@ -422,10 +416,8 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     });
   }
   if (commandPaths.some(isPnpmGlobalCommandPath)) {
-    // pnpm 10 skips unapproved install scripts and still exits 0, leaving a
-    // package whose postinstall finishes the install broken. Global installs
-    // can only approve on the command line, and pnpm before 10.4 rejects the
-    // flag as an unknown option.
+    // pnpm 10 skips unapproved postinstall scripts while reporting success.
+    // Global installs need command-line approval, but pnpm before 10.4 rejects the flag.
     const pnpmVersion = yield* runProbe("pnpm", ["--version"], context.env);
     const allowBuild =
       pnpmVersion !== null && satisfiesSemverRange(pnpmVersion, ">=10.4.0")
@@ -464,11 +456,8 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
   // `Cellar/node/<ver>/lib/node_modules/`, and that is npm's install, not brew's.
   const npmPrefix = yield* resolveNpmGlobalPrefix(context, packageName);
   if (npmPrefix) {
-    // npm 12 blocks install scripts by default (empty allow-scripts allowlist)
-    // and still exits 0, so a package whose postinstall finishes the install
-    // (claude copies its native binary over a placeholder stub) is left broken
-    // while the update reports success. Older npm warns about the unknown
-    // config and continues.
+    // npm 12 blocks postinstall scripts while reporting success, leaving native
+    // binaries uninstalled. Older npm only warns about the unknown allow-scripts config.
     return makeProviderMaintenanceCapabilities({
       provider: definition.provider,
       packageName,
@@ -655,11 +644,6 @@ export const resolveProviderMaintenanceCapabilitiesEffect = Effect.fn(
   });
 });
 
-/**
- * Turn a one-shot resolution into the shape drivers expose: a cached read for
- * advisories and a `fresh` read that update execution uses so it never trusts
- * ownership derived before the user clicked.
- */
 export const makeCachedProviderMaintenanceResolution = Effect.fn(
   "makeCachedProviderMaintenanceResolution",
 )(function* (resolve: Effect.Effect<ProviderMaintenanceCapabilities>) {
@@ -673,10 +657,6 @@ export const makeCachedProviderMaintenanceResolution = Effect.fn(
     options?.fresh ? Cache.invalidate(cache, undefined).pipe(Effect.andThen(cached)) : cached;
 });
 
-/**
- * An install T3 Code cannot update gets no Update button or command, so its
- * message names the version and the executable instead.
- */
 function manualUpdateMessage(latestVersion: string, installPath: string | undefined): string {
   return installPath
     ? `Version ${latestVersion} is out. T3 Code runs ${installPath}; update it with the app or tool that installed it.`

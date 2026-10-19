@@ -682,11 +682,6 @@ export function extractXAiAcpBackgroundToolMutation(
   return mutations;
 }
 
-/**
- * The agent is free to skip get_command_or_subagent_output hydration, so this reminder can be the
- * only terminal signal for the subagent row; a row stuck on running holds deferred finalize (and
- * the whole run) open until harness timeout.
- */
 function stripLeadingBalancedParenGroup(text: string): string {
   const trimmed = text.replace(/^\s+/, "");
   if (!trimmed.startsWith("(")) return trimmed;

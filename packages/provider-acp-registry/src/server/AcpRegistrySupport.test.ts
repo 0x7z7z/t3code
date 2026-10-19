@@ -838,7 +838,6 @@ describe("AcpRegistrySupport", () => {
         Effect.gen(function* () {
           if (command._tag !== "StandardCommand") return yield* Effect.die("Unexpected pipeline");
           commands.push(command.command);
-          // Simulate Git's GNU tar rejecting ZIP and System32 bsdtar listing/extracting it.
           const supportsZip = command.command === "C:\\Windows\\System32\\tar.exe";
           if (supportsZip && command.args[0] === "-xf") {
             const outputDirectory = command.args[3];

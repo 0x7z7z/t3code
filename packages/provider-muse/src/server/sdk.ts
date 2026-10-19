@@ -44,7 +44,7 @@ export interface MuseSdkHostOptions {
   readonly environment?: NodeJS.ProcessEnv;
   readonly runtimeMode?: RuntimeMode;
   readonly readOnly?: boolean;
-  /** Read-only generation needs durable logging for turn/item notifications (verified through 1.1.1). */
+  /** Read-only generation needs session logging for turn/item notifications. */
   readonly sessionLogging?: boolean;
   readonly signal?: AbortSignal;
   readonly startupTimeoutMs?: number;

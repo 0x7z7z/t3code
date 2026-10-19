@@ -30,9 +30,8 @@ function cursorSdkResultDetail(result: RunResult): string {
 }
 
 /**
- * The SDK throws this when `sandboxOptions.enabled` is set and local sandboxing
- * is unavailable. That happens on hosts that cannot launch `cursorsandbox`, and
- * also after an unsandboxed run caches "unsupported" for the process.
+ * The SDK rejects sandboxing when cursorsandbox is unavailable or an unsandboxed
+ * run has cached "unsupported" for the process.
  */
 function cursorSandboxUnsupported(cause: unknown): boolean {
   const seen = new Set<object>();

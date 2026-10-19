@@ -287,11 +287,7 @@ function nativeThreadId(providerThread: OrchestrationV2ProviderThread): string {
   return id;
 }
 
-/**
- * Every Cursor settings layer the Cursor CLI loads: project and user rules,
- * skills, hooks, and MCP servers, team and MDM admin policy, and account
- * plugins. The SDK loads none of them when `settingSources` is omitted.
- */
+/** The SDK loads no CLI settings unless `settingSources` is supplied. */
 const CURSOR_AGENT_SETTING_SOURCES = [
   "project",
   "user",
@@ -327,10 +323,6 @@ export function makeCursorAgentOptions(input: {
   };
 }
 
-/**
- * Raised when Cursor rejects the selected model, usually a custom model outside
- * the account catalog. `makeProviderFailure` shows its message to the user.
- */
 class CursorModelUnavailableError extends Schema.TaggedError<CursorModelUnavailableError>()(
   "CursorModelUnavailableError",
   {
@@ -344,10 +336,8 @@ class CursorModelUnavailableError extends Schema.TaggedError<CursorModelUnavaila
 }
 
 /**
- * Maps runner failures from opening or sending to an agent. The SDK checks the
- * model against the account catalog before either and rejects it with an
- * uncoded ConfigurationError listing every account model, so its message
- * prefix is the only signal.
+ * The SDK rejects models outside the account catalog with an uncoded ConfigurationError;
+ * its message prefix is the only signal.
  */
 const classifyCursorModelRejection =
   (modelSelection: ModelSelection) => (error: CursorAgentSdk.CursorAgentSdkRunnerError) =>
@@ -1951,9 +1941,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
               }
               const chunk = shellOutputText(update.event);
               if (chunk.length === 0) return;
-              // The completed call persists the final output once. Re-emitting the
-              // whole accumulated output on every delta grew the event store
-              // quadratically; live output goes to the command output hub instead.
+              // Persist the final output once; live output uses the command output hub to avoid
+              // quadratic event-store growth.
               shell.streamedOutput = (shell.streamedOutput + chunk).slice(
                 -MAX_CURSOR_STREAMED_OUTPUT_CHARS,
               );

@@ -1,11 +1,7 @@
 /**
- * Grok checks for a newer CLI when it launches. T3's health probes
- * (`grok --version`, `grok models`, `grok inspect --json`, ACP `initialize`)
- * run periodically in the background, so an update they start is invisible,
- * and on Windows it opens a console window for npm. Grok documents
- * `GROK_DISABLE_AUTOUPDATER=1` as process-scoped suppression, so probes set it
- * on a copy of the caller's environment. Sessions, text generation, and
- * `grok update` keep the caller's environment and update as the user configured.
+ * Grok's launch-time updater runs during background probes and opens an npm console
+ * on Windows. Suppress it only for probes, preserving the caller's update settings
+ * for sessions, text generation, and explicit updates.
  */
 export function grokProbeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return { ...environment, GROK_DISABLE_AUTOUPDATER: "1" };

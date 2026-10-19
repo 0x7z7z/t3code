@@ -44,10 +44,7 @@ export function grokUsageResponseToLimits(
 ) {
   const usedPercent = response.config?.creditUsagePercent;
   if (usedPercent === undefined || !Number.isFinite(usedPercent)) {
-    // A billing read that succeeded but carries no percentage is an account
-    // with nothing metered yet, not one that can never report: xAI omits the
-    // field entirely (rather than sending 0) until usage registers, then fills
-    // it in.
+    // xAI omits creditUsagePercent until usage registers; an absent field means nothing metered yet.
     return makeUsageLimits({ checkedAt, windows: [] });
   }
   const period = response.config?.currentPeriod;

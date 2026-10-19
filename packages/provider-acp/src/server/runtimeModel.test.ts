@@ -575,8 +575,6 @@ describe("AcpRuntimeModel", () => {
   });
 
   it("bounds an oversized cumulative tool_call_update content buffer to a tail window", () => {
-    // Mirrors Grok's ACP CLI resending the ENTIRE accumulated terminal output on every
-    // tool_call_update notification instead of a delta (see upstream #6556).
     const hugeText = Array.from({ length: 2_000 }, (_, i) => `line ${i}: ${"x".repeat(50)}`).join(
       "\n",
     );
@@ -1527,7 +1525,6 @@ describe("extractMcpToolCallIdentity", () => {
   });
 
   it("does not claim an agent's own tool that shares a T3 tool name", () => {
-    // Hermes' built-in delegate_task, titled "<tool>: <description>" like all its calls.
     const toolCall = toolCallFromUpdate({
       sessionUpdate: "tool_call",
       toolCallId: "own-delegate-1",

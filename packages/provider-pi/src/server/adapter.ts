@@ -1858,8 +1858,8 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
             if (turn === null) return;
             const emittedAt = yield* DateTime.now;
             if (event["success"] === true) {
-              // before retrying, so leaving that failure in place would make
-              // `agent_settled` terminalize a successful turn as failed.
+              // A successful retry supersedes the message failure that `agent_settled`
+              // would otherwise reuse.
               if (turn.activeProviderRetry !== null) {
                 const attempt = Math.max(
                   1,

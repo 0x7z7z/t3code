@@ -1,17 +1,10 @@
-/**
- * Muse Code's subscription usage limits. Meta reports the account's windows
- * with every model response, and Muse forwards them as `usage/changed`. When a
- * window runs out, Meta refuses the next request and Muse fails the turn.
- */
 import * as DateTime from "effect/DateTime";
 
 import { LATEST_DATE_MS, type MuseSubscriptionUsage } from "./protocol.ts";
 
 /**
- * Muse surfaces Meta's quota refusal as `API error 429: Subscription quota
- * exhausted. Your usage window resets at 2026-10-13T10:45:52Z.`, at times
- * wrapped by a credential proxy. Muse can also type the stop as `error.quota`,
- * but a relayed refusal arrives untyped, so the text still counts.
+ * Credential proxies can relay Muse's 429 quota refusals without `error.quota`,
+ * so their text must also identify usage limits.
  */
 export function isMuseUsageLimitFailure(message: string | undefined): boolean {
   return message !== undefined && /\b429\b/.test(message) && /quota|usage limit/i.test(message);

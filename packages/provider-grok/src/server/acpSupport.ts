@@ -94,8 +94,7 @@ export function grokAcpRuntimeProcessOwnership(
   "ownDescendantProcessGroups" | "ownDetachedProcessGroup" | "processGroupPlatform"
 > {
   return {
-    // macOS keeps the prior provider-group teardown until a stable libproc
-    // identity provider can cover Grok's nested detached tool groups.
+    // macOS lacks a stable libproc identity provider for Grok's nested detached tool groups.
     ownDescendantProcessGroups: processGroupPlatform === "linux",
     ownDetachedProcessGroup: true,
     processGroupPlatform,

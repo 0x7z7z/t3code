@@ -98,7 +98,7 @@ export function makeSubagentConversationArtifacts(input: {
   readonly nativeItemRef: OrchestrationV2ProviderRef | null;
   readonly role: "user" | "assistant";
   readonly text: string;
-  /** Whether a user message is the script a workflow run executes; unset for older callers. */
+  /** Whether a user message is the script a workflow run executes. */
   readonly workflowScript?: boolean;
   readonly ordinal: number;
   readonly now: DateTime.Utc;

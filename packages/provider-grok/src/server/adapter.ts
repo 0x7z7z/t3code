@@ -150,9 +150,8 @@ const registerGrokAcpExtensions: NonNullable<AcpAdapterV2Flavor["registerExtensi
   );
 
 /**
- * Grok intercepts exit_plan_mode and reverse-requests client approval. Capture
- * the plan into T3's proposed-plan card and abandon the native gate so the turn
- * does not hang (#8358; mirrors the Claude ExitPlanMode pattern).
+ * Grok reverse-requests approval for exit_plan_mode. Capture the plan in T3 and
+ * abandon the native gate so the turn can finish.
  */
 const registerGrokExitPlanModeExtensions = ({
   runtime,
@@ -232,19 +231,14 @@ export function makeGrokAcpAdapterFlavor(
     runtimeHarness: "Grok",
     capabilities: GrokProviderCapabilitiesV2,
     interruptPromptOnCancel: false,
-    // User Stop (requestRuntimeRestart) still hard-kills the process group and
-    // respawns so existing background tasks stop too. Non-Stop interrupts
-    // (mid-prompt steering, restart_active) omit requestRuntimeRestart and stay
-    // soft: session/cancel carries cancelTrigger=ctrl_c, the session survives,
-    // and background work remains available to the replacement turn.
+    // User Stop (requestRuntimeRestart) restarts the process group to stop background tasks.
+    // Steering and restart_active omit requestRuntimeRestart and cancel softly so background work survives.
     restartRuntimeAfterInterrupt: true,
     terminateRuntimeProcessGroupOnInterrupt: true,
-    // Steering restarts on a settled turn additionally skip session/cancel so
-    // fire-and-forget subagents survive the steer (E1 harness confirmed the
-    // Grok CLI accepts a concurrent session/prompt in that state).
+    // Skip session/cancel on settled-turn steering so background subagents survive;
+    // Grok accepts a concurrent session/prompt in that state.
     preserveRuntimeOnSettledInterrupt: true,
-    // Grok ACP initialize reports promptCapabilities.image:false but the agent
-    // still accepts image content blocks (verified with real screenshots).
+    // Grok accepts image blocks despite advertising promptCapabilities.image:false.
     supportsImagePrompts: true,
     supportsCompaction: true,
     resolveModelId: (selection) => resolveGrokAcpBaseModelId(selection.model),

@@ -18,8 +18,7 @@ import * as OpenCodeServerLedger from "../OpenCodeServerLedger.ts";
 import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
 
-// Shapes and content types observed on `opencode serve` 2.0.18 (pid and port replaced). 1.x
-// answers /api/info with its web UI: 200 text/html.
+// OpenCode 1.x answers /api/info with its web UI: 200 text/html.
 const INFO_BODY =
   '{"version":"2.0.18","pid":4242,"urls":["http://127.0.0.1:4096"],"paths":{"tmp":"/tmp/opencode"}}';
 const UNAUTHORIZED_BODY = '{"_tag":"UnauthorizedError","message":"Authentication required"}';

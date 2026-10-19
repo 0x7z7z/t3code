@@ -1,8 +1,6 @@
 /**
- * Cursor discovers Agent Skills recursively from user and project roots but
- * its ACP command catalog only appears after opening a real session. Scanning
- * the same roots avoids starting an agent and its MCP servers just to populate
- * a composer menu.
+ * The ACP command catalog requires opening a session and its MCP servers;
+ * scanning Cursor's skill roots populates the composer without starting either.
  */
 
 import type { ServerProviderSkill } from "@t3tools/contracts";

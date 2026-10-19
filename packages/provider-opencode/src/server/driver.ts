@@ -368,10 +368,8 @@ export const OpenCodeDriver: ProviderDriver<
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
         Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       );
-      // The CLI writes its full JSON inventory to stdout, but the Bun-compiled binary does not
-      // flush more than one 64KB pipe buffer to a non-TTY stdout, so the piped output arrives
-      // truncated and unparseable — which degrades to an empty skill list and poisons the workspace
-      // snapshot the `$` picker reads.
+      // The Bun-compiled CLI truncates non-TTY stdout at one 64KB pipe buffer.
+      // Read inventory through the server to avoid caching an empty skill list.
       const loadWorkspaceInventory = (
         client: Parameters<typeof OpenCodeRuntime.loadOpenCodeCommands>[0],
       ) =>

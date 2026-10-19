@@ -59,10 +59,8 @@ import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
-// How long a successful discovery probe stays valid. Periodic health
-// refreshes reuse it instead of spawning a fresh disposable ACP session;
-// failed or unauthenticated probes are never cached so a completed sign-in
-// is detected on the next refresh.
+// Cache successful discovery to avoid disposable ACP sessions on health refreshes.
+// Never cache failures or unauthenticated results, so sign-in is detected immediately.
 const PROBE_SUCCESS_TTL_MS = 15 * 60 * 1_000;
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
@@ -209,9 +207,6 @@ function baseSnapshot(
     ...(input.accentColor ? { accentColor: input.accentColor } : {}),
     ...(iconUrl ? { iconUrl } : {}),
     continuation: { groupKey: input.continuationKey },
-    // The registry driver rejects every application text-generation operation,
-    // so selectors must not offer these instances for commit, PR, branch, or
-    // title generation.
     supportsTextGeneration: false,
     enabled: input.settings.enabled,
     installed: input.installed,

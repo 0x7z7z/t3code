@@ -328,7 +328,6 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       let thread: OrchestrationV2ProviderThread | undefined;
       let active: ActiveTurn | undefined;
       let lastProviderTurn: OrchestrationV2ProviderTurn | undefined;
-      // Meta's newest subscription windows, for when a turn stopped at a usage limit can resume.
       let latestSubscriptionUsage: MuseSubscriptionUsage | undefined;
       const agentEndedAt = new Map<string, DateTime.Utc>();
       const resolveModel = Effect.fnUntraced(function* (selection: ModelSelection) {

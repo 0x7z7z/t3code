@@ -155,7 +155,6 @@ export const MuseTurnCompleted = Schema.Struct({
   error: Schema.optional(
     Schema.Struct({
       message: Schema.String,
-      // Present when Muse recognized the stop as a used-up quota.
       quota: Schema.optional(Schema.Struct({ resetsAtMs: Schema.Finite })),
     }),
   ),

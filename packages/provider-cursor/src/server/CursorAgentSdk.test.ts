@@ -322,7 +322,6 @@ describe("CursorAgentSdkRunner", () => {
       failed(Object.assign(new Error("Too many requests"), { code: "rate_limited", status: 429 })),
       "Cursor Agent SDK agent.create failed: Too many requests (rate_limited, HTTP 429)",
     );
-    // Cursor's messages often start with the code already.
     assert.equal(
       failed(
         Object.assign(new Error("[resource_exhausted] Error"), { code: "resource_exhausted" }),

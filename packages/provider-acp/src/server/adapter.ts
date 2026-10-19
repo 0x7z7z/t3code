@@ -1791,12 +1791,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         // continuation.
         const suppressPostSettleMonitorPrompt = yield* Ref.make(false);
         const runningBackgroundTaskIds = yield* Ref.make<ReadonlySet<string>>(new Set());
-        // Normalized tool statuses are not genuine: Grok Bash re-reports carry
-        // exit_code 0 mid-stream. A straggler monitor-event can land after the
-        // real end (the CLI keeps streaming while the agent already consumed
-        // the output via get_command_or_subagent_output); without the tombstone
-        // it would resurrect the running set and pin offers/idle-release
-        // forever.
+        // Grok Bash can report exit_code 0 mid-stream, and stale monitor events can
+        // arrive after get_command_or_subagent_output consumed the real end. Keep
+        // tombstones so these frames cannot resurrect tasks and pin idle-release.
         const endedBackgroundTaskIds = yield* Ref.make<ReadonlySet<string>>(new Set());
         const endedBackgroundTaskIdLimit = 128;
 
@@ -4173,10 +4170,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   context.promptSettled &&
                   (yield* Ref.get(midTurnUnreportedCompletedTaskIds)).size > 0
                 ) {
-                  // Some ACP implementations deliver the injected assistant
-                  // report before the synthetic monitor end notice. Correlation
-                  // arrives with that notice, so remember the unmatched report
-                  // and consume its task id when the notice follows.
                   context.earlyInjectedReportObserved = true;
                 }
                 yield* appendText(context, "assistant", text, update.messageId);
@@ -6976,13 +6969,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         flavor.preserveRuntimeOnSettledInterrupt === true &&
                         turnInput.requestRuntimeRestart !== true &&
                         interruptContext?.providerTurnId === turnInput.providerTurnId;
-                      // Settlement is read under the callback permit after
-                      // draining admitted responses: the native prompt can have
-                      // returned on the wire while its completion callback has
-                      // not yet run, and a cancel sent in that window is exactly
-                      // what settled-soft mode exists to avoid. Also treat the
-                      // turn as settled when the wire signal is already done
-                      // (non-blocking; do not await under the permit).
+                      // Drain admitted responses under the callback permit: the native prompt can
+                      // return before its completion callback runs. Also inspect the wire-settled
+                      // signal without waiting under the permit, so that window cannot trigger cancel.
                       let settledSoftInterrupt = false;
                       if (softSteerCandidate && interruptContext !== null) {
                         const promptSettledUnderPermit = yield* runtimeCallbackPermit.withPermit(
@@ -7022,11 +7011,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       }
                       const context = interruptContext;
                       if (context?.providerTurnId !== turnInput.providerTurnId) {
-                        // A queued user Stop must still contain that orphan
-                        // runtime. With a different live turn active this stays
-                        // a pure no-op success instead: quarantine and teardown
-                        // are session-global and would maim the replacement
-                        // turn.
+                        // A queued user Stop must contain an orphan runtime. When another turn is
+                        // active, leave it alone: quarantine and teardown affect the whole session.
                         const containOrphanRuntime =
                           context === null &&
                           hardRestart &&
@@ -7179,10 +7165,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                         yield* Ref.set(runtimeTeardownState, { _tag: "Idle" });
                         yield* Deferred.succeed(teardownBarrier!, undefined).pipe(Effect.ignore);
                       } else {
-                        // Settled soft interrupt: the native prompt already
-                        // returned, so session/cancel has nothing to
-                        // acknowledge and would only threaten still-running
-                        // background subagents.
+                        // After a settled soft interrupt, cancel has no prompt to acknowledge
+                        // and could terminate still-running background subagents.
                         if (!settledSoftInterrupt) {
                           yield* runtime.cancel;
                         }

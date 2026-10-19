@@ -58,10 +58,7 @@ const PI_PRESENTATION = {
 
 const VERSION_PROBE_TIMEOUT_MS = 4_000;
 const PI_RPC_DISCOVERY_TIMEOUT_MS = 15_000;
-/**
- * get_entries arrived in 0.80.3 and agent_settled landed in source at 0.80.4.
- * Version 0.80.5 was the first published package containing both hooks.
- */
+/** 0.80.5 is the first published release with both `get_entries` and `agent_settled`. */
 export const MINIMUM_PI_VERSION = "0.80.5";
 
 const PI_DEFAULT_MODEL: ServerProviderModel = {

@@ -1,7 +1,6 @@
 /**
- * Both of its `generate` endpoints answer 403 on OpenCode's free tier ("free tier can only be
- * used from within OpenCode"), so each request runs as a prompt in a temporary session, as 1.x
- * does, and the session is removed afterwards.
+ * Both generate endpoints return 403 on OpenCode's free tier, so generation
+ * uses a temporary prompt session that is removed afterwards.
  */
 import { AbsolutePath, Location, Model, Provider, Session } from "@opencode/client/effect";
 import { TextGenerationError } from "@t3tools/contracts";

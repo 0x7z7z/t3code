@@ -56,11 +56,7 @@ const make = Effect.gen(function* () {
   const cachePath = path.join(host.paths.stateDir, CURSOR_ACCOUNT_CACHE_FILE_NAME);
   const caches = new Map<string, CursorAccountCache>();
   let cacheDirty = false;
-  /**
-   * The last failed refresh per credential source, standing for a TTL so a
-   * client refetching a broken login does not refetch Cursor each time. A
-   * `null` error means there is no login: no source to report.
-   */
+  /** Failed refreshes share the cache TTL to prevent repeated requests; null means no login. */
   const failures = new Map<string, { readonly atMs: number; readonly error: string | null }>();
   const refreshes = new Map<string, Deferred.Deferred<void>>();
 

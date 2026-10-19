@@ -78,10 +78,7 @@ export function mergeCursorFetch(
   };
 }
 
-/**
- * Each version writes its own file, as the scan cache does, so servers of
- * different versions sharing a state directory keep their own caches.
- */
+/** Versioned files isolate caches for different server versions sharing a state directory. */
 export const CURSOR_ACCOUNT_CACHE_FILE_NAME = "usage-cursor-account-cache-v1.json";
 const CURSOR_ACCOUNT_CACHE_VERSION = 1;
 
@@ -143,11 +140,7 @@ export function encodeCursorAccountCaches(caches: ReadonlyMap<string, CursorAcco
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
-/**
- * Rebuilds the caches from a parsed document. A malformed account is dropped
- * whole, costing one refetch; keeping its survivors would leave a gap the
- * covered range claims is complete.
- */
+/** Drop a malformed account whole; surviving records would leave gaps in a range marked complete. */
 export function decodeCursorAccountCaches(document: unknown): Map<string, CursorAccountCache> {
   const caches = new Map<string, CursorAccountCache>();
   if (typeof document !== "object" || document === null) return caches;

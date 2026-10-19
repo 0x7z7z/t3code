@@ -665,11 +665,6 @@ describe("XAiAcpExtension", () => {
   });
 
   it("hydrates monitor completion from a standalone TaskOutput frame without rawInput", () => {
-    // Post-settle shape observed live (2026-07-12): the final
-    // get_command_or_subagent_output update carries only rawOutput; the frame
-    // is parsed in isolation (no in-turn merge), and this completion is the
-    // ONLY end signal when the agent consumed the output itself (no "Monitor
-    // ended" reminder follows).
     expect(
       extractXAiBackgroundTaskCompletion({
         toolCallId: "call-c29e64dd-ce5d-4eac-a6ca-c20513fefac3-1",
@@ -1450,8 +1445,6 @@ describe("XAiAcpExtension", () => {
   );
 
   it("maps subagent_finished to a notice only for statuses Grok defines", () => {
-    // Recorded from Grok 1.0.41 (ids normalized); statuses per grok-build
-    // xai-grok-tools/.../task/types.rs `status()`.
     const finished = (update: Record<string, unknown>) =>
       xAiSubagentFinishedNotice({
         sessionId: "root-session",

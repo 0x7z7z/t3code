@@ -977,13 +977,11 @@ describe("CursorAdapterV2", () => {
       const expected =
         'Cursor cannot run the model "deepseek/deepseek-v4.1-flash". Cursor only runs models from your Cursor account. Choose one of those, or use OpenCode for OpenRouter and other API-key models.';
 
-      // A new thread created with the custom model.
       const createFailure = yield* runtime
         .ensureThread({ threadId, modelSelection: customModel, runtimePolicy })
         .pipe(Effect.flip);
       assert.equal(makeProviderFailure({ cause: createFailure }).message, expected);
 
-      // An existing thread switched to the custom model.
       const providerThread = yield* runtime.ensureThread({
         threadId,
         modelSelection: catalogModel,

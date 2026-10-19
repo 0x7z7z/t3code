@@ -116,10 +116,8 @@ export interface ProviderDriver<Config, R = never, UsageR = never> {
   readonly driverKind: ProviderDriverKind;
   readonly metadata: ProviderDriverMetadata;
   /**
-   * Using `Codec` rather than `Schema` pins `DecodingServices = never` — if
-   * we used `Schema<Config>`, the erased `any` in `AnyProviderDriver` would
-   * widen `DecodingServices` to `unknown` and poison the R channel of every
-   * caller of `decodeUnknownEffect`.
+   * Codec keeps DecodingServices = never; Schema<Config> would let the erased any
+   * in AnyProviderDriver widen it to unknown and poison decodeUnknownEffect callers.
    */
   readonly configSchema: Schema.Codec<Config, unknown>;
   readonly defaultConfig: () => Config;

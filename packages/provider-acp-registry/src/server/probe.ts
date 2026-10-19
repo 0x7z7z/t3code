@@ -67,8 +67,7 @@ function modelConfigOptions(
 function normalizeModels(
   configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption> | null | undefined,
 ): ReadonlyArray<AcpRegistryProbeModel> {
-  // Model discovery is the model config option's base models; ACP has no
-  // other portable model inventory.
+  // ACP exposes no portable model inventory beyond the model config option.
   const candidates = modelConfigOptions(configOptions).map((model) => ({
     id: model.value,
     name: model.name,

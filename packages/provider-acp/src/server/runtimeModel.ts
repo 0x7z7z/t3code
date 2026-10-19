@@ -610,11 +610,8 @@ function locationsFromToolCallInput(input: {
   return locations.length > 0 ? locations : undefined;
 }
 
-// Some ACP agents (observed with Grok's CLI) resend the ENTIRE accumulated tool-call
-// output on every `tool_call_update` notification instead of a delta, so a redrawing
-// terminal progress bar can balloon a single tool call to hundreds of KB per update at
-// several updates per second. Cap what we retain/emit to a bounded tail so one busy tool
-// call cannot flood runtime event ingestion.
+// Some agents, including Grok, resend cumulative tool output on every update.
+// Bound retained output so terminal redraws cannot flood runtime event ingestion.
 const TOOL_CALL_CONTENT_MAX_CHARS = 8_000;
 const TOOL_CALL_CONTENT_TRUNCATION_MARKER = "[Earlier output truncated]\n\n";
 
@@ -628,10 +625,8 @@ function boundToolCallOutputText(text: string): string {
 
 const RAW_OUTPUT_TEXT_FIELDS = ["content", "stdout", "stderr", "output"] as const;
 
-// `rawOutput` is provider-defined and, for terminal-shaped tools, mirrors the same
-// cumulative text-growth problem as `content` (see the comment above). Bound its known
-// text-bearing fields the same way so a chatty provider cannot smuggle unbounded output
-// through this field instead.
+// Provider-defined rawOutput can repeat cumulative terminal output too;
+// bound its text fields so they cannot bypass the content limit.
 function boundToolCallRawOutput(rawOutput: unknown): unknown {
   if (!isRecord(rawOutput)) {
     return rawOutput;
@@ -1061,13 +1056,10 @@ const T3_MCP_TITLE_SUFFIX_CALL =
   /^(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*?)(?: \(t3[-_ ]?code MCP Server\)(?::|$)|[-_.]t3[-_ ]?code$)/i;
 
 /**
- * glm-acp-agent and Kimi CLI register injected MCP tools under their bare
- * names; Kimi additionally appends ": <raw args json>". The T3 inventory gate
- * alone is not enough: an agent can have its own tool of the same name (Hermes
- * has a built-in `delegate_task`) and title it "<tool>: <description>", so only
- * a bare name or a JSON object after the colon counts. The match stops at the
- * opening brace because Kimi retitles on every streamed args chunk, so the
- * JSON is often still incomplete.
+ * glm-acp-agent and Kimi use bare MCP tool names; Hermes also has a built-in
+ * delegate_task, so the inventory gate alone cannot establish T3 ownership.
+ * Accept bare names or JSON arguments. Match only the opening brace because
+ * Kimi retitles calls while the argument JSON is still incomplete.
  */
 const T3_MCP_BARE_TITLE_CALL = /^(?<tool>[A-Za-z0-9_]+)(?::\s*\{|$)/;
 
@@ -1306,11 +1298,8 @@ export function syntheticLoadSessionResponseFromInitialize(
   };
 }
 
-// The parsed AcpToolCallState already carries bounded content (see makeToolCallState /
-// extractTextContentFromToolCallContent above), but the raw JSON-RPC notification is also
-// threaded through as `rawPayload` for logging/debugging and ends up persisted on the
-// runtime event. Substitute the same bounded `content`/`rawOutput` there so an oversized
-// cumulative update cannot smuggle the unbounded buffer back in through the raw payload.
+// rawPayload is persisted alongside parsed tool state. Apply the same bounds
+// so cumulative output cannot bypass the limit through the original notification.
 function boundToolCallRawPayload(
   params: EffectAcpSchema.SessionNotification,
   update: AcpToolCallUpdate,

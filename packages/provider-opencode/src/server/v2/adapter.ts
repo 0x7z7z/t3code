@@ -560,12 +560,10 @@ const deliver = <E>(answer: Effect.Effect<void, E>) =>
 type ModelRef = ReturnType<typeof Model.Ref.make>;
 
 /**
- * OpenCode takes a client id (it must start with `msg_`) and answers a repeat of one in the same
- * session with the item it already has, so a retried request never queues a second message, and a
- * turn knows the message fork and rollback cut at before OpenCode answers. The id is unique across
- * the whole server, which refuses it in any other session (409), so it names the session: another
- * T3 database or environment on the same server repeats thread ids and run ordinals, never session
- * ids.
+ * OpenCode deduplicates `msg_` ids within a session and rejects their reuse in
+ * another session (409). Include the native session id because T3 thread and
+ * attempt ids can repeat across environments. Knowing the prompt id before
+ * acknowledgement also establishes fork and rollback boundaries.
  */
 const turnPromptId = (sessionId: string, attemptId: string) =>
   SessionMessage.ID.make(`msg_t3_turn_${sessionId}:${attemptId}`);
@@ -2211,11 +2209,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           event.type === "session.execution.started" ||
           event.type === "unreadable.execution.started"
         ) {
-          // A session runs one execution at a time, each opening with `started`
-          // on this ordered stream. Once the run `unsettled` waits on has
-          // started, a later start means that run is over: an end not seen by
-          // now was lost with a dropped stream, and the next end is this
-          // execution's own.
+          // Sessions execute serially on this ordered stream. After the unsettled run
+          // has started, another start proves its end was lost; the next end belongs
+          // to the new execution.
           const state = threads.get(sessionId);
           if (state?.unsettled === true) {
             if (state.unsettledStarted) state.unsettled = false;
@@ -2794,9 +2790,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     });
 
     /**
-     * Clears a staged revert and waits out the empty execution `clear` runs,
-     * which is no turn of T3's. 2.0.18 wakes the session after every clear,
-     * with or without a stage (seen live), so that execution always comes.
+     * OpenCode 2.0.18 starts an empty execution after every revert clear, even
+     * without a staged revert. Wait for it so it cannot settle a T3 turn.
      */
     const clearRevert = Effect.fnUntraced(function* (sessionId: string) {
       const settled = yield* Deferred.make<void>();
@@ -2838,9 +2833,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       );
     });
 
-    /**
-     * The list takes one type, so it reads all.
-     */
+    /** The API accepts one message type; boundaries need both user and synthetic messages. */
     const userMessages = (sessionId: string) =>
       OpenCode2Client.paginate(
         { sessionID: Session.ID.make(sessionId), limit: 100 },
@@ -3868,7 +3861,6 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
                   selected,
                   yield* userMessages(sourceId),
                 );
-          // A fork copies the source's history, model, location and rules; its
           const forked = yield* client.session.fork({
             sessionID: Session.ID.make(sourceId),
             ...(before === null ? {} : { before: SessionMessage.ID.make(before) }),
@@ -3896,8 +3888,8 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             createdAt,
             updatedAt: createdAt,
           };
-          // inherits that worktree too, but its first turn starts without a
-          // resume, so a target in another worktree takes the session there now.
+          // A fork inherits the source worktree and starts its first turn without
+          // resume, so relocate it to the destination worktree now.
           const cwd = forkInput.runtimePolicy?.cwd;
           const state = register(providerThread, forked, cwd ?? forked.location.directory);
           yield* writeRules(state, forkInput.runtimePolicy ?? state.policy);

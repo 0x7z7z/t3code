@@ -24,10 +24,6 @@ export interface ProviderMaintenanceCommandAction {
   readonly executable: string;
   readonly args: ReadonlyArray<string>;
   readonly lockKey: string;
-  /**
-   * A native updater finds its install through the same variables the
-   * provider runs with (e.g. `CODEX_HOME`), so an instance with a custom home
-   * must update that home and not the default one.
-   */
+  /** Native updaters must use the instance's custom home (e.g. `CODEX_HOME`). */
   readonly env?: NodeJS.ProcessEnv;
 }

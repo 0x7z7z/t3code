@@ -38,9 +38,8 @@ function acpPathIsWithinRoot(path: string, root: string): boolean {
 }
 
 /**
- * `realpath` cannot resolve a file that has not been created yet, so walk up to the deepest
- * existing ancestor and append the missing suffix to that ancestor's canonical path. If an
- * existing entry cannot be canonicalized (for example, a broken symlink), fail closed.
+ * Canonicalize the deepest existing ancestor so new paths still undergo symlink-aware
+ * containment checks. Fail closed when an existing entry cannot be canonicalized.
  */
 function acpCanonicalPathForContainment(path: string): string | undefined {
   // Do not lexically normalize before realpath. For a path such as
@@ -90,10 +89,7 @@ function isAcpReadKind(toolKind: string): boolean {
   return toolKind === "read" || toolKind === "search" || toolKind === "think";
 }
 
-/**
- * Reads follow the sandbox alone and never ask. That includes no explicit sandbox, since the
- * strictest runtime mode (approval-required) implies a read-only one.
- */
+/** Reads never ask; an absent sandbox implies read-only in approval-required mode. */
 function acpReadDisposition(runtimePolicy: AcpRuntimePolicy): "allow" | "deny" {
   switch (unknownRecord(runtimePolicy.sandboxPolicy)?.type) {
     case undefined:
