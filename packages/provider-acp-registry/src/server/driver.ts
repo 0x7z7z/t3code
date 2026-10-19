@@ -59,8 +59,7 @@ import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
-// Cache successful discovery to avoid disposable ACP sessions on health refreshes.
-// Never cache failures or unauthenticated results, so sign-in is detected immediately.
+// Cache only successful authenticated probes so sign-in changes remain visible.
 const PROBE_SUCCESS_TTL_MS = 15 * 60 * 1_000;
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
@@ -331,9 +330,7 @@ export function buildCheckedAcpRegistrySnapshot(
       : {}),
     installed: readiness.installed,
     version: readiness.version,
-    // A failed discovery probe on a ready installation is a warning, not an
-    // outage: the agent binary is present and a real turn may still work
-    // (for example after the user completes authentication).
+    // Failed discovery is a warning: an installed agent may still run real turns.
     status: probeFailed ? "warning" : readiness.status,
     auth: input.probe
       ? {

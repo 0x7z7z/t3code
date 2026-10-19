@@ -419,9 +419,7 @@ describe("XAiAcpExtension", () => {
   });
 
   it("keeps Monitor ticks running while Grok reports them in progress", () => {
-    // Recorded from Grok 1.0.41: every tick is an in_progress update whose
-    // Bash-shaped rawOutput already carries exit_code 0. The monitor ends only
-    // through `_x.ai/task_completed`, never through a completed status.
+    // Grok 1.0.41 ticks report in_progress with exit_code 0; only _x.ai/task_completed ends the monitor.
     const command = "for i in 1 2 3; do sleep 8; echo tick $i; done";
     const started = parseRecordedToolCallUpdate({
       sessionUpdate: "tool_call_update",

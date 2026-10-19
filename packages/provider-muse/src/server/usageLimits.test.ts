@@ -21,7 +21,6 @@ describe("Muse usage limit failures", () => {
       ),
     ).toBe(true);
     expect(isMuseUsageLimitFailure(realRefusal)).toBe(true);
-    // A plain rate limit retries on its own; it is not a used-up subscription window.
     expect(isMuseUsageLimitFailure("API error 429: Rate limit exceeded. (rate_limit_error)")).toBe(
       false,
     );

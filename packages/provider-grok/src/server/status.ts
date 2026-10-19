@@ -246,10 +246,7 @@ export interface GrokModelsCliOutput {
   readonly models: ReadonlyArray<ServerProviderModel>;
 }
 
-/**
- * The command exits 0 whether or not the user is logged in, so the text is the
- * only signal.
- */
+/** Exit status is always 0; only output text indicates login state. */
 export function parseGrokModelsCliOutput(output: string): GrokModelsCliOutput {
   const authenticated = /you are logged in/i.test(output)
     ? true
@@ -339,10 +336,7 @@ export function grokSlashCommandsFromInitialize(
   return [...byName.values()];
 }
 
-/**
- * This never calls `authenticate` or `session/new`, so it cannot open a browser login or
- * boot the workspace's MCP servers.
- */
+// Initialize alone cannot trigger authentication or workspace MCP startup.
 const discoverGrokMetadataViaAcpInitialize = (
   grokSettings: GrokSettings,
   environment: NodeJS.ProcessEnv,
@@ -463,8 +457,7 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
     Effect.timeoutOption(AUTH_PROBE_TIMEOUT_MS),
     Effect.result,
   );
-  // Only a clean exit is parsed. Failed invocations print help or error text that
-  // must not be read as model slugs or as a login verdict.
+  // Failed invocations print help/errors, not usable model or login verdicts.
   const modelsOutput =
     Result.isSuccess(modelsResult) &&
     Option.isSome(modelsResult.success) &&
@@ -492,7 +485,6 @@ export const checkGrokProviderStatus = Effect.fn("checkGrokProviderStatus")(func
         ? { status: "unauthenticated" }
         : { status: "unknown" };
 
-  // Skill discovery applies the probe environment itself.
   const skills = yield* discoverGrokSkills(grokSettings, environment, cwd).pipe(
     Effect.tapError((cause) => Effect.logDebug("Grok skill discovery failed.", { cause })),
     Effect.orElseSucceed(() => []),

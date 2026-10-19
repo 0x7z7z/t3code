@@ -37,15 +37,9 @@ function acpPathIsWithinRoot(path: string, root: string): boolean {
   );
 }
 
-/**
- * Canonicalize the deepest existing ancestor so new paths still undergo symlink-aware
- * containment checks. Fail closed when an existing entry cannot be canonicalized.
- */
+// Canonicalize existing ancestors for symlink-aware checks of new paths; fail closed on errors.
 function acpCanonicalPathForContainment(path: string): string | undefined {
-  // Do not lexically normalize before realpath. For a path such as
-  // `workspace/link/../file`, the kernel resolves `link` before `..`; an
-  // eager NodePath.resolve would erase that symlink traversal and could turn
-  // an outside target into an apparently in-workspace path.
+  // realpath must resolve symlinks before ..; lexical normalization can hide traversal.
   let candidate = path;
   const missingSuffix: Array<string> = [];
 
@@ -217,9 +211,7 @@ export function acpMcpToolApprovalElicitationDisposition(
   ) {
     return undefined;
   }
-  // This request comes from T3's authenticated, scope-checked MCP endpoint,
-  // not an arbitrary provider command. Let explicit approval mode surface it
-  // to the user and otherwise allow the endpoint to enforce its own policy.
+  // T3's authenticated MCP endpoint enforces scope; only explicit approval mode needs a user prompt.
   return acpPolicyRequiresApproval(runtimePolicy) ? "ask" : "allow";
 }
 
@@ -240,11 +232,7 @@ export interface AcpClientPolicyGrants {
   readonly allowsExecute: (turnKey: string | null) => boolean;
 }
 
-/**
- * ACP does not link an approved tool call to the terminals the agent then creates, so an
- * approved command authorizes client terminals for the approving turn, or for the session on
- * accept-for-session.
- */
+/** ACP cannot link commands to terminals; command approvals grant execution for the turn or accepted session. */
 export function makeAcpClientPolicyGrants(): AcpClientPolicyGrants {
   let sessionExecute = false;
   let turnExecute: string | null = null;

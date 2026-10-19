@@ -5,11 +5,7 @@ import type { AcpSessionModeState } from "./runtimeModel.ts";
 
 export const ACP_SESSION_MODE_OPTION_ID = "_t3/session-mode";
 
-/**
- * Agents use it for a real choice (GitHub Copilot's default agent), but T3
- * option IDs must be non-empty. The ACP adapter maps it back to `""` before
- * applying a selection.
- */
+/** Encodes a valid empty ACP choice as a non-empty T3 ID; map back before applying. */
 export const ACP_EMPTY_OPTION_VALUE = "_t3/empty";
 
 const MAX_OPTION_DESCRIPTORS = 16;
@@ -66,8 +62,7 @@ export function acpProviderOptionDescriptors(input: {
   let hasModeCategory = false;
 
   for (const option of input.configOptions ?? []) {
-    // "model" options surface as the model list; "collaboration_mode" options
-    // are driven by T3's own plan/build interaction mode in the ACP adapter.
+    // Model and collaboration_mode choices use T3 model and interaction controls.
     if (option.category === "model" || option.category === "collaboration_mode") {
       continue;
     }
@@ -121,8 +116,7 @@ export function acpProviderOptionDescriptors(input: {
       })),
     );
     const currentValue = choiceId(modeState.currentModeId);
-    // Agents such as codex-acp expose the same choices through modes and config
-    // options; omit the synthetic descriptor so the composer shows each knob once.
+    // Some agents duplicate modes in config options; show each control once.
     const duplicatesKnownModeDescriptor = mirroredModeChoiceSets.some(
       (choiceIds) =>
         choiceIds.size === choices.length && choices.every((choice) => choiceIds.has(choice.id)),

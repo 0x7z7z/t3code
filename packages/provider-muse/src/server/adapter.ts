@@ -231,11 +231,7 @@ interface PendingRequest {
   response?: Pick<OrchestrationV2RuntimeRequest, "decision" | "answers">;
 }
 
-/**
- * Muse 1.4.4 cannot address an inline child session (`session/read` and
- * `view/subscribe` answer sessionNotFound), so the thread carries the prompt,
- * live status (on its root node) and result.
- */
+// Muse 1.4.4 cannot read/subscribe to inline child sessions; retain prompt, root status, and result here.
 interface ChildContext {
   readonly childSessionId: string;
   readonly childThreadId: ThreadId;
@@ -289,8 +285,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       if (input.runtimePolicy.interactionMode === "plan")
         return yield* protocolError("Muse Code does not support dedicated Plan mode");
       const scope = yield* Effect.scope;
-      // Muse rejects non-canonical workspace roots (for example macOS /tmp) and
-      // reports canonical paths in approvals, so resolve symlinks once here.
+      // Muse requires canonical workspace roots and approval paths; resolve symlinks once.
       const requestedCwd = input.runtimePolicy.cwd ?? providerHost.paths.cwd;
       const cwd = yield* fileSystem
         .realPath(requestedCwd)
@@ -1070,11 +1065,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           choiceId: choice.choiceId,
         }).pipe(Effect.tapError(() => Effect.sync(() => delete entry.response)));
       });
-      /**
-       * A workflow child's approval is runless: the turn that started the workflow
-       * may end long before the child asks, and T3 keeps a runless request on the
-       * thread until Muse settles it.
-       */
+      // Workflow children can outlive their starting turn; keep approvals runless until Muse settles them.
       const publishRequest = Effect.fnUntraced(function* (native: PendingRequest["native"]) {
         const child = native.type === "approval" && native.value.subagentOrigin !== undefined;
         const turn = child ? undefined : active;
@@ -1211,8 +1202,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
         yield* emit({ type: "node.updated", driver: MUSE_PROVIDER, node });
         yield* emit({ type: "turn_item.updated", driver: MUSE_PROVIDER, turnItem: item });
         yield* updateSession("waiting");
-        // Muse does not give workflow children the session's allowAll mode, so in full
-        // access T3 approves for them. If Muse rejects that, the request waits for the user.
+        // Workflow children do not inherit allowAll; approve in full access, leaving rejections for the user.
         if (child && input.runtimePolicy.runtimeMode === "full-access")
           yield* decideApproval(entry, "accept").pipe(Effect.ignore, Effect.forkIn(scope));
       });
@@ -1266,7 +1256,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
       });
       const handleNotification = Effect.fnUntraced(function* (method: string, data: unknown) {
         const params = yield* decode(recordSchema, data);
-        // Account-wide, so it names no session: Meta's subscription windows after a response.
+        // usage/changed is account-wide and carries no session ID.
         if (method === "usage/changed") {
           latestSubscriptionUsage = yield* decode(MuseSubscriptionUsage, params);
           return;
@@ -1311,8 +1301,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             return;
           }
         }
-        // A workflow child's approval comes under the child's own run id, during a turn
-        // or after it, so it skips turn routing.
+        // Child approvals use their own run IDs and can outlive turns; bypass turn routing.
         if (params.subagentOrigin !== undefined && method.startsWith("approval/"))
           return yield* handleRequestEvent(method, params, undefined);
         if (
@@ -1766,8 +1755,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
           const config = mcpSession
             ? {
                 mcpServers: {
-                  // Muse defaults to "required", which fails the whole run when T3's
-                  // tools cannot be reached. The agent should still work without them.
+                  // Muse's required default fails runs if T3 tools are unreachable; make them optional.
                   "t3-code": {
                     transport: "streamableHttp",
                     mode: "optional",
@@ -2011,8 +1999,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                   ...parts,
                 ],
                 displayText: turnInput.message.text || "Image attachment",
-                // A resumed session keeps the root it was created with; pin it to
-                // this thread's current checkout so edits land where T3 tracks them.
+                // Resumed sessions retain old roots; pin edits to the current checkout.
                 workspaceRoots: [workspaceRoot],
                 ifBusy: "queue",
                 ...(effort ? { reasoningEffort: effort } : {}),
@@ -2283,8 +2270,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                 }),
             ),
           ),
-        // Muse rejects forks at completed-turn boundaries (InvalidCut), so T3 uses
-        // portable context handoff for forks and does not rewind Muse conversations.
+        // Muse rejects completed-turn forks with InvalidCut; use portable handoff without rewinding.
         rollbackThread: (args) =>
           Effect.fail(
             new ProviderAdapter.ProviderAdapterRollbackThreadError({

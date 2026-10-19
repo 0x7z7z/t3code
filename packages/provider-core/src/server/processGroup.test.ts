@@ -16,7 +16,7 @@ const errorCode = (run: () => void) => {
 };
 
 describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("signalProcessGroup", () => {
-  // Signal 0 probes without killing; invalid process-group ids must still be rejected.
+  // Signal 0 probes without killing.
   it("never reaches this server's group or every process the user owns", () => {
     for (const pid of [1, 0, -1, Number.NaN, 1.5]) {
       expect(

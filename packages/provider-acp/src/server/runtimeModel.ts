@@ -540,8 +540,7 @@ function extractToolCallCommand(
       return executable;
     }
   }
-  // Titles like `Read \`src/a.ts\`` are not commands. Only execute tools
-  // fall back to a backtick or bare title.
+  // Only execute tools may treat titles as commands.
   if (kind !== "execute") {
     return undefined;
   }
@@ -610,8 +609,7 @@ function locationsFromToolCallInput(input: {
   return locations.length > 0 ? locations : undefined;
 }
 
-// Some agents, including Grok, resend cumulative tool output on every update.
-// Bound retained output so terminal redraws cannot flood runtime event ingestion.
+// Agents resend cumulative output; bound it to avoid flooding event ingestion.
 const TOOL_CALL_CONTENT_MAX_CHARS = 8_000;
 const TOOL_CALL_CONTENT_TRUNCATION_MARKER = "[Earlier output truncated]\n\n";
 
@@ -625,8 +623,7 @@ function boundToolCallOutputText(text: string): string {
 
 const RAW_OUTPUT_TEXT_FIELDS = ["content", "stdout", "stderr", "output"] as const;
 
-// Provider-defined rawOutput can repeat cumulative terminal output too;
-// bound its text fields so they cannot bypass the content limit.
+// rawOutput can duplicate cumulative output and bypass content limits.
 function boundToolCallRawOutput(rawOutput: unknown): unknown {
   if (!isRecord(rawOutput)) {
     return rawOutput;
@@ -813,9 +810,7 @@ function makeToolCallState(
     data.kind = kind;
   }
   if (title) {
-    // The agent's verbatim title. Presentation summarizes `title` on the
-    // state (e.g. a command line becomes "Ran command"), so identity checks
-    // such as MCP-fallback detection need the raw value preserved here.
+    // Identity checks need the verbatim title; presentation summarizes the state title.
     data.title = title;
   }
   if (command) {
@@ -825,8 +820,7 @@ function makeToolCallState(
     data.rawInput = input.rawInput;
   }
   if (isRecord(input._meta)) {
-    // Some agents identify MCP calls only here (goose `goose.toolCall`,
-    // qwen `toolName`/`serverId`, claude-acp `claudeCode.toolName`).
+    // goose, qwen, and claude-acp may identify MCP calls only in metadata.
     data.meta = input._meta;
   }
   if (input.rawOutput !== undefined) {
@@ -914,9 +908,7 @@ export function mergeToolCallState(
   };
 }
 
-// Even with bounded content (see TOOL_CALL_CONTENT_MAX_CHARS above), a redrawing terminal
-// can still shift its bounded tail window on nearly every notification, which would emit
-// a runtime event per redraw.
+// Bounded terminal tails still shift on each redraw; coalesce those updates.
 const TOOL_CALL_UPDATE_MIN_DETAIL_GROWTH_CHARS = 256;
 const TOOL_CALL_UPDATE_COALESCE_LIMIT = 10;
 
@@ -938,9 +930,7 @@ function toolCallOutputUnchanged(previous: AcpToolCallState, next: AcpToolCallSt
   );
 }
 
-// Command tools keep `detail` equal to the command, so live stdout lives on
-// `data.content` / `data.rawOutput`. Measure that too, otherwise coalescing never
-// sees growth and in-progress output is held until completed/failed.
+// Command detail is static; measure stdout in content/rawOutput to detect progress.
 export function toolCallProgressLength(state: AcpToolCallState): number {
   let contentChars = 0;
   const content = state.data.content;
@@ -1033,42 +1023,24 @@ function acpMcpFallbackInput(value: string | undefined): Record<string, unknown>
       const unwrapped = typeof parsed === "string" ? JSON.parse(parsed) : parsed;
       if (isRecord(unwrapped)) return unwrapped;
     } catch {
-      // ACP agents choose their own shell quoting. An unrecognized form keeps
-      // the MCP identity but leaves the input empty instead of misreporting it.
+      // Unknown shell quoting retains MCP identity but omits unparseable input.
     }
   }
   return undefined;
 }
 
-/**
- * T3 always injects its server as "t3-code", and matches are additionally gated on the known T3
- * tool inventory, so the separator match can stay loose.
- */
+// Known T3 inventory gates matches, so server-name separators can stay loose.
 const T3_MCP_TITLE_CALL =
   /^(?:mcp[-_]{1,2})?t3[-_ ]?code[-_.:/ ]{1,3}(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::.*)?$/i;
 
-/**
- * Gemini CLI titles injected MCP calls "<tool> (<server> MCP Server)" and
- * qwen-code appends ": <args json>" to the same template; Auggie namespaces
- * tool-first as "<tool>_t3-code".
- */
 const T3_MCP_TITLE_SUFFIX_CALL =
   /^(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*?)(?: \(t3[-_ ]?code MCP Server\)(?::|$)|[-_.]t3[-_ ]?code$)/i;
 
-/**
- * glm-acp-agent and Kimi use bare MCP tool names; Hermes also has a built-in
- * delegate_task, so the inventory gate alone cannot establish T3 ownership.
- * Accept bare names or JSON arguments. Match only the opening brace because
- * Kimi retitles calls while the argument JSON is still incomplete.
- */
+// Hermes has a native delegate_task; bare names do not prove T3 ownership.
+// Kimi streams incomplete JSON titles, so match only the opening brace.
 const T3_MCP_BARE_TITLE_CALL = /^(?<tool>[A-Za-z0-9_]+)(?::\s*\{|$)/;
 
-/**
- * ACP has no typed MCP tool-call item, so agents surface MCP calls in agent-specific shapes:
- * codex-acp tags execute calls with `rawInput.server`/`rawInput.tool`, while agents on T3's
- * terminal fallback run the `acp-mcp-call <tool>` CLI through their command or an embedded client
- * terminal.
- */
+/** ACP lacks typed MCP calls; recognize provider metadata and terminal fallback commands. */
 export function extractMcpToolCallIdentity(
   toolCall: AcpToolCallState,
   options?: {
@@ -1108,9 +1080,7 @@ export function extractMcpToolCallIdentity(
   const assertsForeignOrigin =
     (metaServerId.length > 0 && !/^t3[-_ ]?code$/i.test(metaServerId)) ||
     (gooseExtension.length > 0 && !/^t3[-_ ]?code$/i.test(gooseExtension));
-  // qwen's serverId marks a real MCP server, but goose reports its built-in
-  // extensions (developer__shell, edits) the same way as user MCP servers, so
-  // goose stays unclassified and keeps its command and file-change projections.
+  // goose metadata also tags built-ins; retain their command/file projections instead of classifying as MCP.
   if (assertsForeignOrigin) {
     if (metaServerId.length === 0 || metaToolName.length === 0) return undefined;
     const prefix = [`mcp__${metaServerId}__`, `mcp::${metaServerId}::`].find((prefix) =>
@@ -1155,11 +1125,7 @@ export function extractMcpToolCallIdentity(
   return undefined;
 }
 
-/**
- * Terminal ids embedded in a raw tool_call update, captured before
- * {@link resolveEmbeddedTerminalContent} rewrites them into plain text, so the
- * projection can still resolve the terminal's command line.
- */
+/** Capture IDs before resolveEmbeddedTerminalContent replaces them with text, to recover commands later. */
 export function embeddedTerminalIdsFromSessionUpdate(
   notification: EffectAcpSchema.SessionNotification,
 ): { readonly toolCallId: string; readonly terminalIds: ReadonlyArray<string> } | undefined {
@@ -1298,8 +1264,7 @@ export function syntheticLoadSessionResponseFromInitialize(
   };
 }
 
-// rawPayload is persisted alongside parsed tool state. Apply the same bounds
-// so cumulative output cannot bypass the limit through the original notification.
+// Persisted rawPayload must not bypass cumulative output limits.
 function boundToolCallRawPayload(
   params: EffectAcpSchema.SessionNotification,
   update: AcpToolCallUpdate,

@@ -381,11 +381,7 @@ export interface OpenCode2Model {
   readonly variants: ReadonlyArray<{ readonly id: string }>;
 }
 
-/**
- * One OpenCode instance fronts several providers, and their catalogues overlap:
- * OpenCode Zen and OpenCode Go both list Step 5 Preview Free. Naming the
- * sub-provider is what tells two such rows apart.
- */
+// Sub-provider names distinguish overlapping catalog entries.
 function subProviderLabelFor(input: {
   readonly providerID: string;
   readonly providerName?: string;
@@ -396,12 +392,7 @@ function subProviderLabelFor(input: {
     : label;
 }
 
-/**
- * A server loads its catalog lazily and lists nothing for its first few
- * hundred milliseconds, and a local instance starts a fresh server for each
- * status check. So an empty list is read again for a while, and the last
- * non-empty list stands in if the catalog still has not loaded.
- */
+/** Cold catalogs start empty; retry and retain the last non-empty list if loading still lags. */
 export const makeOpenCode2ModelLoader = <E>(
   list: Effect.Effect<ReadonlyArray<OpenCode2Model>, E>,
 ) =>
@@ -433,12 +424,7 @@ export interface OpenCode2Workspace {
   }>;
 }
 
-/**
- * A server scans a directory it has not served yet in the background: its first read lists
- * no commands at all (not even the built-ins), and `command.updated` plus `skill.updated`
- * for the directory end the scan. `scanned` must be listening before `read` runs, since
- * the read is what starts the scan.
- */
+/** Subscribe to scanned before read triggers a background scan; initial reads lack even built-ins. */
 export const loadOpenCode2Workspace = <E>(
   read: Effect.Effect<OpenCode2Workspace, E>,
   scanned: Effect.Effect<void>,
@@ -482,10 +468,7 @@ export function openCode2CommandsToServerProviderSlashCommands(
   return slashCommands;
 }
 
-/**
- * Auto asks like Supervised: OpenCode has no reviewer that approves routine
- * actions.
- */
+// OpenCode has no reviewer; Auto asks like Supervised.
 const OPENCODE_2_PRESENTATION = {
   ...OPENCODE_PRESENTATION,
   showInteractionModeToggle: true,

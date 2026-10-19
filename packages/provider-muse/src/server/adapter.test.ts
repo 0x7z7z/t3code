@@ -78,7 +78,7 @@ function pendingPromise<A>() {
   return { promise, resolve, reject };
 }
 
-/** SDK-shaped transport fake: registration deliberately returns void, as the SDK does. */
+// Match the SDK: handler registration returns void.
 const makeFakeMuse = Effect.fnUntraced(function* (idPrefix = "native") {
   const requests = yield* Queue.unbounded<NativeCall>();
   const calls: NativeCall[] = [];
@@ -565,7 +565,7 @@ describe("MuseAdapterV2", () => {
       );
       yield* startConversation(harness, fake);
       const turnStart = fake.calls.find((call) => call.method === "turn/start");
-      // Muse 1.4.3 rejects any other form: "expected a canonical path (resolves to \\?\C:\…)".
+      // Muse 1.4.3 accepts only verbatim canonical roots.
       assert.deepStrictEqual(turnStart?.params.workspaceRoots, ["\\\\?\\C:\\work\\repo"]);
       // The muse.cmd launcher runs under cmd.exe, which cannot start in a verbatim directory.
       assert.strictEqual(hostCwd, "C:\\work\\repo");

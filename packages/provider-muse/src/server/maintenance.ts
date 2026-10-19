@@ -54,8 +54,7 @@ export const museMaintenance: ProviderMaintenanceCapabilitiesResolver = {
         return source.includes("muse-code/launcher-") && source.includes("MUSE_SYNC_UPDATE");
       }).pipe(Effect.orElseSucceed(() => false));
       if (!isLauncher) return manual;
-      // The launcher has no `update` subcommand. Its documented launch environment
-      // forces a synchronous refresh of this executable's own installation.
+      // No update subcommand exists; launch environment forces a synchronous refresh of this install.
       const updateEnv = {
         ...(context.env.MUSE_CHANNEL ? { MUSE_CHANNEL: context.env.MUSE_CHANNEL } : {}),
         MUSE_NO_AUTO_UPDATE: "0",

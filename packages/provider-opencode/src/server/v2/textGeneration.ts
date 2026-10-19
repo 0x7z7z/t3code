@@ -1,7 +1,4 @@
-/**
- * Both generate endpoints return 403 on OpenCode's free tier, so generation
- * uses a temporary prompt session that is removed afterwards.
- */
+// Generate endpoints return 403 on the free tier; use and remove a temporary prompt session.
 import { AbsolutePath, Location, Model, Provider, Session } from "@opencode/client/effect";
 import { TextGenerationError } from "@t3tools/contracts";
 import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
@@ -19,14 +16,10 @@ const isTextGenerationError = Schema.is(TextGenerationError);
 
 const GENERATION_TIMEOUT = "3 minutes";
 
-/**
- * Denying `shell` or `read` outright gets the whole session refused on
- * OpenCode's free models, and an ask that is never answered would hang, so asks
- * are rejected as they arrive.
- */
+// Free models refuse denied read/shell permissions; ask and reject requests as they arrive.
 const GENERATION_PERMISSIONS = [{ action: "*", resource: "*", effect: "ask" }] as const;
 
-/** A failure's cause is the provider's own error, kept out of `detail`. */
+// Provider error text stays in cause, outside detail.
 type Outcome =
   | { readonly _tag: "text"; readonly text: string }
   | { readonly _tag: "failed"; readonly detail: string; readonly cause?: unknown };
@@ -53,8 +46,7 @@ const runOnServer = (
     const events = yield* connection.events;
     yield* events.pipe(
       Stream.runForEach((event) => {
-        // An execution end a newer server sent in a shape this build cannot
-        // read still ends the generation, as it ends a turn in the adapter.
+        // Unreadable newer execution-end shapes must still end generation.
         if (event.type === "unreadable.execution.ended") {
           if (event.sessionID !== sessionId) return Effect.void;
           return Deferred.succeed(

@@ -98,7 +98,6 @@ export function makeSubagentConversationArtifacts(input: {
   readonly nativeItemRef: OrchestrationV2ProviderRef | null;
   readonly role: "user" | "assistant";
   readonly text: string;
-  /** Whether a user message is the script a workflow run executes. */
   readonly workflowScript?: boolean;
   readonly ordinal: number;
   readonly now: DateTime.Utc;
@@ -189,8 +188,7 @@ export function subagentResultForRun(
       candidate.role === "assistant" &&
       candidate.text.trim().length > 0,
   );
-  // Turn item order is authoritative: providers can finalize every message of a turn at once,
-  // so message timestamps can tie. They only order messages that have no turn item.
+  // Prefer turn item order; providers can finalize messages with identical timestamps.
   const message =
     messages.find((candidate) => candidate.id === turnItem?.messageId) ??
     messages.toSorted(
@@ -248,8 +246,7 @@ export function delegatedTaskProgress(projection: {
     projection.subagents.some(
       (task) =>
         isOrchestrationV2WorkActive(task.status) ||
-        // Publishing a child's result precedes scheduling its parent's wake.
-        // The parent still owes that follow-up even between those transactions.
+        // Child results publish before parent wakes are scheduled; pending delivery still owes a follow-up.
         task.completionDelivery?.state === "pending" ||
         task.completionDelivery?.state === "claimed",
     ) ||

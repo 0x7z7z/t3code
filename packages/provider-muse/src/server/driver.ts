@@ -105,8 +105,7 @@ export const MuseDriver: ProviderDriver<MuseSettings, MuseDriverEnv> = {
       const resolveMaintenance = (options?: { readonly fresh?: boolean }) =>
         Effect.gen(function* () {
           const capabilities = yield* resolveInstallation(options);
-          // The maintenance runner requests fresh capabilities around an explicit update
-          // and needs the native target version to verify that the command actually upgraded.
+          // Fresh maintenance reads need the native target version to verify explicit updates.
           const latestVersion = options?.fresh
             ? yield* latestMuseVersion(processEnvironment, { fresh: true }).pipe(
                 Effect.provideService(HttpClient.HttpClient, httpClient),

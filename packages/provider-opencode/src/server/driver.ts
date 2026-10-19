@@ -75,11 +75,7 @@ function isOpenCodeNativeCommandPath(commandPath: string): boolean {
   );
 }
 
-/**
- * OpenCode 1.x ships as `opencode-ai` and 2.x as `@opencode/cli`. An install is
- * only ever updated within its own package: T3 never moves a 1.x install onto
- * 2.x or back, since 2.x converts the shared database in place.
- */
+/** Update only within the installed package generation; 2.x converts the shared database in place. */
 export const openCodeUpdateFor = (generation: ProbedOpenCode["generation"]) =>
   makePackageManagedProviderMaintenanceResolver({
     provider: DRIVER_KIND,
@@ -104,11 +100,7 @@ function byOpenCodeRuntime<A, E, R, PE>(
   );
 }
 
-/**
- * Capability and selection reads are hot, so they use the last successful probe (1.x before one
- * lands) and never wait on a slow server. Opening a session waits for a probe, so each server is
- * spoken to in its own protocol.
- */
+// Hot reads use the last successful probe; session opens await it to select the correct protocol.
 function selectOpenCodeRuntimeAdapter(input: {
   readonly probe: OpenCodeRuntimeProbe;
   readonly v1: ProviderAdapter.ProviderAdapterV2["Service"];
@@ -368,8 +360,7 @@ export const OpenCodeDriver: ProviderDriver<
         Effect.provideService(OpenCodeServerOwner.OpenCodeServerOwner, serverOwner),
         Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, openCodeRuntime),
       );
-      // The Bun-compiled CLI truncates non-TTY stdout at one 64KB pipe buffer.
-      // Read inventory through the server to avoid caching an empty skill list.
+      // Bun truncates non-TTY CLI output at 64KB; use the server for skill inventory.
       const loadWorkspaceInventory = (
         client: Parameters<typeof OpenCodeRuntime.loadOpenCodeCommands>[0],
       ) =>
@@ -383,8 +374,7 @@ export const OpenCodeDriver: ProviderDriver<
           },
           { concurrency: "unbounded" },
         ).pipe(
-          // Only a finished lookup is reported as complete. A failed one leaves
-          // the flag unset, so the registry decides from the provider's health.
+          // Failed lookups leave completion unset so registry health decides.
           Effect.map(({ skills, commands }) => ({
             skills,
             commands: Option.getOrElse(commands, () => []),
@@ -493,8 +483,7 @@ export const OpenCodeDriver: ProviderDriver<
                     ...machineSnapshot,
                     skills: openCode2SkillsToServerProviderSkills(skills),
                     slashCommands: openCode2CommandsToServerProviderSlashCommands(commands),
-                    // A finished scan lists at least the built-ins. None means it
-                    // timed out, so the registry decides from the provider's health.
+                    // Completed scans include built-ins; empty means timeout, so defer to registry health.
                     slashCommandsPending: commands.length > 0 ? false : undefined,
                   })),
                 ),

@@ -4,18 +4,10 @@ export interface ProviderMaintenanceCapabilities {
   readonly provider: ProviderDriverKind;
   readonly packageName: string | null;
   readonly update: ProviderMaintenanceCommandAction | null;
-  /**
-   * `undefined` means the installer has no channel of its own and the npm
-   * registry entry for `packageName` is authoritative; `null` means the
-   * installer was asked and did not know.
-   */
+  /** undefined defers to npm; null means the installer could not determine the latest version. */
   readonly latestVersion?: string | null;
   readonly compareVersions?: (current: string, latest: string) => number;
-  /**
-   * The executable T3 Code runs, symlinks followed, when no update command is
-   * proven for it. The version advisory names it so the user knows which
-   * install to update.
-   */
+  /** Resolved executable path for advisories when no update command is proven. */
   readonly installPath?: string;
 }
 

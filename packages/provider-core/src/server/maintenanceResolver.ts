@@ -244,8 +244,7 @@ export function npmGlobalPrefixFromCommandPath(
   if (packageIndex < 0 || normalized.slice(0, packageIndex).includes("/node_modules/")) {
     return null;
   }
-  // Mise's npm backend uses a global-looking layout inside a tool version.
-  // Globals under its Node installation still belong to npm.
+  // Mise tool layouts resemble npm globals; only globals under its Node install belong to npm.
   const miseTool = /\/mise\/installs\/([^/]+)\/[^/]+$/.exec(normalized.slice(0, packageIndex))?.[1];
   if (miseTool && miseTool !== "node") {
     return null;
@@ -365,8 +364,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
   });
   const commandPaths = [context.resolvedCommandPath, context.realCommandPath];
   const packageName = definition.npmPackageName;
-  // WinGet owns these files: `claude update` only reports "managed by winget"
-  // and exits 0, and T3 Code does not run `winget upgrade` itself.
+  // WinGet-managed claude update exits 0 without updating; T3 does not run winget upgrade.
   if (
     definition.provider === "claudeAgent" &&
     context.platform === "win32" &&
@@ -390,8 +388,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
   if (nativeUpdate?.isCommandPath && commandPaths.some(nativeUpdate.isCommandPath)) {
     return native;
   }
-  // A `node_modules` path not proven below belongs to another package or a
-  // project, so the provider's own updater could act on the wrong install.
+  // Unproven node_modules paths may belong to other installs; avoid the native updater.
   const fallback = commandPaths.some((commandPath) =>
     normalizeCommandPath(commandPath).includes("/node_modules/"),
   )
@@ -416,8 +413,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     });
   }
   if (commandPaths.some(isPnpmGlobalCommandPath)) {
-    // pnpm 10 skips unapproved postinstall scripts while reporting success.
-    // Global installs need command-line approval, but pnpm before 10.4 rejects the flag.
+    // pnpm 10 skips unapproved scripts; the approval flag requires 10.4+.
     const pnpmVersion = yield* runProbe("pnpm", ["--version"], context.env);
     const allowBuild =
       pnpmVersion !== null && satisfiesSemverRange(pnpmVersion, ">=10.4.0")
@@ -451,13 +447,10 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     });
   }
 
-  // npm proof names the package, so it outranks a keg the path merely passes
-  // through: a Homebrew-installed Node keeps its globals under
-  // `Cellar/node/<ver>/lib/node_modules/`, and that is npm's install, not brew's.
+  // npm proof outranks a containing Homebrew keg; Homebrew Node globals still belong to npm.
   const npmPrefix = yield* resolveNpmGlobalPrefix(context, packageName);
   if (npmPrefix) {
-    // npm 12 blocks postinstall scripts while reporting success, leaving native
-    // binaries uninstalled. Older npm only warns about the unknown allow-scripts config.
+    // npm 12 requires script approval to install native binaries; older npm only warns about the flag.
     return makeProviderMaintenanceCapabilities({
       provider: definition.provider,
       packageName,
@@ -486,8 +479,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     }
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    // The keg's own brew works even when a GUI-launched server has no
-    // Homebrew on PATH; the prefix check below still applies to it.
+    // GUI servers may lack Homebrew on PATH; use the keg brew with the same prefix check.
     const kegBrewPath = path.join(homebrew.prefix, "bin", "brew");
     const brewPath = (yield* fileSystem.exists(kegBrewPath).pipe(Effect.orElseSucceed(() => false)))
       ? kegBrewPath
@@ -507,8 +499,7 @@ export const resolvePackageManagedProviderMaintenance = Effect.fn(
     }
     const args =
       homebrew.kind === "cask" ? ["upgrade", "--cask", homebrew.name] : ["upgrade", homebrew.name];
-    // Homebrew lags npm by hours on every release, so compare against what
-    // `brew upgrade` can actually deliver.
+    // Homebrew lags npm; compare against the version brew upgrade can deliver.
     const info = yield* runProbe(brewPath, ["info", "--json=v2", homebrew.name], context.env);
     return makeProviderMaintenanceCapabilities({
       provider: definition.provider,
@@ -541,10 +532,7 @@ const isMiseWrapperScript = Effect.fn("isMiseWrapperScript")(function* (
   return script.startsWith("#!") && /\bmise\s+(?:x|exec)\b/.test(script);
 });
 
-/**
- * Volta's `bin/<cmd>` is a link to its `volta-shim`, which picks the package
- * at run time; the package's own image directory proves Volta installed it.
- */
+// Volta bin links only identify its shim; the package image proves ownership.
 const isVoltaPackageInstall = Effect.fn("isVoltaPackageInstall")(function* (
   context: ProviderMaintenanceResolutionContext,
   packageName: string,
@@ -582,9 +570,7 @@ const resolveNpmGlobalPrefix = Effect.fn("resolveNpmGlobalPrefix")(function* (
     ...packageName.split("/"),
     "package.json",
   );
-  // npm writes both `<cmd>.cmd` and an extensionless sh script into the
-  // Windows prefix; either one sits directly beside `node_modules`. A POSIX
-  // project checkout has the same shape, which is why this is Windows-only.
+  // Windows npm shims sit beside node_modules; POSIX project checkouts can mimic this layout.
   const hasManifest = yield* fileSystem
     .exists(manifestPath)
     .pipe(Effect.orElseSucceed(() => false));

@@ -25,9 +25,7 @@ function tokens(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0;
 }
 
-/**
- * Grok resolves through xAI's first-party entry, which has no bare alias.
- */
+// Grok's xAI first-party rate entry has no bare alias.
 export function cursorRateModel(model: string): string {
   const base = model
     .replace(/^cursor-/, "")
@@ -178,8 +176,7 @@ export const readCursorAccountUsage = Effect.fn("readCursorAccountUsage")(functi
     let total: number | undefined;
     const readPage = (page: number) =>
       Effect.gen(function* () {
-        // A count can include overlapping page boundaries. Allow room to
-        // reconcile them without imposing a fixed account-size limit.
+        // Counts can overlap page boundaries; leave reconciliation room without a fixed account-size cap.
         if (page > (total === undefined ? 1000 : Math.ceil(total / pageSize) * 2 + 1)) {
           return yield* invalid("Account usage page limit exceeded");
         }
@@ -249,8 +246,7 @@ export const readCursorAccountUsage = Effect.fn("readCursorAccountUsage")(functi
           orElse: () => invalid("Account usage request timed out"),
         }),
       );
-    // Cursor caps a page at 1,000 events and takes about a second to answer one, so the pages
-    // the first one's count implies are requested up to six ahead and consumed in page order.
+    // Cursor pages take about a second for up to 1,000 events; fetch six ahead in page order.
     const ahead: Fiber.Fiber<
       Effect.Success<ReturnType<typeof readPage>>,
       CursorAccountUsageInvalidError

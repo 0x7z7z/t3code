@@ -6,8 +6,7 @@ import { isCursorShellSpawnFailure } from "./CursorSdk.ts";
 
 const cursorSdkUrl = new URL("./CursorSdk.ts", import.meta.url).href;
 
-// The vitest worker already has its own unhandledRejection listener, which
-// would hide the process-exit behavior.
+// Vitest's unhandledRejection listener would hide process-exit behavior.
 const probeProgram = `
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

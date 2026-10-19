@@ -1,9 +1,4 @@
-/**
- * A record's dedupe key carries its timestamp and an occurrence index counted within one fetch. A
- * refetched range therefore replaces every cached record in that range rather than adding to it,
- * so each timestamp's records always come from a single fetch and their occurrence indexes cannot
- * collide.
- */
+// Occurrence indices are fetch-local; replace entire refetched ranges to prevent key collisions.
 import { cursorRateModel } from "./accountUsage.ts";
 import type { UsageRecord } from "@t3tools/provider-core/server/usage";
 
