@@ -24,13 +24,7 @@ const SKILL_MENTION_SOURCE =
 const SKILL_TOKEN_REGEX = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s)`, "gu");
 export const SKILL_MENTION_PATTERN = new RegExp(`${SKILL_MENTION_SOURCE}(?=\\s|$)`, "gu");
 const MENTION_TOKEN_REGEX = /(^|\s)@(?:"((?:\\.|[^"\\])*)"|([^\s@"]+))(?=\s)/g;
-/**
- * Unbounded, every whitespace in the composer is a candidate start: the engine scans the rest
- * of the text for a closing `]`, fails, and rescans from the next whitespace — quadratic on
- * input like " [[[[[…". Only a basename ever survives the `label !== basename` check below, so
- * this cannot reject a link a user could meaningfully write; the longest filename any common
- * filesystem allows is 255.
- */
+// Bound unmatched-bracket rescans to avoid quadratic work; only basenames survive, and common filesystems cap them at 255.
 const MAX_FILE_LINK_LABEL_LENGTH = 512;
 const FILE_LINK_TOKEN_REGEX = new RegExp(
   `(^|\\s)\\[((?:\\\\.|[^\\]\\\\]){0,${MAX_FILE_LINK_LABEL_LENGTH}})\\]\\(([^)\\s]+)\\)(?=\\s)`,

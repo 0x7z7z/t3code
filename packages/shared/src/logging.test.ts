@@ -132,9 +132,7 @@ describe("RotatingFileSink", () => {
     expect((thrown as RotatingFileSinkError).cause).toBeInstanceOf(Error);
   });
 
-  // An over-long name is the one stat failure that is neither ENOENT nor a
-  // permission problem on posix. Windows reports it as ENOENT, so the sink
-  // correctly treats it as an absent file and there is nothing to assert.
+  // An overlong name triggers a non-permission stat failure on POSIX; Windows reports ENOENT instead.
   it.skipIf(windowsHost)("only treats a missing log file as an empty current size", () => {
     const directory = makeTempDirectory();
     const filePath = NodePath.join(directory, "a".repeat(300));

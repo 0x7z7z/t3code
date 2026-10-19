@@ -114,10 +114,7 @@ export function enumerateHourStarts(sinceTime: string, untilTime: string): reado
   return starts;
 }
 
-/**
- * Repeated wall-clock hours during a fall-back transition include their short zone name so the
- * two distinct buckets remain distinguishable.
- */
+/** Add short zone names to distinguish repeated fall-back hours. */
 export function formatHourShort(hourStart: string, timeZone?: string): string {
   const instant = new Date(hourStart);
   if (Number.isNaN(instant.getTime())) return hourStart;
@@ -223,9 +220,7 @@ export function makeWindow(
       untilTime: untilTime.toISOString(),
     };
   }
-  // Subtracting fixed milliseconds from `now` lands on the wrong calendar day
-  // around a DST transition. The window start is pure calendar arithmetic on
-  // the local end day, done in UTC where days are uniform.
+  // Use calendar arithmetic in UTC; fixed millisecond subtraction crosses DST days incorrectly.
   const [year = 0, month = 1, dayOfMonth = 1] = untilDay
     .split("-")
     .map((part) => Number.parseInt(part, 10));

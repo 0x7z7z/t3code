@@ -241,17 +241,9 @@ const QuitConfirmationModeSetting = Schema.Union([QuitConfirmationMode, LegacyCo
 export const FontFamilyPreference = Schema.String.check(Schema.isMaxLength(200));
 export type FontFamilyPreference = typeof FontFamilyPreference.Type;
 
-/**
- * The environment's theme, set with `t3 theme set <id>`. Each client applies
- * it once per value — live when connected, on its next connect otherwise — so
- * setting it switches every client, while a theme a user picks in Settings
- * afterwards sticks until the next set. Empty means "no environment theme",
- * which is also how it is cleared.
- */
+/** Clients apply each environment theme set once; later local choices persist until the next set. Empty clears it. */
 export const DefaultThemePreference = Schema.String.check(Schema.isMaxLength(64));
-// Deliberately absent from ServerSettingsPatch: `t3 theme set` checks that an
-// id is syntactically valid and actually resolvable, and a generic RPC patch
-// would let a client write a theme no client can resolve, bypassing both.
+// Excluded from RPC patches so t3 theme set can validate syntax and resolvability.
 export type DefaultThemePreference = typeof DefaultThemePreference.Type;
 
 export const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIEWPORT;
@@ -305,8 +297,7 @@ export const ClientSettingsSchema = Schema.Struct({
   appearanceContrast: AppearanceContrast.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_APPEARANCE_CONTRAST)),
   ),
-  // Panel motion defaults to zero because width and height transitions cause
-  // layout work on every frame, which is noticeable on lower-power clients.
+  // Zero avoids per-frame layout work from width/height transitions.
   panelAnimationDurationMs: PanelAnimationDurationMs.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PANEL_ANIMATION_DURATION_MS)),
   ),
@@ -381,9 +372,7 @@ export const ClientSettingsSchema = Schema.Struct({
   fontFamilyTerminal: FontFamilyPreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 
   fontSmoothing: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
-  // `null` alone does not mean "show the wizard" — every install that predates
-  // this field decodes to `null` — so the gate also requires an empty workspace
-  // before it treats the client as a fresh install.
+  // Older installs also decode to null; onboarding must additionally require an empty workspace.
   onboardingCompletedAt: Schema.NullOr(Schema.String).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -912,15 +901,8 @@ export const ProjectProviderInstanceOverride = Schema.Struct({
 });
 export type ProjectProviderInstanceOverride = typeof ProjectProviderInstanceOverride.Type;
 
-/**
- * An absent key inherits the environment value; `null` is a real value where
- * the environment type is nullable (no default model, no dedicated writer
- * model, never auto-settle).
- *
- * `providerInstances` sits outside `PROJECT_SCOPED_SERVER_SETTING_KEYS`: every
- * other key replaces its `ServerSettings` field whole, while this one keeps the
- * settings.json shape but overrides field by field, per `ProviderInstanceId`.
- */
+/** Absent keys inherit; null is a value for nullable settings.
+ * providerInstances overrides fields per instance; other keys replace the whole setting. */
 export const ProjectSettingsOverrides = Schema.Struct({
   worktreeCleanup: Schema.optionalKey(WorktreeCleanup),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
@@ -953,12 +935,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
 } satisfies Record<ProjectScopedServerSettingKey | "providerInstances", unknown>);
 export type ProjectSettingsOverrides = typeof ProjectSettingsOverrides.Type;
 
-/**
- * Whether `null` is a stored override value for this key rather than "unset".
- * Clients writing a project override treat null for every other key as a
- * request to remove the override, so a picker's "Inherit" item and the row's
- * reset do the same thing.
- */
+/** True if null stores an override; otherwise null removes it. */
 export function isNullableProjectSettingsOverride(key: ProjectScopedServerSettingKey): boolean {
   return NULLABLE_PROJECT_SETTINGS_OVERRIDES.has(key);
 }
@@ -983,7 +960,7 @@ export const DatabaseStorageStatus = Schema.Struct({
   reclaimableBytes: Schema.Number,
   /** False on databases created before incremental auto_vacuum; `t3 doctor` converts them. */
   incrementalVacuumEnabled: Schema.Boolean,
-  /** Command to run on the host to reclaim the space offline. */
+  /** Run on the host while offline. */
   compactCommand: Schema.String,
 });
 export type DatabaseStorageStatus = typeof DatabaseStorageStatus.Type;
@@ -1036,8 +1013,7 @@ export const StorageCleanupSettings = Schema.Struct({
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
 export const ServerSettings = Schema.Struct({
-  // Null means no client has migrated this preference yet; an empty value is
-  // authoritative so another device cannot resurrect cleared preferences.
+  // Null means unmigrated; empty is authoritative and must not resurrect cleared preferences.
   favorites: Schema.NullOr(ModelFavorites).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   providerModelPreferences: Schema.NullOr(ProviderModelPreferences).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
@@ -1048,10 +1024,7 @@ export const ServerSettings = Schema.Struct({
   ),
 
   worktreesDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  /**
-   * Custom locations used before the current one. Server-maintained so
-   * worktrees left there stay eligible for cleanup and review diffs.
-   */
+  /** Server-maintained history keeps old worktrees eligible for cleanup and review diffs. */
   previousWorktreesDirectories: Schema.Array(TrimmedString).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -1087,17 +1060,11 @@ export const ServerSettings = Schema.Struct({
   projectSettingsOverrides: Schema.Record(ProjectId, ProjectSettingsOverrides).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  /**
-   * The fold runs once so a later reset in the settings UI is not undone by the
-   * next server start.
-   */
+  /** Fold once so restarts cannot undo later UI resets. */
   projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 
   enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
-  /**
-   * Kept separate from agent access so enabling the user's Device panel does
-   * not also grant providers control of simulators and emulators.
-   */
+  /** Enabling the Device panel must not grant providers device control. */
   enableDeviceSupport: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceOnboardingCompleted: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   deviceHosts: SshDeviceHostConfigs.pipe(Schema.withDecodingDefault(Effect.succeed([]))),
@@ -1126,30 +1093,19 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_BACKGROUND_ACTIVITY_PROFILE)),
   ),
   defaultTheme: DefaultThemePreference.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  /**
-   * When the environment's theme was last set, so clients can tell a re-set of
-   * the same value from one they already applied: `t3 theme set` must act even
-   * when it names the theme it named before.
-   */
+  /** Distinguishes repeated sets of the same theme so clients apply each one. */
   defaultThemeSetAt: Schema.String.check(Schema.isMaxLength(64)).pipe(
     Schema.withDecodingDefault(Effect.succeed("")),
   ),
   environmentIcon: ForwardCompatibleNullable(EnvironmentMachineKind).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
-  /**
-   * Null means inherit: the repository's t3.json, then "local". Null stays off the wire
-   * so older clients, which require a literal here, keep decoding.
-   */
+  /** Null inherits t3.json, then local; omit it on the wire for older clients requiring a literal. */
   defaultThreadEnvMode: OmittedWhenNull(ThreadEnvMode),
   newWorktreesStartFromOrigin: Schema.Boolean.pipe(
     Schema.withDecodingDefault(Effect.succeed(true)),
   ),
-  /**
-   * Null defers to the repository's t3.json, then to recursive. A value
-   * picked on a newer server decodes as null here rather than failing the
-   * whole settings snapshot for an older client.
-   */
+  /** Null inherits t3.json, then recursive; unknown values decode to null for older clients. */
   worktreeSubmodules: ForwardCompatibleNullable(WorktreeSubmodules).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1190,10 +1146,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
 
-  // The driver-specific config blob is `Schema.Unknown` at this layer so
-  // envelopes with unknown drivers (forks, downgrades, in-flight PR branches)
-  // round-trip without loss. See providerInstance.ts for the forward/backward
-  // compatibility invariant.
+  // Schema.Unknown preserves unknown-driver configs across versions; see providerInstance.ts.
   providerInstances: Schema.Record(ProviderInstanceId, ProviderInstanceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1201,8 +1154,7 @@ export const ServerSettings = Schema.Struct({
   sourceControlHosts: Schema.Record(Schema.String, SourceControlHostSettings).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
-  // Keyed by a user-chosen id so a source keeps its rows across edits. Entries
-  // this build cannot decode round-trip untouched, as provider instances do.
+  // User-chosen ids preserve rows across edits; undecodable entries round-trip untouched.
   usageLimitSources: Schema.Record(UsageLimitSourceId, UsageLimitSourceConfig).pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
@@ -1230,9 +1182,7 @@ export const providerInstanceConfigEnabledFlag = (config: unknown): boolean | un
   return typeof enabled === "boolean" ? enabled : undefined;
 };
 
-/**
- * Matches the `enabled` decoding default of each driver's settings schema.
- */
+// Must match each driver's enabled decoding default.
 const DEFAULT_DISABLED_PROVIDER_DRIVERS: ReadonlySet<ProviderDriverKind> = new Set(
   ["cursor", "grok", "muse", "pi", "opencode", "antigravity"].map((driver) =>
     ProviderDriverKind.make(driver),
@@ -1393,14 +1343,7 @@ export const ServerSettingsPatch = Schema.Struct({
   ),
   defaultModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   defaultRuntimeMode: Schema.optionalKey(RuntimeMode),
-  /**
-   * Per-project entry replacement: each entry replaces that project's whole
-   * override set and `null` removes it.
-   *
-   * `providerInstances` is the one exception: an entry that omits the key keeps
-   * the stored value instead of clearing it, so a client built before that
-   * field existed cannot wipe it by editing another key.
-   */
+  /** Replaces each project's override set; null removes it. Omitted providerInstances retains its stored value. */
   projectSettingsOverrides: Schema.optionalKey(
     Schema.Record(ProjectId, Schema.NullOr(ProjectSettingsOverrides)),
   ),
@@ -1453,18 +1396,11 @@ export const ServerSettingsPatch = Schema.Struct({
       otlpLogsUrl: Schema.optionalKey(TrimmedString),
     }),
   ),
-  /**
-   * Merges per host: a patched field replaces the saved one, so a client sends a per-server-host
-   * map whole, with the redaction marker for each saved secret it keeps. An empty or omitted
-   * secret is removed from the secret store.
-   */
+  /** Merges per host, replacing patched fields whole; redaction markers retain secrets, empty or omitted secrets remove them. */
   sourceControlHosts: Schema.optionalKey(Schema.Record(Schema.String, SourceControlHostSettings)),
-  // Replace the whole map: partial patches risk leaving driver-specific
-  // config in a half-merged state.
+  // Replace whole maps to avoid half-merged driver configs.
   providerInstances: Schema.optionalKey(Schema.Record(ProviderInstanceId, ProviderInstanceConfig)),
-  // Per-entry, unlike `providerInstances`: a client only ever adds or removes
-  // one source, and sending the whole map races another edit that has not
-  // echoed back yet. `null` removes; the server merges into its current map.
+  // Merge per source to avoid racing other edits; null removes an entry.
   usageLimitSources: Schema.optionalKey(
     Schema.Record(UsageLimitSourceId, Schema.NullOr(UsageLimitSourceConfig)),
   ),
@@ -1499,11 +1435,7 @@ export function requiredScopesForServerSettingsPatch(
   ];
 }
 
-/**
- * Project scripts run on the host when a worktree is created or a thread
- * settles, so a project mutation that carries them needs the same grant as
- * saving project scripts through settings, on top of `orchestration:operate`.
- */
+/** Host-executed project scripts require settings-write authority in addition to orchestration:operate. */
 export function requiredScopesForProjectMutation(
   mutation: ProjectMutation,
 ): ReadonlyArray<AuthEnvironmentScope> {

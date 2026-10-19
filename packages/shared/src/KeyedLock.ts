@@ -12,9 +12,7 @@ interface LockEntry {
   readonly users: number;
 }
 
-/**
- * Not reentrant: taking a key while already holding it deadlocks.
- */
+/** Not reentrant: reacquiring a held key deadlocks. */
 export const make = <Key>(): Effect.Effect<KeyedLock<Key>> =>
   Effect.gen(function* () {
     const locks = yield* Ref.make<ReadonlyMap<Key, LockEntry>>(new Map());

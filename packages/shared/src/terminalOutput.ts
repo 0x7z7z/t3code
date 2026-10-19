@@ -1,21 +1,15 @@
-/**
- * Server and client folds must reach the same state for the same decoded chunks.
- * The last `LIVE_LINES` lines form a cursor-addressable window; older lines are fixed,
- * and lines never wrap because the model has no width.
- * Canonical SGR styling resets at each line boundary so tails can be cut there.
- * Unfinished escape sequences carry into the next chunk through `pending`.
- */
+/** Server/client folds must agree: only the last LIVE_LINES are cursor-addressable, with no wrapping.
+ * SGR resets at line boundaries for safe tail cuts; unfinished escapes carry through pending. */
 export interface TerminalOutputState {
-  /** What to show: fixed lines, then the window. Contains only SGR escapes. */
+  /** Fixed lines followed by the live window; contains only SGR escapes. */
   readonly text: string;
-  /** True once anything was dropped from the front. */
   readonly truncated: boolean;
   /** An unfinished escape sequence awaiting the next chunk. */
   readonly pending: string;
   readonly screen: TerminalScreen;
 }
 
-/** `pen` holds canonical SGR parameters, "" for the default style. */
+/** Canonical SGR parameters; empty means default style. */
 interface Run {
   readonly pen: string;
   readonly text: string;
@@ -23,9 +17,9 @@ interface Run {
 type Line = ReadonlyArray<Run>;
 
 interface TerminalScreen {
-  /** Serialized lines, each ending in `\n`, that scrolled out of the window. */
+  /** Scrolled-out lines, each ending in newline. */
   readonly settled: string;
-  /** The live window; never empty. */
+  /** Never empty. */
   readonly lines: ReadonlyArray<Line>;
   readonly row: number;
   readonly col: number;
@@ -40,7 +34,7 @@ export const EMPTY_TERMINAL_OUTPUT: TerminalOutputState = {
   screen: { settled: "", lines: [[]], row: 0, col: 0, pen: "", saved: null },
 };
 
-/** The default tail kept for one running command, in UTF-16 code units. */
+/** Default command tail, in UTF-16 code units. */
 export const TERMINAL_OUTPUT_TAIL_CHARS = 64 * 1024;
 
 const LIVE_LINES = 64;
@@ -53,7 +47,7 @@ function sgr(pen: string): string {
   return pen === "" ? `${ESC}[0m` : `${ESC}[0;${pen}m`;
 }
 
-// Lengths of lines already measured. Lines are never mutated once a feed ends.
+// Lines stay immutable after a feed, so their measured lengths can be cached.
 const lineLengths = new WeakMap<Line, number>();
 
 function lineLength(line: Line): number {
@@ -65,8 +59,7 @@ function lineLength(line: Line): number {
   return length;
 }
 
-// Past this many style changes, a line's oldest runs lose their style. Rendering
-// already caps spans, and it keeps per-write work bounded on colour-per-character output.
+// Strip oldest styles to bound work on color-per-character output.
 const MAX_LINE_RUNS = 2_048;
 
 function sliceLine(line: Line, start: number, end: number): Array<Run> {
@@ -193,7 +186,7 @@ function formatPen(attributes: Attributes): string {
   return parts.join(";");
 }
 
-/** Reads an extended colour (`5;n` or `2;r;g;b`) starting at `index`; returns the code and next index. */
+/** Reads 5;n or 2;r;g;b colors; returns the code and next index. */
 function extendedColor(
   code: number,
   params: ReadonlyArray<number>,
@@ -253,7 +246,6 @@ function escapeLength(input: string, index: number): number {
   const next = input[index + 1];
   if (next === undefined) return -1;
   if (next === "[") {
-    // CSI: parameters/intermediates, then a final byte in @-~.
     for (let cursor = index + 2; cursor < input.length; cursor += 1) {
       const code = input.charCodeAt(cursor);
       if (code >= 0x40 && code <= 0x7e) return cursor - index + 1;
@@ -261,8 +253,7 @@ function escapeLength(input: string, index: number): number {
     return -1;
   }
   if (STRING_SEQUENCE_INTRODUCERS.has(next)) {
-    // OSC/DCS/SOS/APC/PM end at BEL or ST (ESC \). A newline also ends one (and is
-    // kept), so a stray introducer in binary output can't hide everything after it.
+    // BEL/ST ends string sequences; also stop at newlines so stray binary introducers cannot hide later output.
     for (let cursor = index + 2; cursor < input.length; cursor += 1) {
       if (input[cursor] === "\u0007") return cursor - index + 1;
       if (input[cursor] === "\n") return cursor - index;
@@ -273,7 +264,7 @@ function escapeLength(input: string, index: number): number {
     }
     return -1;
   }
-  // Charset designation (ESC ( B) takes three; other two-byte sequences (ESC 7) two.
+  // Charset designations take three bytes; other sequences take two.
   if (next === "(" || next === ")" || next === "*" || next === "+") {
     return index + 2 < input.length ? 3 : -1;
   }
@@ -282,8 +273,7 @@ function escapeLength(input: string, index: number): number {
 
 const penTransitions = new Map<string, string>();
 
-/** CSI parameters as numbers. Colon sub-parameters (`38:2::r:g:b`) carry an optional
-    colour-space id that the semicolon form (`38;2;r;g;b`) has no slot for. */
+// Colon color sub-parameters carry an optional color-space id absent from the semicolon form.
 function csiParams(params: string): Array<number> {
   const numbers: Array<number> = [];
   for (const part of params.split(";")) {
@@ -333,7 +323,7 @@ class Terminal {
     }
     this.col += text.length;
     if (line.length > MAX_LINE_RUNS) {
-      // Fold all but the newest runs into one plain run, so trimming below eats it cheaply.
+      // Flatten old runs so later trimming stays cheap.
       const keep = line.length - MAX_LINE_RUNS / 8;
       const plain = line
         .slice(0, keep)
@@ -342,8 +332,7 @@ class Terminal {
       line = [{ pen: "", text: plain }, ...line.slice(keep)];
       this.owned.add(line);
     }
-    // A line keeps only its last `maxChars` columns, trimmed on every write so the
-    // result never depends on how the output was split into chunks.
+    // Trim each write to maxChars columns so results do not depend on chunk boundaries.
     let current = lineLength(line);
     if (current > this.maxChars) {
       let removed = current - this.maxChars;
@@ -404,7 +393,6 @@ class Terminal {
     const count = Math.max(1, numbers[0] || 1);
     switch (final) {
       case "m": {
-        // Colourful output repeats a handful of transitions, so they are cached.
         const key = `${this.pen}|${params}`;
         let pen = penTransitions.get(key);
         if (pen === undefined) {
@@ -474,7 +462,7 @@ class Terminal {
     } else if (sequence === `${ESC}8`) {
       if (this.saved !== null) this.moveTo(this.saved.row, this.saved.col);
     } else if (sequence === `${ESC}M`) {
-      this.moveTo(this.row - 1, this.col); // Reverse line feed.
+      this.moveTo(this.row - 1, this.col);
     }
   }
 
@@ -499,19 +487,16 @@ class Terminal {
         if (length === -1) {
           const fragment = input.slice(index);
           if (fragment.length <= MAX_PENDING_ESCAPE) return fragment;
-          // A long string sequence keeps only its introducer (and a trailing ESC that
-          // may start its ST), so the payload stays hidden until it ends.
+          // Retain the introducer and possible ST prefix so long string payloads stay hidden until termination.
           if (STRING_SEQUENCE_INTRODUCERS.has(fragment[1]!)) {
             return fragment.slice(0, 2) + (fragment.endsWith(ESC) ? ESC : "");
           }
-          // Any other runaway sequence is noise; drop it instead of waiting forever.
           return "";
         }
         this.escape(input.slice(index, index + length));
         index += length - 1;
         printable = index + 1;
       }
-      // Other C0, DEL and C1 controls carry no visible text.
     }
     flush(input.length);
     return "";
@@ -608,11 +593,7 @@ export function appendTerminalOutput(
   };
 }
 
-/**
- * Text that rebuilds `state` when fed to an empty state: the output, then the
- * cursor, style and any unfinished escape. A viewer that starts from it (or
- * resyncs to it) applies later raw chunks exactly as the server does.
- */
+/** Rebuilds state from empty, including cursor/style/pending escapes, so later raw chunks fold identically. */
 export function terminalOutputResumeText(state: TerminalOutputState): string {
   const { screen } = state;
   const lastRow = screen.lines.length - 1;
@@ -729,7 +710,6 @@ function resolveColor(
 
 type Rgb = readonly [number, number, number];
 
-/** Reads the `#rrggbb` and `rgb(r,g,b)` colours this module produces. */
 function parseCssColor(color: string): Rgb | undefined {
   if (color.startsWith("#") && color.length === 7) {
     return [1, 3, 5].map((offset) =>
@@ -789,11 +769,7 @@ function spanStyle(pen: string, palette: ReadonlyArray<string>): TerminalSpanSty
   };
 }
 
-/**
- * Splits shown output into styled spans for rendering. Past `maxSpans` the rest
- * is one plain span, so a pathological stream of colour changes cannot turn
- * into tens of thousands of DOM or native nodes.
- */
+/** Caps styled spans at maxSpans, then emits one plain remainder to bound DOM/native nodes. */
 export function terminalOutputSpans(
   text: string,
   palette: ReadonlyArray<string>,

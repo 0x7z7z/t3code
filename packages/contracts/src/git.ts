@@ -294,11 +294,7 @@ export const GitPreparePullRequestThreadResult = Schema.Struct({
   pullRequest: GitResolvedPullRequest,
   branch: TrimmedNonEmptyStringSchema,
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
-  /**
-   * False when the checkout could not be brought to the pull request head — a reused worktree
-   * holding local commits or uncommitted changes keeps its own state, so the code being handed
-   * over is older than the pull request.
-   */
+  /** False when local commits or edits prevented a reused worktree from reaching the PR head. */
   isOnPullRequestHead: Schema.Boolean.pipe(Schema.withDecodingDefaultKey(Effect.succeed(true))),
 });
 export type GitPreparePullRequestThreadResult = typeof GitPreparePullRequestThreadResult.Type;
@@ -344,9 +340,7 @@ export const VcsPullResult = Schema.Struct({
 });
 export type VcsPullResult = typeof VcsPullResult.Type;
 
-// Git's stderr itself stays off the error: it echoes argv and remote URLs,
-// which can hold credentials. The tag names the cause for logs and callers; it
-// does not select a message.
+// Exclude stderr because argv and remote URLs may contain credentials. Tags identify causes, not messages.
 export const GitCommandFailureReason = Schema.Literals([
   "authentication_failed",
   "branch_already_exists",

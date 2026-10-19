@@ -18,8 +18,7 @@ import * as HostProcess from "./HostProcess.ts";
 
 import * as RelayClient from "./relayClient.ts";
 
-// The suite runs the linux code path against the real filesystem, checking
-// POSIX exec bits that NTFS never reports; the win32 branch skips that check.
+// POSIX exec-bit checks do not apply on NTFS.
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 
 const layerHostRuntime = (env: Record<string, string> = {}, platform: NodeJS.Platform = "linux") =>
@@ -812,8 +811,7 @@ describe("RelayClient", () => {
       });
 
       const child = yield* Effect.forkChild(manager.install);
-      // Spin until the wedged download is in flight, so the clock
-      // adjustment below cannot run before the timeout is armed.
+      // Wait for the request before advancing the clock so its timeout is armed.
       while (requests.length === 0) {
         yield* Effect.yieldNow;
       }

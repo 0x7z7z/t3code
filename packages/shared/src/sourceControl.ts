@@ -179,7 +179,7 @@ function hasDnsLabel(host: string, label: string): boolean {
   return host.split(".").includes(label);
 }
 
-/** `*.ghe.com` is GitHub Enterprise Cloud with data residency, one subdomain per enterprise. */
+// *.ghe.com is GitHub Enterprise Cloud with one subdomain per enterprise.
 function isGitHubHost(host: string): boolean {
   return host === "github.com" || host.endsWith(".ghe.com") || hasDnsLabel(host, "github");
 }
@@ -189,10 +189,7 @@ function isGitLabHost(host: string): boolean {
 }
 
 function isAzureDevOpsHost(host: string): boolean {
-  // `ssh.dev.azure.com` is the default Azure DevOps SSH clone host
-  // (git@ssh.dev.azure.com:v3/org/project/repo), so match any `*.dev.azure.com`
-  // subdomain, not just the bare `dev.azure.com`. Legacy hosts stay under
-  // `.visualstudio.com` (including `vs-ssh.visualstudio.com`).
+  // Include Azure SSH hosts under dev.azure.com and legacy visualstudio.com.
   return (
     host === "dev.azure.com" ||
     host.endsWith(".dev.azure.com") ||
@@ -278,12 +275,7 @@ export function detectSourceControlProviderFromRemoteUrl(
   };
 }
 
-/**
- * Azure DevOps is the exception: `az repos pr list --repository` takes a repository name, and
- * takes the organisation and project from the checkout it detects — so the recorded
- * `org/project/_git/repo` path is refused outright and the whole repository reads as
- * unavailable. Its name is the last segment, which is what this hands over.
- */
+/** Azure CLI needs the repository's final name segment; it infers org/project from the checkout and rejects full paths. */
 export function sourceControlRepositorySelector(
   identity:
     | Pick<RepositoryIdentity, "provider" | "displayName" | "owner" | "name">

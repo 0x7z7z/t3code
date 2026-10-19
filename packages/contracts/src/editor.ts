@@ -57,8 +57,7 @@ export const EDITORS = [
   {
     id: "antigravity",
     label: "Antigravity",
-    // `agy` is the standalone Antigravity CLI, not the IDE. The IDE bundle
-    // ships `antigravity-ide`, so it comes first for install-folder lookups.
+    // The IDE ships antigravity-ide; agy is the standalone CLI.
     commands: ["antigravity-ide", "agy-ide"],
     launchStyle: "goto",
   },
@@ -158,9 +157,7 @@ export type FileManagerRevealKind = typeof FileManagerRevealKind.Type;
 export const LaunchEditorInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
   editor: EditorId,
-  /** Reveal (select) `cwd` in the file manager instead of opening it. Only
-      honored by the "file-manager" editor; clients must check the server's
-      `shellRevealInFileManager` config flag before sending this. */
+  /** Only for file-manager; requires the server's shellRevealInFileManager capability. */
   reveal: Schema.optional(Schema.Boolean),
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
@@ -201,8 +198,7 @@ export const buildRemoteOpenUrl = (input: {
   const rootedPath = posixPath.startsWith("/") ? posixPath : `/${posixPath}`;
   const encodedHost = encodeURIComponent(input.host);
   if (input.editor === "zed") {
-    // Zed's remote server resolves a rooted path on the system drive, so a
-    // Windows C:\Users\x must become /Users/x.
+    // Zed roots paths on the system drive, so omit the Windows drive prefix.
     const zedPath = /^[Cc]:[\\/]/.test(input.absolutePath) ? rootedPath.slice(3) : rootedPath;
     const encodedZedPath = zedPath.split("/").map(encodeURIComponent).join("/");
     return `${scheme}://ssh/${encodedHost}${encodedZedPath}`;

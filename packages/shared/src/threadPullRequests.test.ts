@@ -15,8 +15,7 @@ import {
   threadPullRequestKeysEqual,
 } from "./threadPullRequests.ts";
 
-// Match Hermes: these ES2023 array methods are absent on mobile, and this module runs in
-// the home thread list on every launch.
+// Remove ES2023 array methods to match Hermes on mobile.
 beforeEach(() => {
   const methods = ["toSorted", "toReversed", "toSpliced"] as const;
   const descriptors = methods.map((method) =>
