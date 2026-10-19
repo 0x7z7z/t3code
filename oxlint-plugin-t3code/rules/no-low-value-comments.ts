@@ -8,7 +8,7 @@ const TEST_STEP_PATTERN = /^(?:arrange|act|assert|given|when|then)\s*[:.]?$/iu;
 const TASK_MARKER_PATTERN = /\b(?:TODO|FIXME|XXX|HACK)\b/u;
 const TASK_LINK_PATTERN = /#\d+|https?:\/\//u;
 // `owner/repo#123` names an external tracker; a bare `#123` is our own history.
-const BARE_ISSUE_REF_PATTERN = /(?<![\w/&#-])#\d{3,6}(?![\w-])/u;
+const BARE_ISSUE_REF_PATTERN = /(?<![\w/&#-])#[1-9]\d{2,4}(?![\w-])/u;
 const CODE_SPAN_PATTERN = /`[^`]*`/gu;
 const PUBLIC_BOILERPLATE_PATTERN = /^@public\s+Service construction is part of the canonical/u;
 const JSDOC_TYPE_PATTERN = /^@(?:param|returns?|type|typedef)\s+\{/u;
