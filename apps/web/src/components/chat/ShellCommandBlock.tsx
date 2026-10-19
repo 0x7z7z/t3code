@@ -16,13 +16,12 @@ function loadEmbeddedScripts() {
   return embeddedScriptsModule;
 }
 
-/** Same layout as the highlighted version, so the grammar arriving never reflows the block. */
+// Match highlighted layout to prevent reflow when the grammar arrives.
 function PlainWords({ code }: { code: string }) {
   return code.split(/(\s+)/u).map((part, index) =>
     index % 2 === 1 || part === "" ? (
       part
     ) : (
-      // Positions are stable for a given string, which is all this renders.
       // oxlint-disable-next-line react/no-array-index-key
       <span key={index} className={WORD_CLASS_NAME}>
         {part}

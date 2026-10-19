@@ -799,7 +799,7 @@ it("shows readable models and only differing workspace details in agent tooltips
   await render(panel);
   const text = (visibleOnly = false) => textNodes("", visibleOnly);
   const rerender = async (source = child) => {
-    // Fresh objects, as real shells are: the compiled component memoizes on identity.
+    // Use fresh shell objects to exercise compiler memoization, as real updates do.
     state.shells = [
       {
         environmentId: "test",

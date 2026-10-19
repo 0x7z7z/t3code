@@ -23,7 +23,7 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
   showInteractionModeToggle: boolean;
   traitsMenuContent?: ReactNode;
   size?: "sm" | "xs";
-  /** The portaled popup outlives the inline strip, so close it when its trigger hides. */
+  /** Close the portaled popup when its trigger hides. */
   hidden?: boolean;
   onToggleInteractionMode: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;

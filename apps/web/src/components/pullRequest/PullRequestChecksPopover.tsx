@@ -26,7 +26,7 @@ import {
   summarizePullRequestChecks,
 } from "./pullRequestPresentation";
 
-/** Fetch detail only on open; reading every list row would issue a request per pull request. */
+// Fetch only on open to avoid per-row requests.
 function LazyChecksBody({
   environmentId,
   reference,

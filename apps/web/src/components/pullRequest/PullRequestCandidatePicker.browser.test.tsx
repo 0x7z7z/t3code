@@ -71,7 +71,7 @@ describe("disabled candidate picker", () => {
         trigger.focus();
         await userEvent.keyboard("{Enter}");
         await userEvent.keyboard(" ");
-        // Playwright skips aria-disabled targets; the click must still land to prove it is inert.
+        // Force clicks because Playwright skips aria-disabled targets.
         await userEvent.click(trigger, { force: true });
       });
       expect(onOpenChange).not.toHaveBeenCalled();

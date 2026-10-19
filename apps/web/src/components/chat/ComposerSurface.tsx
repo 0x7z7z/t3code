@@ -77,7 +77,7 @@ function Main({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-/** Mask offsets use the position hint so class merging preserves the transparent and black stops. */
+// Position hints keep class merging from dropping mask color stops.
 function ContextStrip({ className, ...props }: ComponentProps<"div">) {
   return (
     <div

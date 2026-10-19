@@ -79,7 +79,7 @@ function button(label: string) {
   return page.getByRole("button", { name: label, exact: true });
 }
 
-// A trusted click, so the page also gets the user activation the link handler requires.
+// Trusted clicks provide the user activation required by the link handler.
 async function click(label: string) {
   await button(label).click();
 }
@@ -109,7 +109,7 @@ it("closes with the close button or Escape", async () => {
 });
 
 async function renderInline() {
-  // Async so a URL minted at mount lands inside act.
+  // Keep mount-time URL creation inside async act.
   await act(async () =>
     root.render(
       <HtmlRenderFrame

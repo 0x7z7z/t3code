@@ -66,7 +66,6 @@ function queuedEditDraftTarget(routeThreadRef: ScopedThreadRef, runId: RunId) {
   return DraftId.make(`queued-edit:${scopedThreadKey(routeThreadRef)}:${runId}`);
 }
 
-/** Returns the error to show, or null. */
 async function submitQueuedRunEdit(input: {
   readonly environmentId: EnvironmentId;
   readonly draftTarget: ComposerThreadTarget;
@@ -155,10 +154,7 @@ function useEditQueuedRunCommand() {
   return useAtomCommand(threadEnvironment.editQueuedRun, { reportFailure: false });
 }
 
-/**
- * Use a per-run edit draft to preserve the thread draft; attachment removals remain local until
- * save.
- */
+/** Edits preserve the thread draft; attachment removals stay local until save. */
 export function useQueuedRunEdit(input: {
   readonly environmentId: EnvironmentId;
   readonly routeThreadRef: ScopedThreadRef;

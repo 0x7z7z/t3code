@@ -132,10 +132,7 @@ interface DiffSlice {
   readonly omittedFileStats: ReadonlyArray<PullRequestOmittedFileStat>;
 }
 
-/**
- * Viewer counts sum hunks and show zero when hosts withhold them; render host counts outside
- * the shadow root.
- */
+// Show host counts outside the shadow root; hunk totals are zero when hosts withhold hunks.
 const REPLACE_FILE_COUNTS_CSS = `
 [data-diffs-header] [data-additions-count],
 [data-diffs-header] [data-deletions-count] {
@@ -168,8 +165,7 @@ interface FileViewedToggleState {
   readonly setFileViewed: (fileKey: string, path: string, viewed: boolean) => void;
 }
 
-// Header portals are memoized on the render props; the viewed toggle reads its state through
-// context so a press redraws the toggles, not every header on screen.
+// Context updates viewed toggles without invalidating memoized header portals.
 const FileViewedToggleContext = createContext<FileViewedToggleState | null>(null);
 
 function FileViewedToggle({
@@ -292,8 +288,7 @@ function PullRequestCodeTab({
   const [draft, setDraft] = useState<DraftAnchor | null>(null);
   const [threadPending, setThreadPending] = useState(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
-  // Which pull request the slices belong to travels with them, so a render taken before the
-  // reset below cannot read the previous one's slices — or send its cursor to the host.
+  // Scope slices before reset to prevent using a previous pull request's data or cursor.
   const [sliceState, setSliceState] = useState<{
     readonly key: string;
     readonly cursor: string | null;
@@ -306,8 +301,7 @@ function PullRequestCodeTab({
   const referenceKey = pullRequestReviewKey(reference);
   const commit = selectedCommitOid;
   const scopeKey = commit === null ? referenceKey : `${referenceKey}@${commit}`;
-  // The panel keeps this mounted across pull requests, so an open composer would otherwise
-  // survive the switch and attach its comment to whichever one is on screen when it is sent.
+  // The mounted composer survives pull request switches; reset it to avoid misposting.
   const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
   if (stateScopeKey !== scopeKey) {
     setStateScopeKey(scopeKey);
@@ -377,8 +371,7 @@ function PullRequestCodeTab({
       ) {
         return previous;
       }
-      // A page that came back different means the diff moved under the review. The slices
-      // after it go with the replacement: their cursors were positions in the old diff.
+      // Drop later slices when replacing a changed page; their cursors target the old diff.
       return { key: scopeKey, cursor, slices: [...slices.slice(0, index), next] };
     });
   }
@@ -428,8 +421,7 @@ function PullRequestCodeTab({
     refreshFilesViewed();
   }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed]);
 
-  // The sentinel is held as state rather than a ref because the viewer mounts its own footer:
-  // an effect reading a ref could run before that node exists and would never arm the observer.
+  // The viewer mounts its footer later; state ensures the observer sees the sentinel.
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
   const requestTreeReveal = useCodeViewFileReveal(viewer, scopeKey);
   const answeredReveal = useRef<number | null>(null);
@@ -478,12 +470,10 @@ function PullRequestCodeTab({
     ),
   );
   const fileTreeEntries = diffFileTreeEntries(files);
-  // Place threads only in rendered hunks; file membership alone can leave conversations
-  // invisible.
+  // File membership does not guarantee a rendered hunk for the thread.
   const placedThreadIds = (() => {
     const placed = new Set<string>();
-    // Commit and pull request diffs use different line coordinates; list conversations instead
-    // of placing them in commit diffs.
+    // Commit diffs use different line coordinates; list conversations separately.
     if (commit !== null) return placed;
     for (const file of files) {
       const path = resolveFileDiffPath(file);
@@ -630,8 +620,7 @@ function PullRequestCodeTab({
   );
   const allFilesCollapsed = areAllDiffFilesCollapsed(fileKeys, collapsedFileKeys);
 
-  // A failed slice must not be asked for again on its own. The files already loaded keep the
-  // sentinel on screen, so re-arming it after a failure would request the same slice forever.
+  // Do not re-arm the visible sentinel after failure; it would retry indefinitely.
   const canLoadNextSlice =
     nextCursor !== null &&
     nextCursor !== cursor &&
@@ -689,7 +678,7 @@ function PullRequestCodeTab({
     if (item.type !== "diff") return;
     const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === item.id);
     if (!file) return;
-    // Only GitHub supports multiline comments; use the last line consistently across hosts.
+    // Only GitHub supports multiline comments; use the last line across hosts.
     const path = resolveFileDiffPath(file);
     const previousPath = resolveFileDiffPreviousPath(file);
     const sourceFile = parsedSlices
@@ -732,8 +721,7 @@ function PullRequestCodeTab({
     if (comment !== null) onFinish(comment);
   };
 
-  // Stable render props and options preserve the viewer's memoized portals during selection,
-  // typing and review-store updates.
+  // Stable props preserve viewer portals during selection, typing, and review updates.
   const renderCodeViewFooter = () =>
     nextCursor === null ? null : (
       <div
@@ -828,8 +816,7 @@ function PullRequestCodeTab({
 
   const renderThreadCard = (thread: PullRequestReviewThread) => (
     <ReviewThreadCard
-      // Host thread ids can collide across pull requests; include pull request identity so
-      // editor state cannot leak.
+      // Host thread ids can collide across pull requests.
       key={`${reference.projectId}#${reference.number}:${thread.id}`}
       thread={thread}
       workspaceRoot={detail.workspaceRoot}
@@ -938,8 +925,7 @@ function PullRequestCodeTab({
     </div>
   );
 
-  // Reset missing commit scope, including empty commit lists: without the dropdown, the reader
-  // could be trapped on an obsolete diff.
+  // Clear obsolete commit scopes even when an empty list hides the dropdown.
   const selectedCommit = orderedCommits.find((entry) => entry.oid === commit);
   const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : "All commits";
   const changeIgnoreWhitespace = (next: boolean) => {
@@ -1238,8 +1224,7 @@ function PullRequestCodeTab({
       </div>
     </div>
   );
-  // The effects sit after every derivation: a hook between the diff's derivations and their
-  // later readers (the viewer options, the reveal handler) would leave them uncached.
+  // Hooks between diff derivations and their readers break compiler caching.
   useEffect(() => {
     if (sentinel === null || !canLoadNextSlice) return;
     const observer = new IntersectionObserver(
@@ -1375,14 +1360,11 @@ function PullRequestCodeTab({
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div
           className="relative min-h-0 min-w-0 flex-1"
-          // The header lives in the viewer's shadow tree, so the capture listener walks
-          // `composedPath` — the only way to see through the shadow boundary.
+          // Headers live in shadow DOM; composedPath crosses that boundary.
           onClickCapture={(event) => {
             const composedPath = event.nativeEvent.composedPath?.() ?? [];
             for (const node of composedPath) {
               if (!(node instanceof HTMLElement)) continue;
-              // Let nested controls handle clicks; the capture listener would otherwise toggle
-              // before their own handler and cancel it.
               if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) {
                 return;
               }
@@ -1399,9 +1381,7 @@ function PullRequestCodeTab({
             }
           }}
         >
-          {/* The viewer virtualizes against the element it is told is scrolling and places its
-              rows absolutely, so it has to own that element — the thread diff panel hands it the
-              same one. Scrolling from a parent instead leaves it painting over its neighbours. */}
+          {/* The viewer must own its scroll element to position virtual rows within it. */}
           <FileViewedToggleContext value={fileViewedToggle}>
             <StyledDiffCodeView<ReviewAnnotationGroup>
               className="@container h-full overflow-auto [scrollbar-gutter:stable]"
@@ -1415,7 +1395,7 @@ function PullRequestCodeTab({
               renderHeaderPrefix={renderHeaderPrefix}
               renderHeaderMetadata={renderHeaderMetadata}
               renderAnnotation={renderAnnotation}
-              // Find can ask again before the unfolded file arrives, so this unfolds and never folds.
+              // Find may repeat requests before render; only unfold, never toggle.
               onRevealSearchMatch={(item) =>
                 setToggledFiles((current) =>
                   toggleFileDiffFoldForViewed(item.id, false, effectiveFoldOverride, current),

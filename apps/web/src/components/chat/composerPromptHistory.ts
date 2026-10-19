@@ -100,7 +100,7 @@ export function recallableComposerPrompt(messageText: string): string {
     break;
   }
 
-  // Recall is text-only: never create dangling chips without their backing records.
+  // Recall strips chips because their backing records are absent.
   for (const reference of collectComposerContextReferences(prompt).toReversed()) {
     let { start, end } = reference;
     if (prompt[end] === " ") end += 1;

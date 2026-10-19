@@ -242,7 +242,6 @@ function ModelPickerProviderNotices({
   );
 }
 
-// Isolate scroll and resize state so it does not re-render the picker's model lists.
 function ModelPickerList({
   listRef,
   itemKeys,
@@ -270,7 +269,7 @@ function ModelPickerList({
     setShowBottomScrollFade(maxScrollOffset - scrollElement.scrollTop > 1);
   };
 
-  // Keyed by content: a new disabled-reason closure rebuilds an identical key array.
+  // Disabled-reason closures rebuild identical key arrays; compare contents.
   const itemListKey = JSON.stringify(itemKeys);
   const [fadesResetFor, setFadesResetFor] = useState(itemListKey);
   if (fadesResetFor !== itemListKey) {
@@ -326,7 +325,7 @@ function ModelPickerList({
   );
 }
 
-// Capture phase, so model and provider shortcuts win over the composer underneath.
+// Capture gives picker shortcuts priority over the composer.
 function WindowKeyDownListener({ onKeyDown }: { onKeyDown: (event: KeyboardEvent) => void }) {
   const handleKeyDown = useEffectEvent(onKeyDown);
   useEffect(() => {

@@ -1,10 +1,7 @@
 import type { FileDiffMetadata } from "@pierre/diffs";
 import type { PullRequestDiffSide } from "@t3tools/contracts";
 
-/**
- * Only rendered hunks can anchor comments; moved lines or withheld hunks belong in the off-diff
- * conversation list.
- */
+/** Only rendered hunks can anchor comments; list others off-diff. */
 export function isLineInFileDiff(
   file: FileDiffMetadata,
   side: PullRequestDiffSide,
@@ -19,10 +16,7 @@ export function isLineInFileDiff(
 
 export type DiffFoldOverride = "expanded" | "folded" | null;
 
-/**
- * Store fold choices relative to the toolbar override so files arriving in later slices inherit
- * Fold all.
- */
+/** Keep fold choices relative to the toolbar so later pages inherit Fold all. */
 export function isFileDiffCollapsed(
   fileKey: string,
   foldOverride: DiffFoldOverride,

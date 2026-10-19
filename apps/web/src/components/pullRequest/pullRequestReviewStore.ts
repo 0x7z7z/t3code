@@ -3,10 +3,7 @@ import { create } from "zustand";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
 
-/**
- * Use a counter: content-derived ids can collide across comments and make deleting one card
- * delete another.
- */
+// Content-derived ids can collide across comments; use a counter.
 let pendingCommentSequence = 0;
 
 export function nextPendingReviewCommentId(): string {
@@ -66,8 +63,7 @@ export const usePullRequestReviewStore = create<PullRequestReviewStoreState>()((
   setSummary: (key, body) => set((state) => ({ summaries: { ...state.summaries, [key]: body } })),
   clearSummary: (key, submittedBody) =>
     set((state) => {
-      // The textarea stays editable while the request is in flight. Only remove the exact draft
-      // the host accepted; a revised summary for the same pull request is new work.
+      // Keep summary edits made during submission; the textarea stays editable.
       if (state.summaries[key] !== submittedBody) return state;
       const { [key]: _removed, ...rest } = state.summaries;
       return { summaries: rest };

@@ -15,8 +15,6 @@ import { cn } from "~/lib/utils";
 import { modelPickerModelKey } from "./modelPickerKeys";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
-// Use fields and one shared handler so rebuilt picker items do not defeat memoization on search
-// keystrokes.
 export const ModelListRow = memo(function ModelListRow(props: {
   index: number;
   slug: string;

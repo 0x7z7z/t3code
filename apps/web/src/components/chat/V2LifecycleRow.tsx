@@ -294,10 +294,7 @@ function SubagentAvatar({
   );
 }
 
-/**
- * Select avatar strings because status pushes replace provider objects even when displayed
- * fields stay unchanged.
- */
+// Select strings; status pushes replace providers even when avatar fields are unchanged.
 export function EnvironmentSubagentAvatar({
   environmentId,
   providerInstanceId,
@@ -529,7 +526,7 @@ function SubagentTimelineTooltip(
   },
 ) {
   const environmentId = props.parentRef.environmentId;
-  // Read the full provider list only in the open popup, not in every timeline row.
+  // Read providers only in the open popup to avoid per-row subscriptions.
   const providers =
     useAtomValue(serverEnvironment.providersValueAtom(environmentId)) ?? EMPTY_SERVER_PROVIDERS;
   const parent = useThreadShell(props.parentRef)?.source;

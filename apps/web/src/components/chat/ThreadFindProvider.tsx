@@ -33,7 +33,6 @@ export function ThreadFindCanvas({
   );
 }
 
-/** Owns search updates below the chat view so cycling does not rerender the composer and panels. */
 export function ThreadFindProvider({
   controlsRef,
   onOpenChange,

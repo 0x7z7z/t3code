@@ -250,8 +250,7 @@ export const OpenInPicker = memo(function OpenInPicker({
         absolutePath: openInCwd,
       });
       if (url === undefined) return;
-      // Only record hint-seen/preferred when the shell actually accepted
-      // the URL (an older desktop build can refuse the editor scheme).
+      // Older desktops can refuse editor schemes; record preferences only after acceptance.
       void openRemoteEditorUrl(url).then((opened) => {
         if (!opened) return;
         markRemoteHintSeen();
@@ -303,7 +302,7 @@ export const OpenInPicker = memo(function OpenInPicker({
     preferredEditor,
     remote.mode,
   ]);
-  // Derived after the shortcut effect so the compiler can cache the resolved editor list.
+  // Derive after the shortcut effect to preserve the editor list's compiler cache.
   const options = resolveOpenInOptions(navigator.platform, effectiveEditors);
   const primaryOption = options.find(({ value }) => value === preferredEditor) ?? null;
   const primaryLabel = isPanel ? `Open in ${primaryOption?.label ?? "editor"}` : "Open";

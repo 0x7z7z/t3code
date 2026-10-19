@@ -26,10 +26,7 @@ import { Button } from "../ui/button";
 import { Dialog } from "../ui/dialog";
 import { WizardPopup } from "../ui/wizard";
 
-/**
- * Atoms isolate overlay renders from ChatView; thread keys prevent an overlay from following a
- * thread switch.
- */
+// Atoms isolate overlay renders. Thread keys prevent overlays following thread switches.
 type ThreadOverlayAtom<T> = Atom.Writable<{ readonly threadKey: string; readonly value: T } | null>;
 
 function makeThreadOverlayAtom<T>(label: string): ThreadOverlayAtom<T> {

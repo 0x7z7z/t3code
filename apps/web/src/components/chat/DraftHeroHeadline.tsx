@@ -158,13 +158,12 @@ export function DraftHeroHeadline({
         );
   const selectedPickerItem = pickerItems.find((item) => item.value === activeProjectKey) ?? null;
 
-  // A picker change while the no-project home opens must invalidate the stale continuation.
+  // Picker changes invalidate pending no-project home continuations.
   const latestTargetRef = useRef({ draftId, activeProjectKey, scratchTargetEnvironmentId });
   useEffect(() => {
     latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
   }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);
-  // Open the project's own draft when empty; retargeting would overwrite its existing draft and
-  // strand browser tabs.
+  // Retargeting an empty draft would overwrite the project's draft and strand browser tabs.
   const selectProject = (project: (typeof projects)[number], logicalProjectKey: string) => {
     if (!draftId) {
       return;
@@ -252,7 +251,7 @@ export function DraftHeroHeadline({
             <ComboboxTrigger
               render={<InlineButton tone="picker" />}
               data-draft-project-trigger=""
-              // Leaves room for the trailing "?" so a truncated name keeps it on its line.
+              // Reserve room for the trailing "?" on the same line.
               className="pointer-events-auto max-w-[calc(100%-1em)] align-baseline"
             />
           }

@@ -1,4 +1,4 @@
-/** Menu typeahead consumes search keystrokes; use a combobox. */
+// Menu typeahead consumes search keystrokes; use a combobox.
 import type { ReactNode } from "react";
 
 import { Button } from "../ui/button";
@@ -88,8 +88,7 @@ export function PullRequestCandidatePicker<T>({
       }}
       open={open}
       onOpenChange={(nextOpen, details) => {
-        // Cancel item-press closure so query freezing and trigger focus cannot steal the next
-        // search keystroke.
+        // Item-press closure steals search focus and the next keystroke.
         if (!nextOpen && details.reason === "item-press") {
           details.cancel();
           return;

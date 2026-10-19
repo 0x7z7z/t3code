@@ -95,8 +95,7 @@ function excerptSlice(file: FileDiffMetadata | null, excerpt: PullRequestReviewG
   return { fileDiff, rows: shown, shown: shown.length, total: rows.length, drawn };
 }
 
-// Expand excerpts against a matching old side; other hunks make the file's real old side
-// inconsistent with excerpt context.
+// Other hunks shift old-side context; expand against an excerpt-matching old side.
 function excerptLoader(
   excerpt: PullRequestReviewGuideExcerpt,
   sliceRows: ExcerptSlice["rows"],
@@ -137,7 +136,7 @@ export function GuideExcerpt({
   loadDiffFiles: FileDiffContentsLoader;
   onOpenFile: (path: string) => void;
 }) {
-  // Kept here, not in ExcerptDiff, so a selection survives the diff reloading for a new head.
+  // Keep selections outside ExcerptDiff to survive head reloads.
   const [draft, setDraft] = useState<ExcerptDraft | null>(null);
   const slice = excerptSlice(file, excerpt);
 
@@ -179,7 +178,6 @@ export function GuideExcerpt({
   );
 }
 
-// Split out so draft changes re-render the diff without re-slicing the patch.
 function ExcerptDiff({
   excerpt,
   file,

@@ -15,10 +15,7 @@ export function useCommandOutputStreaming(environmentId: EnvironmentId): boolean
   );
 }
 
-/**
- * Mount only when `useCommandOutputStreaming` holds; unmounting unsubscribes collapsed rows and
- * other threads.
- */
+/** Mount only while `useCommandOutputStreaming` holds; unmounting unsubscribes. */
 export function CommandOutputPanel(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -45,7 +42,7 @@ export function CommandOutputPanel(props: {
     if (data === null) return <div className="text-muted-foreground italic">Loading output…</div>;
     return data.running ? null : <div className="text-muted-foreground italic">No output.</div>;
   }
-  // Parsed after the layout effect, the last hook, so the compiler caches it on text and theme.
+  // Parse after all hooks to preserve the text/theme compiler cache.
   const spans = terminalOutputSpans(text, TERMINAL_PALETTES[resolvedTheme]);
   return (
     <div>
@@ -65,7 +62,7 @@ export function CommandOutputPanel(props: {
           span.style === null ? (
             span.text
           ) : (
-            // Spans are rebuilt from scratch on every update and never reorder.
+            // Spans never reorder and are rebuilt on each update.
             // oxlint-disable-next-line react/no-array-index-key
             <span key={index} style={span.style}>
               {span.text}

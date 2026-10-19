@@ -119,7 +119,7 @@ export function usePullRequestActionRunner({
   environmentId: EnvironmentId;
   reference: PullRequestRef | null;
   onSuccess?: (action: PullRequestAction) => void;
-  /** Small surfaces resolve repository settings on the click, not for every visible row. */
+  /** Resolve repository settings on click to avoid per-row reads. */
   resolveMergeMethod?: (detail: PullRequestDetail) => PullRequestMergeMethod;
 }) {
   const runAction = useAtomCommand(pullRequestEnvironment.runAction, {
@@ -235,10 +235,10 @@ export function usePullRequestHandoffs({
     environmentId,
     cwd: detail?.workspaceRoot ?? null,
   });
-  // One at a time whatever the key: they all check the same pull request out.
+  // Serialize all handoffs because they check out the same pull request.
   const [handoff, setHandoff] = useState<string | null>(null);
 
-  /** Asking a question must not change a checkout or create a worktree. */
+  // Questions must not change checkouts or create worktrees.
   const openThreadWithTask = async (
     projectRef: ReturnType<typeof scopeProjectRef>,
     task: PullRequestThreadTask | null,
@@ -262,8 +262,7 @@ export function usePullRequestHandoffs({
       },
       task.prompt,
     );
-    // Remember the hand-off's own contribution, not the merged prompt: only that sentence is
-    // this session's to take back next time, and the reader's text around it is not.
+    // Track only the handoff contribution so later handoffs preserve user text.
     lastHandoffPromptByDraft.set(session.draftId, task.prompt);
     store.setPrompt(session.draftId, prompt);
     store.setReviewComments(
@@ -304,14 +303,13 @@ export function usePullRequestHandoffs({
   ) => {
     if (!detail || handoff !== null) return;
     setHandoff(kind);
-    // It carries no timeout of its own: a loading toast never expires, and an explicit one
-    // would survive the update and pin the result on screen.
+    // Explicit timeouts survive toast updates and would pin the result after loading.
     const toastId = toastManager.add({
       type: "loading",
       title: "Preparing the pull request checkout...",
     });
     const projectRef = scopeProjectRef(environmentId, detail.projectId);
-    // Open the thread first: checkout setup runs only when the checkout knows its thread.
+    // Checkout setup requires the thread to exist first.
     const opened = await newThread(projectRef).then(
       (session) => session,
       () => null,

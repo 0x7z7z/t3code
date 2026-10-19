@@ -38,10 +38,7 @@ export interface ComposerMentionDragEvent {
   stopPropagation(): void;
 }
 
-/**
- * Synchronous drop focus lets the unreconciled editor overwrite the inserted mention; the
- * insert path focuses next frame.
- */
+/** Insertion focuses next frame; synchronous focus would overwrite the unreconciled mention. */
 export interface ComposerMentionDropHost {
   insertMentionAtEnd(text: string): boolean;
   insertPullRequestAtEnd(pullRequest: PullRequestContextMetadata): boolean;
@@ -58,7 +55,7 @@ export interface ComposerMentionDragHandlers {
 export function makeComposerMentionDragHandlers(
   host: ComposerMentionDropHost,
 ): ComposerMentionDragHandlers {
-  // Stop the native event too so the editor's DOM listeners cannot process the claimed drag.
+  // Stop native propagation so the editor cannot process claimed drags.
   const claim = (event: ComposerMentionDragEvent): boolean => {
     if (!dataTransferHasComposerMention(event.dataTransfer.types)) {
       return false;
@@ -78,8 +75,7 @@ export function makeComposerMentionDragHandlers(
       if (!claim(event)) {
         return;
       }
-      // The tree constrains its drags to effectAllowed "move" (pull request links allow
-      // anything); naming any other effect makes the browser cancel the drop without firing it.
+      // Tree drags allow only "move"; other drop effects cancel delivery.
       event.dataTransfer.dropEffect = "move";
       host.setDragActive(true);
     },

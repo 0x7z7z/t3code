@@ -154,8 +154,7 @@ function LinkRowImpl({
       <a
         href={link.url}
         onClick={(event) => openPrLink(event, link.url, threadRef)}
-        // The link's own URL still rides along for drops outside the app; the composer takes
-        // this payload instead and adds the pull request as a context chip.
+        // Outside drops use the URL; the composer uses this context-chip payload.
         onDragStart={
           snapshot === null
             ? undefined
@@ -272,8 +271,7 @@ function LinkRowImpl({
         className={cn(
           "absolute right-0 bottom-0.5 flex items-center rounded-r-md bg-background pr-1 pl-5",
           "[mask-image:linear-gradient(to_right,transparent,black_1rem)]",
-          // Hidden means untouchable too: on a touch screen there is no hover, and an invisible
-          // layer over the right of the row would otherwise swallow the tap meant for the link.
+          // Hidden controls would intercept link taps on touch screens.
           "pointer-events-none opacity-0 group-hover/pr-row:pointer-events-auto group-hover/pr-row:opacity-100",
           "has-[[data-popup-open]]:pointer-events-auto has-[[data-popup-open]]:opacity-100",
           "has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:opacity-100",
@@ -367,8 +365,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     .toSorted((left, right) =>
       left.id === thread?.projectId ? -1 : right.id === thread?.projectId ? 1 : 0,
     );
-  // LegendList re-renders on data identity changes; derive lines before the next hook to retain
-  // their compiler cache.
+  // Derive lines before later hooks to preserve compiler caching and avoid LegendList renders.
   const links = visibleThreadPullRequests(thread?.pullRequests ?? []);
   const lines = pullRequestListLines(resolveThreadPullRequestChains(links));
   const openCount = links.filter(
@@ -408,8 +405,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     });
   };
 
-  // Legend re-renders visible rows only when data or extraData changes, so everything the rows
-  // read from outside their line goes in here.
+  // Legend rows update only for data/extraData changes; include all external inputs.
   const rowInputs = { speedMode, environmentProjects, capabilities, supportsWatch, thread };
 
   if (linkCount === 0) {

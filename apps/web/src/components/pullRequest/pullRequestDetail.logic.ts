@@ -169,10 +169,7 @@ export function editPullRequestThreadComment<
 
 type LegacyLinkedPullRequest = Pick<ThreadLinkedPullRequest, "repository" | "number">;
 
-/**
- * Use all thread links and include project identity: a legacy single link misses stack layers,
- * and another project's checkout is a different branch.
- */
+/** Include every stack link and project identity; another checkout is a different branch. */
 export function pullRequestPanelContext(
   thread: {
     readonly projectId: string | null;
@@ -384,10 +381,7 @@ export function orderPullRequestComments<T extends { readonly createdAt: string 
 
 export type PullRequestReviewOutcome = "approved" | "changes-requested" | "dismissed";
 
-/**
- * Hosts vary review-state case and separators; only recognized verdicts count, excluding states
- * such as COMMENTED.
- */
+/** Normalize host verdict formats; ignore non-verdict review states. */
 export function pullRequestReviewOutcome(
   reviewState: string | null,
 ): PullRequestReviewOutcome | null {
@@ -403,7 +397,7 @@ export function pullRequestReviewOutcome(
   }
 }
 
-/** Hosts preserve UTC offsets, so lexical ISO-8601 order can differ from chronological order. */
+// Host UTC offsets make lexical timestamp sorting unsafe.
 function instant(iso: string): number {
   return Date.parse(iso);
 }
@@ -448,7 +442,7 @@ export function latestPullRequestReviewOutcomes(
     if (outcome === null) continue;
     const login = comment.author?.login ?? `ghost:${comment.id}`;
     const current = latest.get(login);
-    // Not every host returns its reviews in order, so the newest wins rather than the last read.
+    // Hosts can return reviews out of order.
     if (current !== undefined && instant(current.at) > instant(comment.createdAt)) continue;
     latest.set(login, {
       key: login,
@@ -504,15 +498,12 @@ export function groupPullRequestTimelineConversations(
   return rows;
 }
 
-/**
- * Treat marker-only bodies as empty, but preserve original text so HTML comments demonstrated
- * in fences remain visible.
- */
+/** Marker-only bodies are empty; otherwise retain text, including fenced HTML comments. */
 export function visibleBody(body: string): string | null {
   return body.replace(/<!--[\s\S]*?-->/gu, "").trim().length === 0 ? null : body.trim();
 }
 
-/** GitHub sets both closed and merged timestamps on merge; merged takes precedence. */
+/** GitHub sets closed and merged timestamps on merge; prefer merged. */
 export function buildPullRequestTimeline(
   detail: Pick<
     PullRequestDetailView,
@@ -639,8 +630,7 @@ function reviewThreadContext(
     endIndex: lineIndex,
     rangeLabel:
       thread.line === null ? "file" : `L${thread.line}${thread.side === "left" ? " (before)" : ""}`,
-    // Bot bookkeeping lives in HTML comments and would otherwise eat the length bound before
-    // the finding itself got any of it.
+    // Strip bot bookkeeping comments before bounding finding text.
     text: bounded(
       thread.comments
         .flatMap((comment) => {
@@ -691,10 +681,7 @@ export function stripPullRequestHandoffReferences(
 export function handoffPrompt(
   existing: {
     readonly prompt: string;
-    /**
-     * Store only the last handoff contribution; storing the merged prompt would let later
-     * handoffs overwrite user text.
-     */
+    /** Store only the handoff contribution so later handoffs preserve user text. */
     readonly lastHandoffPrompt: string | undefined;
   },
   incoming: string,
@@ -922,12 +909,12 @@ function pullRequestContextComment(
   };
 }
 
-/** Keep user chips outside the handoff-owned namespace so later handoffs cannot delete them. */
+/** User chips need a separate namespace to survive later handoffs. */
 export function buildPullRequestReferenceContext(
   input: PullRequestContextMetadata,
 ): ReviewCommentContext {
   const comment = pullRequestContextComment(input, []);
-  // Keyed by URL: the draft upserts by id, and two repositories can share a number.
+  // Use URLs because repositories can share pull request numbers.
   return { ...comment, id: `pr-reference:${input.url}` };
 }
 
@@ -1010,7 +997,7 @@ export function buildAskAboutGuideStopHandoff(input: {
   readonly question: string;
 }): FixFindingsHandoff {
   const { stop } = input;
-  // Removed code is numbered on the base side; the head has other code at those lines.
+  // Removed code uses base-side line numbers.
   const where = stop.excerpts.map(
     (excerpt) =>
       `- ${excerpt.path} lines ${excerpt.start}-${excerpt.end}${excerpt.side === "old" ? " (removed; numbered as in the base branch)" : ""}`,

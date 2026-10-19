@@ -240,14 +240,11 @@ const TABS: ReadonlyArray<{ value: DetailTab; label: string }> = [
   { value: "code", label: "Code" },
 ];
 
-// The diff viewer pulls in its worker pool, so load it only when the reader approaches Code.
+// Defer the diff viewer's worker pool until Code is approached.
 const loadCodeTab = () => import("./PullRequestCodeTab");
 const PullRequestCodeTab = lazy(loadCodeTab);
 
-/**
- * Keep handoff text across panel unmounts; replace only unchanged handoff contributions so user
- * edits survive.
- */
+// Persist handoffs across unmounts; replace only unchanged contributions to preserve user edits.
 const lastHandoffPromptByDraft = new Map<string, string>();
 
 const composerTargetKey = (target: ScopedThreadRef | DraftId): string =>
@@ -463,11 +460,9 @@ function usePullRequestDetail(
     cached: cachedDetail,
     reference,
   });
-  // Every hook runs above this line: a hook between the merge and the panel's plain readers of
-  // `detail` would cost it its cache scope.
+  // Keep hooks before detail derivation to preserve its compiler cache.
   const listSummary = listEntry === null ? null : pullRequestListEntryToSummary(listEntry);
-  // The list row is also published to the shared cache, but only after this commit's layout
-  // effects run, so it is compared directly rather than trusted to be there already.
+  // Compare list summaries directly; layout effects have not published them to the cache yet.
   const sharedSummary = newestPullRequestSummary(
     resolvedCoreDetail,
     newestPullRequestSummary(observedSummary, listSummary),
@@ -662,7 +657,7 @@ export function PullRequestDetailPanel({
     key: tabScopeKey,
     tabs: new Set<DetailTab>(["summary"]),
   }));
-  // A previously visited Code tab must not fetch diffs for every later PR while hidden.
+  // Hidden Code tabs must not fetch later pull requests' diffs.
   const mountedTabs =
     tabMountState.key === tabScopeKey ? tabMountState.tabs : new Set<DetailTab>([tab]);
   if (tabMountState.key !== tabScopeKey) {
@@ -835,8 +830,7 @@ export function PullRequestDetailPanel({
     if (!shouldRefreshPullRequestActivity(activityRevision, next)) {
       setActivityRevision(next);
     } else if (!activityQuery.isPending) {
-      // Let an existing read settle before revalidating the new revision. Interrupting a
-      // mutation's activity refresh can leave SWR displaying its previous value.
+      // Interrupting a mutation's activity refresh can leave SWR displaying stale data.
       setActivityRevision(next);
       setActivityRevalidations((count) => count + 1);
       setRefreshToken((token) => token + 1);
@@ -857,7 +851,7 @@ export function PullRequestDetailPanel({
   const refreshing = isInvalidating || detailQuery.isPending;
   const refreshFromHost = async () => {
     setIsInvalidating(true);
-    // Atom commands settle instead of throwing, so the reset below always runs.
+    // Atom commands settle without throwing, so reset always runs.
     await invalidate({ environmentId, input: { reference } });
     refreshDetail();
     setRefreshToken((token) => token + 1);
@@ -933,8 +927,7 @@ export function PullRequestDetailPanel({
     });
     setPendingAction(null);
     if (result._tag === "Failure") {
-      // Azure DevOps exposes no per-strategy availability; explain branch-policy rejection
-      // after the attempted action.
+      // Azure DevOps provides no strategy availability; explain policy failures after the attempt.
       const failure = squashAtomCommandFailure(result);
       const hint =
         updateMethod === "rebase"
@@ -986,8 +979,7 @@ export function PullRequestDetailPanel({
       return { commentPosted: false };
     }
     const actionSucceeded = await finishAction(action);
-    // The comment is durable even if the state change was refused, so make it visible while the
-    // shared action failure explains why the pull request stayed where it was.
+    // Refresh the posted comment even if the subsequent state change fails.
     if (!actionSucceeded) refreshDetail();
     return { commentPosted: true };
   };
@@ -1183,7 +1175,7 @@ export function PullRequestDetailPanel({
       actingEnvironmentId,
       acting?.projectId ?? handoffSummary.projectId,
     );
-    // Open the thread first: checkout setup runs only when the checkout knows its thread.
+    // Checkout setup requires the thread to exist first.
     const opened = await newThread(projectRef).then(
       (session) => session,
       () => null,
@@ -1223,8 +1215,7 @@ export function PullRequestDetailPanel({
     );
     if (!pointed) {
       setHandoff(null);
-      // Do not send the task if rebinding failed: the agent would work in the thread's previous
-      // checkout.
+      // Sending after failed rebinding would use the previous checkout.
       toastManager.update(toastId, {
         type: "error",
         title: "Checked out, but the thread stayed where it was",

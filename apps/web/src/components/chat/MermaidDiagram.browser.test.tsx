@@ -30,7 +30,7 @@ describe("sanitizeMermaidSvg", () => {
   });
 
   it("keeps spaced math labels parseable as an SVG image", () => {
-    // KaTeX renders \text{total cost} with a no-break space.
+    // KaTeX uses a no-break space in \text{total cost}.
     const svg = sanitizeMermaidSvg(noteSvg("<math><mrow><mtext>total cost</mtext></mrow></math>"));
 
     const image = new DOMParser().parseFromString(svg, "image/svg+xml");

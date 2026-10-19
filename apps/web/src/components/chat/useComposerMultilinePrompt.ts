@@ -15,8 +15,7 @@ export function measureComposerMultilinePrompt(body: HTMLElement): boolean | nul
   range.selectNodeContents(editor);
   const bounds = range.getBoundingClientRect();
 
-  // Use unwrapped content width against the expanded row so moving actions inline cannot cause
-  // collapse oscillation.
+  // Measure against expanded width to prevent inline actions oscillating collapse.
   return bounds.height > lineHeight + 1 || bounds.width > expandedWidth + 1;
 }
 

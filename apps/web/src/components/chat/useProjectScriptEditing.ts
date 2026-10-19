@@ -36,10 +36,7 @@ import { useProjects } from "../../state/entities";
 import { type NewProjectScriptInput } from "../ProjectScriptsControl";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-/**
- * Script shortcuts live in environment keybindings; write script settings before reconciling
- * shortcuts.
- */
+/** Write script settings before reconciling shortcuts in environment keybindings. */
 export function useProjectScriptEditing(input: {
   readonly environmentId: EnvironmentId;
   readonly project: EnvironmentProject | null;

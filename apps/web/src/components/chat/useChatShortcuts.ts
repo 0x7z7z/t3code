@@ -24,7 +24,7 @@ export interface ChatShortcutsInput {
     readonly modelPickerOpen: boolean;
   };
   readonly threadFindActive: boolean;
-  /** Types a printable key into the composer; false when it could not take it. */
+  /** False if the composer cannot accept the key. */
   readonly typeIntoComposer: (key: string) => boolean;
   readonly closeThreadFind: () => void;
   readonly commands: Partial<Record<KeybindingCommand, ChatShortcutHandler>>;

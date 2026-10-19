@@ -484,7 +484,7 @@ function useComposerRestingTransition(
   const hasCompletedInitialLayoutRef = useRef(false);
 
   const clearOverlayPin = () => {
-    // The overlay outlives this composer; React may detach its ref before unmount cleanup.
+    // The overlay outlives the composer; its ref may detach before cleanup.
     const overlay = pinnedOverlayRef.current;
     pinnedOverlayRef.current = null;
     overlay?.style.removeProperty("height");
@@ -594,8 +594,7 @@ function useComposerRestingTransition(
     const nextRect = element.getBoundingClientRect();
     const nextHeight = nextRect.height;
     const nextModelStripHeight = modelStrip?.getBoundingClientRect().height ?? null;
-    // Publish the destination height once so ChatView's ResizeObserver does not re-render on
-    // every animation frame.
+    // Publish once to avoid ResizeObserver renders during animation.
     const overlay = element.closest<HTMLElement>('[data-chat-composer-overlay="true"]');
     const overlayRect = overlay?.getBoundingClientRect();
     const overlayHeight = overlayRect?.height ?? null;
@@ -845,8 +844,7 @@ function useComposerRestingTransition(
         clearTransitionStyles();
       };
       void animation.finished.catch(() => undefined).then(() => finishTransition(false));
-      // A suspended document timeline can leave `finished` pending, so wall-clock cleanup must
-      // release measurement styles.
+      // Suspended document timelines can leave `finished` pending.
       transitionCleanupTimeoutRef.current = window.setTimeout(
         () => finishTransition(true),
         duration + COMPOSER_RESTING_TRANSITION_CLEANUP_BUFFER_MS,
@@ -872,8 +870,7 @@ function useComposerRestingTransition(
     const requestId = transitionLayoutRequestRef.current + 1;
     transitionLayoutRequestRef.current = requestId;
     const stateChanged = previousCollapsedRef.current !== isCollapsed;
-    // Wait for the parent's context-strip layout effect before reading FLIP destination
-    // geometry.
+    // Measure FLIP geometry after the parent's context-strip layout effect.
     queueMicrotask(() => {
       if (transitionLayoutRequestRef.current !== requestId) return;
       transitionToCurrentGeometry(stateChanged);
@@ -1654,7 +1651,7 @@ function useProviderWorkspaceSnapshotRefresh(input: {
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
-  // Throttle by client request time so a client clock ahead of the server cannot loop rescans.
+  // Use client request time to prevent rescan loops under clock skew.
   const workspaceRefreshKeyRef = useRef<{ key: string; requestedAt: number } | null>(null);
   const [workspaceRefreshRetry, setWorkspaceRefreshRetry] = useState<{
     key: string;
@@ -1711,7 +1708,7 @@ function useProviderWorkspaceSnapshotRefresh(input: {
       now - lastRequest.requestedAt < PROVIDER_WORKSPACE_SNAPSHOT_TTL_MS
     )
       return;
-    // A pending retry needs no clearing here: its cooldown lapses long before the TTL.
+    // Retry cooldown expires before the snapshot TTL.
     if (hasCurrentProviderWorkspaceSnapshot(selectedProviderStatus, gitCwd, now)) return;
     if (retry?.key === key && now < retry.notBefore) return;
     const request = { key, requestedAt: now };
@@ -1760,10 +1757,7 @@ function useProviderWorkspaceSnapshotRefresh(input: {
 
 const NO_PROVIDER_MODELS: ServerProvider["models"] = [];
 
-/**
- * Read the draft store before derivation so intervening hooks do not break the compiler's
- * cache.
- */
+// Read the draft store before derivation to preserve the compiler cache.
 function useComposerProviderModel(
   input: Omit<Parameters<typeof resolveComposerProviderSelection>[0], "entries"> & {
     readonly providerStatuses: ReadonlyArray<ServerProvider>;
@@ -2016,7 +2010,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const attachmentDraftTarget = questionAttachmentTarget ?? composerDraftTarget;
   const attachmentDraft = useComposerThreadDraft(attachmentDraftTarget);
   const attachmentTargetKey = composerTargetKey(attachmentDraftTarget);
-  // Read the live draft key so async imports can reject results after a draft switch.
+  // Reject async imports after a draft switch.
   const attachmentTargetKeyRef = useRef(attachmentTargetKey);
   useLayoutEffect(() => {
     attachmentTargetKeyRef.current = attachmentTargetKey;
@@ -2167,8 +2161,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     if (!supportsAttachmentUploads) {
-      // Reconnect or version skew can hide this capability temporarily; releasing hydrated
-      // uploads would break the next send.
+      // Reconnect or version skew can hide upload support; retain hydrated uploads.
       for (const attachment of attachmentsToReleaseOnUploadCapabilityLoss([
         ...composerImages,
         ...composerFiles,
@@ -2414,8 +2407,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     key: 0,
     active: false,
   });
-  // A pending question stays expanded: its card moves into the banner dock,
-  // so collapsing would leave the surface empty and squashed beneath it.
+  // Pending questions move into the banner dock, leaving a collapsed surface empty.
   const isComposerCollapsedMobile =
     isMobileViewport &&
     !forceExpandedOnMobile &&
@@ -2457,8 +2449,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   useEffect(() => {
     const armPasteAsTextShortcut = () => {
-      // Electron's menu action can arrive before paste, while browsers deliver keydown first;
-      // expire the bypass after one second.
+      // Electron's menu action can precede paste; browsers deliver keydown first.
       pasteAsTextShortcutUntilRef.current = Date.now() + 1_000;
     };
     const onKeyDown = (event: KeyboardEvent) => {
@@ -2929,8 +2920,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const removeComposerFileFromDraft = (fileId: string) => {
     if (questionAttachmentTarget && activePendingIsResponding) return;
-    // Release by the draft attachment, not the bare queue key: a hydrated
-    // file's upload lives server-side under its persisted attachment id.
+    // Hydrated uploads use persisted attachment ids, not queue keys.
     const file = composerFilesRef.current.find((candidate) => candidate.id === fileId);
     if (file) {
       releaseDraftAttachment(file);
@@ -3025,7 +3015,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     );
   };
   const countReservedAttachmentsStable = useStableCallback(countReservedAttachments);
-  /** Only the client can reach both environments to transfer attachment bytes. */
+  // Only the client can reach both environments to transfer attachment bytes.
   const runAttachmentImport = async (
     record: Extract<ComposerContextRecord, { kind: "image" | "file" }>,
     localId: string,
@@ -3114,8 +3104,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     localId: string,
     sourceEnvironmentId: EnvironmentId,
   ) => {
-    // Count downloads against their draft so a send cannot snapshot a chip before its
-    // attachment exists.
+    // Block sends until imported chips have their attachments.
     const importTargetKey = attachmentTargetKey;
     pendingDraftWork.begin(importTargetKey);
     await runAttachmentImport(record, localId, sourceEnvironmentId, importTargetKey).finally(() =>
@@ -3129,8 +3118,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const rewritten = new Map<string, string>();
     const dependentAttachmentLocalIds = new Map<string, string>();
     const skippedDependentAttachmentIds = new Set<string>();
-    // Resolve annotations before their dependent screenshot records even if a foreign
-    // clipboard producer emitted the records in a different order.
+    // Clipboard screenshots depend on annotations, regardless of record order.
     const orderedRecords = records.toSorted((left, right) =>
       left.kind === "preview-annotation" && right.kind !== "preview-annotation"
         ? -1
@@ -3139,8 +3127,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           : 0,
     );
     for (const candidate of orderedRecords) {
-      // Producer ids can collide for different excerpts; deduplicate by payload and mint a
-      // fresh id for different records.
+      // Producer ids can collide across different payloads.
       const record = asKnownContextRecord(candidate);
       if (!record) continue;
       const existing = composerContextImportLookupIds(record).flatMap((contextId) => {
@@ -3204,7 +3191,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           break;
         }
         case "thread": {
-          // The agent can only read threads on its own server; a pasted foreign one is dropped.
+          // Agents can only read threads on their own server.
           if (record.environmentId !== environmentId) break;
           addComposerDraftThreadContexts(attachmentDraftTarget, [record], {
             appendReference: false,
@@ -3475,10 +3462,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const expandComposerForEditorChangeStable = useStableCallback(expandComposerForEditorChange);
 
-  /**
-   * History undo restores reference text without draft records, so retain deleted payloads for
-   * undo.
-   */
+  // Undo restores reference text without draft records, so retain deleted payloads.
   const removedContextPayloadsRef = useRef<{
     terminals: Map<string, TerminalContextDraft>;
     reviewComments: Map<string, ReviewCommentContext>;
@@ -3924,8 +3908,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event?.preventDefault();
       return;
     }
-    // Sending during compression would omit the image from this turn and strand it in the next
-    // draft.
+    // Sending during compression would strand the image in the next draft.
     if (activeThreadId && (pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0) > 0) {
       event?.preventDefault();
       toastManager.add({
@@ -4044,15 +4027,13 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const expandMobileComposerStable = useStableCallback(expandMobileComposer);
 
-  // Entries are built on the keypress, not per render: the timeline changes
-  // on every streamed delta and ArrowUp is rare.
+  // Build history on keypress to avoid work on every streamed delta.
   const promptHistoryMessagesRef = useRef(promptHistoryMessages);
   useLayoutEffect(() => {
     promptHistoryMessagesRef.current = promptHistoryMessages;
   });
 
-  // Scope recall to its draft so a thread switch cannot turn the new draft into a history
-  // browsing position.
+  // History recall must not follow a draft switch.
   const promptHistoryTargetKey = composerTargetKey(composerDraftTarget);
 
   const replacePromptFromHistory = (nextPrompt: string) => {
@@ -4227,8 +4208,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
     setIsStashMenuOpen(false);
 
-    // Verify before taking: closing the tab during verification must leave the stash
-    // recoverable in durable storage.
+    // Verify before taking so closing the tab leaves the stash recoverable.
     const verifications = await Promise.all(
       filesToVerify.map((file) =>
         verifyStashedAttachmentUpload({ environmentId, attachmentId: file.attachmentId }),
@@ -4240,8 +4220,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         .map((file) => file.attachmentId),
     );
 
-    // Abort after a thread switch so the captured target cannot receive the new thread's
-    // prompt.
+    // A thread switch invalidates the captured restore target.
     if (
       isRevertingCheckpointRef.current ||
       composerTargetKey(composerDraftTarget) !== composerDraftTargetKeyRef.current
@@ -4366,8 +4345,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const filesToAppend = appendedFiles.slice(0, capacity);
       const skippedFiles = appendedFiles.slice(capacity);
       unrestoredFileNames = skippedFiles.map((file) => file.name);
-      // A non-durable take can resurrect the stash entry after a reload;
-      // deleting these uploads would leave it pointing at nothing.
+      // A non-durable take can resurrect the stash after reload, still needing its uploads.
       if (durable) {
         for (const file of duplicateFiles) {
           releasePersistedAttachmentUpload({
@@ -4405,8 +4383,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     let unrestoredImageNames: string[] = [];
     if (entry.attachments.length > 0) {
       const existingIds = new Set(composerImagesRef.current.map((image) => image.id));
-      // Match the store's mimeType+sizeBytes+name deduplication before counting images against
-      // capacity.
+      // Use the store's deduplication key when counting capacity.
       const existingDedupKeys = new Set(
         composerImagesRef.current.map(
           (image) => `${image.mimeType}\0${image.sizeBytes}\0${image.name}`,
@@ -4499,8 +4476,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const deleteStashEntryStable = useStableCallback(deleteStashEntry);
 
   const stashCurrentPrompt = async () => {
-    // Stashing clears the draft. A pasted attachment still downloading would then land in the
-    // emptied composer instead of travelling with the entry it belongs to.
+    // Stashing during a download would leave its attachment in the emptied draft.
     if (pendingDraftWork.has(attachmentTargetKeyRef.current)) {
       toastManager.add({
         type: "info",
@@ -4560,8 +4536,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ...(file.source ? { source: file.source } : {}),
       });
     }
-    // Guard per snapshot so repeat shortcuts cannot duplicate it while new drafts can still be
-    // stashed during encoding.
+    // Guard each snapshot against duplicate stashes while new drafts can stash during encoding.
     const attachmentKey = images
       .map((image) => `image:${image.id}`)
       .concat(files.map((file) => `file:${file.id}`))
@@ -4573,8 +4548,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     const stashTarget = composerDraftTarget;
     const entryId = randomUUID();
     const stashAndEncode = async () => {
-      // Write before clearing for crash recovery; clear before encoding so edits made during
-      // encoding survive.
+      // Write before clearing for crash recovery. Clear before encoding to preserve new edits.
       const { evicted, written, durable } = stashEntryToQueue({
         id: entryId,
         createdAt: new Date().toISOString(),
@@ -4641,9 +4615,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         });
       }
 
-      // Images are re-encoded for the stash rather than stored verbatim: the
-      // composer allows up to 10MB per image, but localStorage gives the whole
-      // origin ~5MB.
+      // Re-encode images: each can be 10MB, but localStorage allows ~5MB per origin.
       const candidateAttachments: PersistedComposerImageAttachment[] = [];
       const oversizedImageNames: string[] = [];
       const unreadableImageNames: string[] = [];
@@ -4890,8 +4862,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     }
   }, [canScrollCollapseComposer, setIsComposerScrollCollapsed]);
 
-  // Window activation re-fires element focus afterward; ignore that frame to avoid expanding
-  // the resting composer.
+  // Window activation re-fires focus; ignore that frame to keep the composer collapsed.
   useEffect(() => {
     if (!isComposerScrollCollapsed) return;
     let frame: number | null = null;
@@ -5253,8 +5224,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         },
       });
       if (command !== "composer.stash") return;
-      // Always claim the shortcut so the browser save dialog never opens,
-      // even when the composer is in a state that can't stash.
+      // Suppress the browser save dialog even when stashing is unavailable.
       event.preventDefault();
       event.stopPropagation();
       if (isCommandPaletteOpen() || isRevertingCheckpoint) {
@@ -5304,8 +5274,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       });
       return false;
     }
-    // Capture the thread before compression awaits so attachments and errors stay with the
-    // paste's original thread.
+    // Keep compressed attachments and errors with the paste's original thread.
     const threadId = activeThreadId;
     const imageAttachmentsGetChips =
       !options?.skipImageInlineChip &&
@@ -5316,12 +5285,10 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         projectSelectionRequired ||
         stripInlineContextReferences(promptRef.current).trim().length > 0);
 
-    // Reserve attachment slots before the first await so concurrent pastes cannot exceed the
-    // limit.
+    // Reserve slots before awaiting to bound concurrent pastes.
     const pendingCount = pendingImageCompressionsRef.current.get(attachmentTargetKey) ?? 0;
     let reservedCount = countReservedAttachments();
-    // Matching reattach markers replace existing rows and must not consume another attachment
-    // slot.
+    // Reattached files replace markers without consuming another slot.
     const reattachMarkers = composerFilesRef.current.filter(composerFileNeedsReattach);
     const replacedReattachMarkerIds = new Set<string>();
     const acceptedImages: File[] = [];
@@ -5467,8 +5434,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         insertedAny =
           insertAttachmentReferences(storedImages.map(imageContextReference)) || insertedAny;
       }
-      // Do not clear errors on success: overlapping work may have set a thread error this call
-      // does not own.
+      // Success must preserve errors from overlapping work.
       if (compressionError !== null) {
         setThreadError(threadId, compressionError);
       }
@@ -5492,8 +5458,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selection?: { start: number; end: number },
   ): boolean => {
     if (references.length === 0) return false;
-    // Question answers carry attachments beside the answer, never as chips. Falling back to
-    // the thread prompt here would hide the file behind a reference the question never shows.
+    // Question attachments appear beside answers; prompt chips would hide them.
     if (questionAttachmentTarget) return false;
     return insertAttachmentReferencesForDraft({
       target: composerDraftTarget,
@@ -5636,8 +5601,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     event.preventDefault();
     event.stopPropagation();
   };
-  // The editor is memoized; fresh closures here re-render it on every parent
-  // render, which during a stream is every delta.
   const onComposerPasteStable = useStableCallback(onComposerPaste);
   const onComposerCommandKeyStable = useStableCallback(onComposerCommandKey);
   const isPathQueryActiveStable = useStableCallback(
@@ -5694,8 +5657,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const insertComposerTextAtEnd: ChatComposerHandle["insertTextAtEnd"] = (text, options) => {
     const inserted = insertComposerText(text, "end", options);
     if (inserted && isComposerCollapsedMobile) {
-      // Reveal the hidden mobile editor before its focus frame so external inserts can expand
-      // the composer.
+      // Reveal the mobile editor before its focus frame.
       expandMobileComposer();
     }
     return inserted;
@@ -5716,8 +5678,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     return setContextInsertionHandler(composerDraftTarget, insertContextReferencesAtCaretStable);
   }, [composerDraftTarget, insertContextReferencesAtCaretStable, setContextInsertionHandler]);
 
-  // Capture drops before the editor; makeComposerMentionDragHandlers owns native propagation
-  // and move semantics.
+  // Capture drops before the editor; mention handlers own native propagation and moves.
   const composerMentionDragHandlers = makeComposerMentionDragHandlers({
     insertMentionAtEnd: (text) =>
       insertComposerTextAtEndStable(text, { ensureLeadingBoundary: true }),
@@ -5855,8 +5816,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsDragOverComposer(false);
   };
 
-  // Escape may cancel without dragleave; the source's bubbling dragend clears a stuck
-  // highlight.
+  // Escape can cancel without dragleave; clear highlights on bubbling dragend.
   useEffect(() => {
     if (!isDragOverComposer) return;
     const onWindowDragEnd = () => {
@@ -5905,8 +5865,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
   const scheduleComposerCollapseCheckStable = useStableCallback(scheduleComposerCollapseCheck);
 
-  // Answering or dismissing a question unmounts the control that held focus,
-  // and React fires no blur for a removed element.
+  // Question dismissal unmounts focused controls without firing blur.
   const activePendingUserInputRequestId = activePendingUserInput?.requestId ?? null;
   useEffect(() => {
     if (activePendingUserInputRequestId !== null) return;
@@ -7151,8 +7110,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                         onChange={(event) => {
                           const files = Array.from(event.currentTarget.files ?? []);
                           event.currentTarget.value = "";
-                          // Chip insertion refocuses after rendering; synchronous focus would
-                          // report stale text over the new prompt.
+                          // Chip insertion defers focus to avoid overwriting the new prompt with stale text.
                           void addComposerAttachments(files).then((inserted) => {
                             if (!inserted) focusComposer();
                           });

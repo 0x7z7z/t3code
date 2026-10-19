@@ -114,8 +114,7 @@ export function PullRequestMarkdown({
           );
         }
         return (
-          // Use an anchor in browsers; desktop converts blocked _blank navigation to
-          // openExternal.
+          // Desktop converts blocked _blank navigation to openExternal.
           <a
             key={segment.id}
             href={segment.url}

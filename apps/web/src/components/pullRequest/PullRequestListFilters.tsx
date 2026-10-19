@@ -121,7 +121,7 @@ const ALL_PROJECTS_VALUE = "all";
 const ALL_HOSTS_VALUE = "";
 const ALL_SERVERS_VALUE = "";
 const UNFILTERED_VALUE = "all";
-/** Project ids are unique only within an environment; both fields must identify a radio value. */
+/** Project ids are unique only within an environment. */
 export const pullRequestProjectKey = (project: {
   readonly id: ProjectId;
   readonly environmentId: EnvironmentId;

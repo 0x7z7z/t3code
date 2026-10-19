@@ -177,8 +177,7 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
               stackExpanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
             )}
           >
-            {/* Clip only the collapsing axis: at fractional widths a horizontal clip
-                shaves the notice's right border. */}
+            {/* Horizontal clipping shaves the right border at fractional widths. */}
             <div className="min-h-0 overflow-y-clip">
               <div
                 className={cn(
@@ -257,8 +256,7 @@ function NoticeDescription({ children }: { children: ReactNode }) {
     const description = descriptionRef.current;
     if (!description) return;
     const measure = () => {
-      // Ignore the space taken by the details button itself so it cannot
-      // sustain its own overflow after the description would otherwise fit.
+      // Exclude the details button's width so it cannot sustain its own overflow.
       const recoveredWidth = detailsRef.current ? detailsRef.current.offsetWidth + 4 : 0;
       const hidden = getComputedStyle(description).position === "absolute";
       setShowDetails(

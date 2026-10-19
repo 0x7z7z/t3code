@@ -343,8 +343,7 @@ function ConversationGroup({
               <div className="mt-1 space-y-1">
                 {events.map((event) => (
                   <ConversationCard
-                    // Host comment ids can collide across pull requests; scope keys to prevent
-                    // editor state leaking.
+                    // Host comment ids can collide across pull requests.
                     key={`${reactions.reference.projectId}#${reactions.reference.number}:${event.id}`}
                     event={event}
                     editable={editable.get(event.id) ?? null}

@@ -107,7 +107,7 @@ export function WorkLogButton({
   );
 }
 
-/** Div-based disclosure supports selectable detail and nested actions in an entry. */
+/** Div disclosure permits selectable detail and nested actions. */
 export function WorkLogRow({
   icon,
   label,

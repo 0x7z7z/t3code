@@ -123,10 +123,7 @@ export function fileAttachmentCapabilityBlockReason(
   return null;
 }
 
-/**
- * Release only unpersisted uploads; hydrated draft files still reference their server copy
- * after reload.
- */
+/** Release only unpersisted uploads; hydrated files still need their server copies. */
 export function attachmentsToReleaseOnUploadCapabilityLoss(
   attachments: ReadonlyArray<ComposerImageAttachment | ComposerFileAttachment>,
 ): Array<ComposerImageAttachment | ComposerFileAttachment> {

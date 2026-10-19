@@ -42,8 +42,7 @@ const CREATED_AT = "2026-03-17T19:12:28.000Z";
 type TimelineProps = ComponentProps<typeof MessagesTimeline>;
 type Entry = TimelineProps["timelineEntries"][number];
 
-// The timeline remembers scroll position and open disclosures per thread key,
-// so every render gets a fresh thread.
+// Use fresh threads to isolate persisted scroll positions and disclosures.
 let threadCount = 0;
 
 function baseProps(): Omit<TimelineProps, "timelineEntries"> {

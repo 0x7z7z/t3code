@@ -92,8 +92,7 @@ export function QueuedRunsControl({
   // Arm from the grip to prevent accidental text drags from reordering queued runs.
   const dragArmedRunIdRef = useRef<RunId | null>(null);
   const steerInFlightRef = useRef(false);
-  // Acknowledge by message id; run-only checks can resurrect phantom pending rows after
-  // cancellation or startup.
+  // Run-only acknowledgements can resurrect pending rows after cancellation or startup.
   const acknowledgedMessageIds = new Set((projection?.messages ?? []).map((message) => message.id));
   const queuedImageAttachmentResources = queuedImageResources(projection);
   const queuedImageAttachmentUrls = useAssetUrls(
@@ -186,8 +185,7 @@ export function QueuedRunsControl({
       if (!repeat && busyRunId === null) void steer(next.run.id);
       return true;
     },
-    // Declines while a queued message is already being edited so the key keeps
-    // moving the caret inside that draft.
+    // Leave the key to caret navigation while editing.
     editLatest(repeat) {
       const latest = queued.at(-1);
       if (!latest || props.editingRunId !== null || busyRunId !== null) return false;

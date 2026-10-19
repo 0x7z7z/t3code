@@ -17,10 +17,7 @@ import { useOrchestrationCommand } from "../../state/use-orchestration-command";
 import { useLinkedThreadPullRequest } from "../ThreadStatusIndicators";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-/**
- * When a closed or merged link has a newer open replacement on the same branch, relink it on
- * the server and move its open panel.
- */
+/** Relink replaced closed/merged requests to the newer open request on the same branch, moving its panel. */
 export function useThreadLinkedPullRequest(input: {
   readonly serverThreadRef: ScopedThreadRef | null;
   readonly environmentId: EnvironmentId | null;

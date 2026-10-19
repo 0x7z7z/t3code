@@ -40,8 +40,7 @@ export function HtmlRenderFrame(props: {
       if (entry) setWidth(entry.contentRect.width);
     });
   }, []);
-  // Client fonts can wrap a page taller than the server measured it; a frame
-  // left short would scroll inside the thread and take the reader's scroll.
+  // Client fonts can exceed the server-measured height and cause nested scrolling.
   const [contentHeight, setContentHeight] = useState<number>();
   const height = htmlRenderFrameHeight(props.htmlRender, width, contentHeight);
   const fileName = htmlRenderFileName(title);
@@ -52,8 +51,7 @@ export function HtmlRenderFrame(props: {
     mimeType: "text/html",
     disposition: "inline" as const,
   };
-  // Reuse cached URLs with life left, but re-mint near expiry because frames cannot report
-  // failed loads.
+  // Re-mint near-expiry URLs because frames cannot report failed loads.
   const [src, setSrc] = useState<string | null>(null);
   const srcExpiresAt = useRef(0);
   const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
@@ -75,8 +73,7 @@ export function HtmlRenderFrame(props: {
   const cachedExpiresAt = assetUrl._tag === "Success" ? assetUrl.expiresAt : 0;
   const cacheFailed = assetUrl._tag === "Failure";
   const refresh = useAssetUrlRefresh(props.environmentId, resource);
-  // At most one mint per mount: expiry is server time and the check uses the
-  // client clock, so a skewed clock must not mint again on every update.
+  // Mint once per mount to prevent clock skew from causing repeated mints.
   const minting = useRef(false);
   useEffect(() => {
     if (src !== null || minting.current) return;

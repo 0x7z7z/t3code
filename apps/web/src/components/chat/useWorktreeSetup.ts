@@ -18,7 +18,7 @@ import type { Thread } from "../../types";
 import { resolveVisibleWorktreeSetup, resolveWorktreeSetupProgress } from "../ChatView.logic";
 import { worktreeSetupAgentStarted } from "./MessagesTimeline.logic";
 
-/** Runs with a workspace preparation retry in flight, across ChatView instances. */
+// Share in-flight preparation retries across ChatView instances.
 const retryingWorkspacePreparationRunIds = new Set<RunId>();
 
 export function useWorktreeSetup(input: {
@@ -56,8 +56,7 @@ export function useWorktreeSetup(input: {
     readonly threadId: ThreadId;
     readonly ownerKey: string;
   } | null>(null);
-  // Hold the final snapshot after the server drops it until settled activity reaches the
-  // projection.
+  // Retain the dropped snapshot until settled activity reaches the projection.
   const [heldSnapshot, setHeldSnapshot] = useState<WorktreeSetupSnapshot | null>(null);
   const started = startedSetup !== null && startedSetup.ownerKey === ownerKey;
   const target = started ? startedSetup : routeThreadRef;
@@ -103,15 +102,13 @@ export function useWorktreeSetup(input: {
     turnStarted: activityRun?.startedAt != null,
     followUpSent,
   });
-  // Wait for agent handoff, not an async setup script. Once the server has the thread, sends
-  // queue behind setup.
+  // After agent handoff, sends queue behind setup without awaiting its scripts.
   const blocksSend =
     !sendQueuesBehindSetup &&
     (worktreeSetup !== null
       ? worktreeSetup.phase === "running" && !worktreeSetupAgentStarted(worktreeSetup)
       : isPreparingWorktree);
 
-  // Keyed by content so the timeline context only changes when a retry appears or clears.
   const retryableRunIdsKey = [
     ...workspacePreparationRetryRunIds(
       serverProjection?.runs ?? [],
@@ -149,8 +146,7 @@ export function useWorktreeSetup(input: {
       input: { threadId: threadRef.threadId, runId },
     }).finally(() => retryingWorkspacePreparationRunIds.delete(runId));
   });
-  // Failed bootstrap deletes its thread and terminals; offer the terminal only while that
-  // thread is active.
+  // Failed bootstrap deletes threads and terminals; expose terminals only for active threads.
   const setupThreadRef =
     worktreeSetup && threadRef && worktreeSetup.threadId === threadRef.threadId ? threadRef : null;
   const openSetupTerminal = setupThreadRef

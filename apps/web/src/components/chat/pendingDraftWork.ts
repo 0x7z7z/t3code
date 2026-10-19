@@ -1,7 +1,4 @@
-/**
- * Count work per draft so one finished paste cannot release another; sending early would strand
- * attachment chips.
- */
+// Count per draft so overlapping pastes cannot release each other and strand chips.
 class PendingDraftWork {
   private readonly counts = new Map<string, number>();
 
@@ -20,5 +17,5 @@ class PendingDraftWork {
   }
 }
 
-/** Keep claims across composer remounts. */
+// Keep claims across composer remounts.
 export const pendingDraftWork = new PendingDraftWork();

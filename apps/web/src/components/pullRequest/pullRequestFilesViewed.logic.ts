@@ -28,10 +28,7 @@ export function isFileViewed(
   return pressed ?? isViewedState(states?.get(path));
 }
 
-/**
- * Keep presses until a read could have seen the write; clearing on write success would flash
- * the checkbox back.
- */
+/** Retain presses until a read could have observed the write. */
 export function settleFileViewedOverlay(
   overlay: FileViewedOverlay,
   states: FileViewedStates | null,
@@ -47,10 +44,7 @@ export function settleFileViewedOverlay(
   return next.size === overlay.size ? overlay : next;
 }
 
-/**
- * Revert only owned paths: later presses belong to another request or flush and must survive
- * this failure.
- */
+/** Revert only owned paths; later presses belong to other requests. */
 export function revertFileViewedOverlay(
   overlay: FileViewedOverlay,
   batch: ReadonlyArray<{ readonly path: string; readonly viewed: boolean }>,

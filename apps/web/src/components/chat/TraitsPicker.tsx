@@ -289,10 +289,7 @@ function getTraitSelectChange(
   };
 }
 
-/**
- * Pass implicit defaults from `withImplicitFastModeDefault` so persisted selections match
- * picker writes.
- */
+/** Pass `withImplicitFastModeDefault` defaults to match persisted picker selections. */
 export function getReasoningTraitStep(input: {
   provider: ProviderDriverKind;
   instanceId: ProviderInstanceId;
@@ -500,8 +497,6 @@ export const TraitsMenuContent = memo(function TraitsMenuContentImpl({
                     key={option.id}
                     value={option.id}
                     hideIndicator
-                    // Base UI keeps radio menus open by default. Close on pick so
-                    // the traits menu behaves like the model picker.
                     closeOnClick
                     disabled={ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id}
                   >

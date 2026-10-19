@@ -55,8 +55,7 @@ function saveBlob(blob: Blob, name: string) {
   link.href = url;
   link.download = name;
   link.click();
-  // Long after the browser has read it: some start the download a task or
-  // more after the click, and a revoked URL saves nothing.
+  // Browsers may start downloading after the click's task; defer revocation.
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
@@ -101,8 +100,7 @@ export function McpAppFrame(props: {
   };
   const asset = useAssetUrlState(props.environmentId, resource);
   const refreshAsset = useAssetUrlRefresh(props.environmentId, resource);
-  // Retain the first URL to avoid reloading the app; re-mint near-expiry cached URLs because
-  // frames cannot report failed loads.
+  // Retain the URL to avoid reloads. Re-mint near expiry; frames cannot report failed loads.
   const [src, setSrc] = useState<string | null>(null);
   const [mintFailed, setMintFailed] = useState(false);
   const minting = useRef(false);
@@ -129,7 +127,7 @@ export function McpAppFrame(props: {
     revision: props.revision,
   });
   const storedItem = detail.data?.item;
-  // The host gets the tool call pushed by an effect keyed on it, so it must stay cached.
+  // Keep tool-call identity stable for the host's delivery effect.
   const toolCall =
     storedItem?.type === "dynamic_tool"
       ? {
@@ -148,8 +146,7 @@ export function McpAppFrame(props: {
   });
   const [toolDefinition, setToolDefinition] = useState<unknown>(undefined);
 
-  // Read by the host on every message, so it always sees current values
-  // without being rebuilt (which would drop the app's session).
+  // Read live values without rebuilding the host and losing the app session.
   const live = {
     theme,
     width,
@@ -219,8 +216,7 @@ export function McpAppFrame(props: {
       cancelled = true;
     };
   }, [props.environmentId, props.threadId, props.itemId, app.tool]);
-  // Navigation retains the frame window; stop on a second load so another document cannot
-  // impersonate the served app.
+  // Navigation retains the frame window; reject second loads to prevent impersonation.
   const loads = useRef({ generation: 0, count: 0 });
   const onFrameLoad = () => {
     if (loads.current.generation !== documentGeneration) {
@@ -263,7 +259,7 @@ export function McpAppFrame(props: {
           : { toolInfo: { tool: current.toolDefinition } }),
       };
     };
-    // Return inline before asking so approvals remain visible above the app.
+    // Return inline so approvals stay visible above the app.
     const ask = async (message: string) => {
       flushSync(() => setDisplayMode("inline"));
       const approved = await requestConfirmDialog(message);
@@ -280,8 +276,7 @@ export function McpAppFrame(props: {
     const host = makeMcpAppHost({
       app,
       hostVersion: APP_VERSION,
-      // The document's origin is opaque, so "*" is the only target that reaches it;
-      // the window reference itself is what scopes delivery to this frame.
+      // Opaque origins require "*"; the window reference scopes delivery to this frame.
       post: (message) => target()?.postMessage(message, "*"),
       hostContext,
       callTool: async ({ name, arguments: args }) => {
@@ -385,7 +380,7 @@ export function McpAppFrame(props: {
         void host.teardown().then(() => setClosed(true));
       },
       onSizeChanged: (size) => {
-        // Ignore fullscreen sizing so returning inline does not retain the fullscreen height.
+        // Ignore fullscreen height when restoring inline sizing.
         if (latest.current.displayMode === "fullscreen") return;
         if (size.height !== undefined) setHeight(clampMcpAppHeight(size.height));
       },
@@ -435,13 +430,11 @@ export function McpAppFrame(props: {
 
   const fullscreen = displayMode === "fullscreen";
   return (
-    // The row keeps its inline height while the app is full screen, so the
-    // timeline does not jump; the box itself is what goes full screen.
+    // Preserve inline row height during fullscreen to prevent timeline jumps.
     <div style={{ height }}>
       <div
         ref={boxRef}
-        // Keep the same parent to avoid reloading the frame; the top layer escapes timeline
-        // positioning containment.
+        // Preserve the frame's parent to avoid reloads; the top layer escapes timeline containment.
         {...(fullscreenSupported ? { popover: "manual" as const } : {})}
         data-mcp-app-fullscreen={fullscreen ? "" : undefined}
         className={cn(
@@ -474,7 +467,7 @@ export function McpAppFrame(props: {
             ref={frameRef}
             src={src}
             title={`${app.server} app`}
-            // Never allow-same-origin: the opaque origin keeps the app out of the session.
+            // Omitting allow-same-origin isolates the app from the session.
             sandbox="allow-scripts allow-forms"
             allow={mcpAppAllowAttribute(app.permissions)}
             onLoad={onFrameLoad}

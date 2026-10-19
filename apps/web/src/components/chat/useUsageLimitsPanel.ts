@@ -10,10 +10,7 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { toastManager } from "../ui/toast";
 import { usageLimitsBannerItem } from "./ComposerUsageLimits";
 
-/**
- * Keep provider data live after opening. Hide without discarding when panelKey is unavailable
- * during reconnect; clear when quota-spending work resumes.
- */
+/** Keep opened data live. Retain hidden panels during reconnect; clear when quota-spending work resumes. */
 export function useUsageLimitsPanel(input: {
   readonly environmentId: EnvironmentId;
   readonly threadKey: string;
@@ -51,8 +48,7 @@ export function useUsageLimitsPanel(input: {
           setPanel(null),
         )
       : null;
-  // T3 owns /usage-limits only where Limits has data for the selected provider;
-  // elsewhere the name stays the provider's own and is sent through untouched.
+  // Intercept /usage-limits only when Limits has selected-provider data.
   const offered =
     providerDriver !== null && hasProviderUsageLimits(providerDriver, providers, sources);
 
@@ -70,7 +66,7 @@ export function useUsageLimitsPanel(input: {
     toastManager.add({ type: "info", title: "Usage limits are unavailable for this provider" });
     return false;
   });
-  // Responses can resolve after navigating away; only the originating thread's panel clears.
+  // Async responses may clear only their originating thread's panel.
   const clearFor = useStableCallback((originThreadKey: string) =>
     setPanel((current) =>
       current !== null && current.threadKey === originThreadKey ? null : current,

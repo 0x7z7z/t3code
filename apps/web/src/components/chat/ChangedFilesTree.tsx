@@ -132,7 +132,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
 }) {
   const { files, allDirectoriesExpanded, onOpenTurnDiff, resolvedTheme, runId, onFileContextMenu } =
     props;
-  // Declare state before building the tree so the compiler can cache the tree on `files`.
+  // Place state before tree derivation to preserve its compiler cache.
   const [directoryExpansionState, setDirectoryExpansionState] = useState<{
     key: string | null;
     overrides: Record<string, boolean>;

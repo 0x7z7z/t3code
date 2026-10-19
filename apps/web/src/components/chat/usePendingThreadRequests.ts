@@ -81,8 +81,7 @@ function makePendingCustomAnswerSetter(input: {
         ),
       },
     }));
-    // The editor owns this selection. Resetting it before the answer renders
-    // can re-enter Lexical with offsets from the previous skill token.
+    // Resetting selection before rendering can re-enter Lexical with stale skill-token offsets.
   };
 }
 
@@ -131,8 +130,7 @@ export function usePendingThreadRequests(input: {
     useState<Record<string, number>>({});
   const pendingRequests =
     serverProjection === null ? NO_PENDING_REQUESTS : derivePendingThreadRequests(serverProjection);
-  // The projection changes on every streamed event, so shared empties keep the
-  // composer and approval panel from re-rendering while nothing is pending.
+  // Shared empties prevent composer and approval renders on unrelated stream events.
   const pendingApprovals =
     pendingRequests.approvals.length === 0
       ? NO_PENDING_APPROVALS
@@ -403,8 +401,7 @@ export function usePendingThreadRequests(input: {
     if (!activePendingUserInput) {
       return;
     }
-    // The option replaces the custom answer. Anything typed there is the
-    // user's text, so it goes back to the thread draft instead of vanishing.
+    // Choosing an option returns displaced custom-answer text to the thread draft.
     const displacedAnswer =
       pendingUserInputAnswersByRequestId[activePendingRequestKey]?.[questionId]?.customAnswer;
     const currentPrompt =

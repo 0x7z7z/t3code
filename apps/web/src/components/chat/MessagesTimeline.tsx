@@ -506,10 +506,7 @@ interface MessagesTimelineProps {
   onAnchorSizeChanged: (messageId: MessageId, size: number) => void;
   contentInsetEndAdjustment: number;
   onIsAtEndChange: (isAtEnd: boolean) => void;
-  /**
-   * Disable while reading history: LegendList can otherwise re-pin near the bottom regardless
-   * of ChatView scroll mode.
-   */
+  /** Disable while reading history to prevent LegendList re-pinning near the bottom. */
   liveFollowEnabled: boolean;
   onContentOverflowChange?: (overflows: boolean) => void;
   onToolOutputCollapsedAtEnd?: () => void;
@@ -612,8 +609,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   loadEarlier = null,
 }: MessagesTimelineProps) {
   const listIdentityKey = displayThreadKey ?? routeThreadKey;
-  // The remembered position is a snapshot taken when the list identity changes;
-  // scrolling keeps rewriting the stored entry, which must not move the restore.
+  // Snapshot restore positions on identity changes; ongoing scroll writes must not move them.
   const [listState, setListState] = useState(() => timelineListStateFor(listIdentityKey));
   const [expandedRunIds, setExpandedRunIds] = useState<ReadonlySet<RunId>>(
     () => listState.rememberedPosition?.disclosures?.runs ?? new Set(),
@@ -856,8 +852,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     worktreeSetup,
   });
   const rows = useStableRows(rawRows, listIdentityKey);
-  // Run status/timestamps churn on every stream event; the shared row context
-  // must not change with them or every timeline row re-renders per event.
+  // Run status/timestamps change per stream event; keep them out of shared row context.
   const runs = useStableHandoffRuns(runsProp);
   const minimapItems = deriveTimelineMinimapItems(rows);
   const restoreRowIndex =
@@ -924,8 +919,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         setPositionedThreadKey(listIdentityKey);
         return;
       }
-      // Index scrolling starts from estimates. Keep the saved row mounted
-      // until its measured position and the DOM agree for two layout frames.
+      // Keep the estimated anchor row mounted until measured and DOM positions agree for two frames.
       let stableFrames = 0;
       const reconcile = () => {
         if (cancelled) return;
@@ -1065,8 +1059,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       composerInset: contentInsetEndAdjustment,
       anchorOffset: CHAT_TIMELINE_ANCHOR_OFFSET,
     });
-  // LegendList lays rows out from layout effects, so a read on the next frame
-  // sees the settled positions.
+  // Read next frame, after LegendList's layout effects settle row positions.
   const contentOverflowFrameRef = useRef<number | null>(null);
   const cancelContentOverflowFrame = () => {
     if (contentOverflowFrameRef.current !== null) {
@@ -1149,8 +1142,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
         rowTop < scrollBottom &&
         rowTop + Math.max(1, rowHeight ?? 1) > scrollTop;
 
-      // Skip no-op attribute writes: this runs for every strip on every scroll
-      // tick, and rewriting an unchanged attribute still dirties style state.
+      // Unchanged attribute writes still dirty styles on every scroll tick.
       const next = inView ? "true" : "false";
       if (strip && strip.dataset.inView !== next) {
         strip.dataset.inView = next;
@@ -1382,8 +1374,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     contentInsetEndAdjustment,
   });
 
-  // LegendList moves rows one commit late; per-row providers prevent outgoing rows from
-  // receiving the next thread's context.
+  // LegendList moves rows one commit late; per-row providers prevent thread context leaks.
   const renderItem = ({ item }: { item: MessagesTimelineRow }) => (
     <TimelineRowCtx value={sharedState}>
       <div className="messages-timeline-row-frame">
@@ -1537,8 +1528,7 @@ function keyExtractor(item: MessagesTimelineRow) {
   return item.id;
 }
 
-// LegendList averages sizes by type. Length buckets prevent long replies from inflating
-// short-row estimates and causing nested-update loops.
+// LegendList averages by type; length buckets prevent inflated estimates and nested-update loops.
 function getItemType(item: MessagesTimelineRow) {
   if (item.kind !== "message") return item.kind;
   const lengthBucket = Math.max(0, Math.floor(Math.log2(item.message.text.length / 1000)));
@@ -1567,8 +1557,7 @@ function timelineMinimapEventTargetsPreview(target: EventTarget): boolean {
   return target instanceof Element && target.closest("[data-minimap-preview]") !== null;
 }
 
-// A release outside the window can skip `mouseup`, so the next button-free
-// `mousemove` also counts.
+// Releasing outside the window can skip mouseup; also check button-free mousemove.
 function onMouseButtonsReleased(onRelease: () => void): () => void {
   const check = (event: globalThis.MouseEvent) => {
     if (event.buttons !== 0) return;
@@ -1763,7 +1752,6 @@ function TimelineMinimap({
               const activeDistance =
                 resolvedActiveIndex === null ? null : Math.abs(index - resolvedActiveIndex);
               return (
-                // Scroll and streaming updates animate many strips; use only transform and opacity.
                 <span
                   aria-hidden="true"
                   className={cn(
@@ -2029,8 +2017,7 @@ function ContextCompactionTimelineRow({
 
 function UserVideoAttachment({ file }: { readonly file: ChatFileAttachment }) {
   const ctx = use(TimelineRowCtx);
-  // Row updates rebuild attachment objects, so the asset follows only the
-  // fields it reads.
+  // Row updates rebuild attachment objects; depend on fields.
   const { downloadable, id, mimeType, name } = file;
   const environmentId = ctx.activeThreadEnvironmentId;
   const asset =
@@ -2165,8 +2152,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       messageId: row.message.id,
     });
     if (!fragment) return;
-    // Claim the copy: without preventDefault the browser default overwrites the
-    // custom MIME type. The default content must then be written back explicitly.
+    // Default copy overwrites custom MIME data; prevent it and write default content explicitly.
     const payload = chatMarkdownClipboardPayload(selection);
     event.preventDefault();
     event.clipboardData.setData("text/plain", payload?.text ?? selection.toString());
@@ -3383,8 +3369,7 @@ function ExpandedWorkGroupEntries({
   const [expandedContentHeight, setExpandedContentHeight] = useState(0);
   const [fades, setFades] = useState({ top: false, bottom: false, viewportHeight: 0 });
   const [appendState, setAppendState] = useState({ entries, follow: false });
-  // Capture the pre-change edge once per incoming array, before new layout
-  // metrics arrive. Edge/viewport changes never turn a status update into a follow.
+  // Capture the edge before new layout metrics; later viewport changes must not trigger following.
   if (appendState.entries !== entries) {
     setAppendState({
       entries,
@@ -3430,8 +3415,7 @@ function ExpandedWorkGroupEntries({
     const list = listRef.current;
     const element = list?.getScrollableNode();
     if (initialScrollIndex && list && element) {
-      // Bootstrap can report the restored target before the DOM has applied it.
-      // Reconcile once at load, before releasing the measured anchor row.
+      // Bootstrap can report unapplied positions; reconcile before releasing the anchor row.
       const offset = Math.max(
         0,
         Math.min(list.getState().scroll, element.scrollHeight - element.clientHeight),
@@ -3487,8 +3471,7 @@ function ExpandedWorkGroupEntries({
             appendState.follow ? { animated: false, on: { dataChange: true } } : false
           }
           maintainScrollAtEndThreshold={1 / Math.max(1, fades.viewportHeight)}
-          // Measure the restored row even when an intra-row offset puts its
-          // estimated bounds outside the list's small bootstrap render window.
+          // Intra-row offsets can put the restored row outside the estimated bootstrap window.
           {...(restoringPosition && initialScrollIndex
             ? { alwaysRender: { indices: [initialScrollIndex.index] } }
             : {})}
@@ -3963,7 +3946,6 @@ function WorkGroupHeader(props: {
   );
 }
 
-/** Subscribe here so expand/collapse re-renders only this section. */
 const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection({
   turnSummary,
   routeThreadKey,
@@ -4713,8 +4695,7 @@ function useStableHandoffRuns(
 
 type MessagesTimelineRowsInput = MessagesTimelineRowsProjection["input"];
 
-// Expanded-id sets can be rebuilt during render; comparing them by content keeps
-// the render-time state update below from repeating forever.
+// Compare rebuilt expanded-id sets by content to prevent render-time update loops.
 function sameRowsInput(left: MessagesTimelineRowsInput, right: MessagesTimelineRowsInput): boolean {
   for (const key of Object.keys(right) as Array<keyof MessagesTimelineRowsInput>) {
     const previous = left[key];

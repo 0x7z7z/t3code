@@ -12,8 +12,7 @@ let mermaidModulePromise: Promise<Mermaid> | null = null;
 let renderQueue: Promise<unknown> = Promise.resolve();
 let nextDiagramId = 0;
 const MAX_CACHED_RENDERS = 64;
-// Pending renders are never evicted, because use() must get the same promise on
-// retry.
+// Do not evict pending renders: use() retries need the same promise.
 const renderCache = new Map<string, Promise<MermaidRenderResult>>();
 const settledRenders = new WeakSet<Promise<MermaidRenderResult>>();
 
@@ -30,7 +29,6 @@ function loadMermaid(): Promise<Mermaid> {
 const REMOTE_CSS_URL = /url\(\s*(?!['"]?#)[^)]*\)/gi;
 let purifier: ReturnType<typeof DOMPurify> | null = null;
 
-// Allow KaTeX MathML, excluding annotations and trusted-input images; unwrap semantics.
 const KATEX_MATHML_TAGS = new Set([
   "math",
   "menclose",
@@ -86,8 +84,7 @@ const KATEX_MATHML_ATTRIBUTES = new Set([
   "voffset",
 ]);
 
-// PR descriptions are untrusted; block navigation, script and remote fetches beyond Mermaid's
-// strict sanitization.
+// Untrusted PR descriptions need stricter sanitization than Mermaid provides.
 export function sanitizeMermaidSvg(svg: string): string {
   if (!purifier) {
     purifier = DOMPurify(window);
@@ -102,8 +99,7 @@ export function sanitizeMermaidSvg(svg: string): string {
     });
   }
   const sanitized = purifier.sanitize(svg, {
-    // DOMPurify still only accepts <math> under an HTML parent, here the label
-    // <div> inside <foreignObject>, and checks every MathML child's namespace.
+    // DOMPurify requires an HTML parent for <math> and validates MathML namespaces.
     ADD_TAGS: ["foreignObject", ...KATEX_MATHML_TAGS],
     ADD_ATTR: (attribute, tagName) =>
       KATEX_MATHML_TAGS.has(tagName) && KATEX_MATHML_ATTRIBUTES.has(attribute),
@@ -112,13 +108,11 @@ export function sanitizeMermaidSvg(svg: string): string {
     FORBID_TAGS: ["a", "img", "image", "script"],
     USE_PROFILES: { svg: true, svgFilters: true, html: true },
   });
-  // The expanded image parses this as XML, which has no &nbsp; entity. KaTeX
-  // writes spaces in math as U+00A0, which HTML serialization turns into &nbsp;.
+  // HTML serializes KaTeX spaces as &nbsp;, which expanded-image XML cannot parse.
   return sanitized.replaceAll("&nbsp;", "&#160;");
 }
 
-// Mermaid also lazy-loads diagram chunks inside render(); losing the network
-// there is worth a retry, unlike a syntax error.
+// Mermaid lazy-loads during render(); retry network failures, not syntax errors.
 const CHUNK_LOAD_ERROR = /dynamically imported module|importing a module script|failed to fetch/i;
 
 async function renderMermaid(
@@ -133,13 +127,12 @@ async function renderMermaid(
     return { status: "error", message: "Mermaid failed to load.", retryable: true };
   }
   try {
-    // initialize() mutates global config, so renders run one at a time.
+    // initialize() mutates global config, so serialize renders.
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
       suppressErrorRendering: true,
-      // HTML labels and theme CSS are mounted while Mermaid lays the diagram
-      // out, before sanitizing, so diagram directives must not set them.
+      // Mermaid mounts labels and theme CSS before sanitizing; block directive overrides.
       secure: [
         "secure",
         "securityLevel",
@@ -197,10 +190,7 @@ function mermaidRenderPromise(source: string, theme: "light" | "dark") {
 
 let expandedImageUrl: string | null = null;
 
-/**
- * A blob URL, unlike a data URL, passes the desktop connect-src policy that media
- * save and copy actions fetch through.
- */
+// Desktop save/copy fetches allow blob URLs through connect-src, but reject data URLs.
 function mermaidImageUrl(svg: string): string {
   const svgDocument = new DOMParser().parseFromString(svg, "image/svg+xml");
   const element = svgDocument.documentElement;

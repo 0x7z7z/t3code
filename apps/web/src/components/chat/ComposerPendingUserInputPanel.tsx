@@ -91,11 +91,11 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     optionValue: string;
   } | null>(null);
   const [collapsedQuestionId, setCollapsedQuestionId] = useState<string | null>(null);
-  // The active question keys the shortcut listener, so it must keep its identity across renders.
+  // Keep question identity stable for its shortcut listener.
   const progress = derivePendingUserInputProgress(prompt.questions, answers, questionIndex);
   const activeQuestion = progress.activeQuestion;
   const customAnswerActive = progress.customAnswer.trim().length > 0;
-  // Read here, before the hooks below, so the compiler can keep `activeQuestion` cached.
+  // Read before later hooks to preserve the question's compiler cache.
   const draftSelectedOptions = activeQuestion?.options.map(
     (option) =>
       !customAnswerActive && progress.selectedOptionValues.includes(option.value ?? option.label),

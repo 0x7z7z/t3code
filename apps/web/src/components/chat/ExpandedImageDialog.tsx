@@ -101,7 +101,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
     setImageOffset((current) => current + direction);
   };
 
-  // Restore opener focus so unmounting the dialog does not blur and collapse the composer.
+  // Restore opener focus to prevent composer collapse.
   const openerRef = useRef<Element | null>(null);
   useEffect(() => {
     openerRef.current = document.activeElement;
@@ -285,10 +285,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
   );
 });
 
-/**
- * The chat view's open media preview. It lives outside ChatView so opening or
- * closing it renders only the dialog host, not the whole chat chrome.
- */
+// Keep preview state outside ChatView to isolate dialog renders.
 const expandedImagePreviewAtom = Atom.make<{
   readonly threadKey: string;
   readonly preview: ExpandedImagePreview;

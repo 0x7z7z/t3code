@@ -54,10 +54,7 @@ function countRemainder(count: number, named: boolean): string {
   return `${count} ${count === 1 ? "person" : "people"}`;
 }
 
-/**
- * Hosts omit the viewer from actors after reacting. Add You only when count has room; no viewer
- * login is available to deduplicate a non-compliant host.
- */
+/** Hosts omit the viewer from actors; add You only if count has room, since viewer login is unavailable. */
 export function pullRequestReactionTooltip(reaction: PullRequestReaction): string {
   const viewerHasRoom = reaction.actors.length < reaction.count;
   const names =

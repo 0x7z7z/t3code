@@ -39,7 +39,7 @@ export function DraftProjectName({ value }: { value: string }) {
       ref={containerRef}
       className="inline-grid min-w-0 max-w-full overflow-hidden align-baseline whitespace-nowrap"
     >
-      {/* Keep the full name's intrinsic width so fitting the visible text cannot shrink its budget. */}
+      {/* Measure the full name so truncation cannot shrink its own width budget. */}
       <span
         aria-hidden="true"
         className="invisible col-start-1 row-start-1 min-w-0 overflow-hidden select-none"

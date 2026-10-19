@@ -310,7 +310,7 @@ function Section({
           sectionTop: section.getBoundingClientRect().top,
           headingTop: heading.getBoundingClientRect().top,
         });
-        // Adjust scroll before paint so collapsing keeps the pressed heading in place.
+        // Adjust before paint to keep the collapsed heading in place.
         if (target !== null) scroller.scrollTop = target;
       }
     }
@@ -426,14 +426,13 @@ export function PullRequestSummaryTab({
     ) : null;
   // Verdicts outside the visible comment window still count.
   const reviewOutcomes = latestPullRequestReviewOutcomes(detail.comments, detail.commits);
-  // Hosts vary login casing within responses; normalize to avoid duplicate reviewers and lost
-  // verdicts.
+  // Host login casing varies; normalize to preserve verdicts and deduplicate reviewers.
   const outcomeByLogin = new Map(
     reviewOutcomes.flatMap((entry) =>
       entry.actor ? [[reviewerKey(entry.actor.login), entry] as const] : [],
     ),
   );
-  // Hosts remove reviewers from the requested set after review; include submitted verdicts too.
+  // Hosts remove reviewed actors from requests; include submitted verdicts.
   const reviewerEntries = [
     ...detail.reviewers.map((actor) => ({
       key: actor.login,
@@ -471,7 +470,7 @@ export function PullRequestSummaryTab({
   });
   const [bodyScope, setBodyScope] = useState<string | null>(null);
   const [bodySaving, setBodySaving] = useState(false);
-  // Scope comment ids by pull request: hosts, especially Azure DevOps threads, can reuse them.
+  // Hosts can reuse comment ids across pull requests.
   const [commentScope, setCommentScope] = useState<{
     readonly pullRequest: string;
     readonly commentId: string;

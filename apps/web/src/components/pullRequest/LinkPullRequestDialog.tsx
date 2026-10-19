@@ -23,7 +23,7 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 
-/** Host the dialog in chat so it survives the command palette closing after activation. */
+// Host in chat to survive command palette dismissal.
 const linkPullRequestDialogThreadAtom = Atom.make<ScopedThreadRef | null>(null).pipe(
   Atom.keepAlive,
   Atom.withLabel("pull-requests:link-dialog-thread"),

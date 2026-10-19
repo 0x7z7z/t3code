@@ -313,10 +313,7 @@ export function pullRequestReviewOutcomeToneClassName(outcome: PullRequestReview
   return REVIEW_OUTCOME_PRESENTATION[outcome].toneClassName;
 }
 
-/**
- * Mix faded verdict rings with the background: translucent rings let neighbouring avatars show
- * through the 4px overlap.
- */
+// Mix rings with the background to prevent avatars showing through their overlap.
 export function pullRequestReviewOutcomeRingClassName(
   outcome: PullRequestReviewOutcome,
   stale = false,

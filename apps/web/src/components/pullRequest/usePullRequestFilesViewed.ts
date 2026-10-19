@@ -56,12 +56,11 @@ export function usePullRequestFilesViewed(options: {
   const requests = useRef(0);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Environment ids are part of the scope because different servers can reuse project ids.
+  // Project ids can repeat across environments.
   const scopeKey = `${environmentId} ${reference.projectId} ${reference.repository} ${reference.number}`;
   const scope = useRef(scopeKey);
 
-  // Retire presses only after a read newer than the acknowledged write, even if an older answer
-  // already agrees.
+  // Retire presses only after a post-write read, even if an older response agrees.
   const answeredFrom = useRef<Map<string, FileViewedStates | null>>(new Map());
   const committedStates = useRef(states);
 
@@ -77,7 +76,7 @@ export function usePullRequestFilesViewed(options: {
     setOverlay((current) => settleFileViewedOverlay(current, states, pending, answered));
   }, [states]);
 
-  // Takes the target explicitly so a scope being left still sends its last presses to itself.
+  // Explicit targets keep departing scopes' presses in their original scope.
   const flush = (target: {
     readonly environmentId: EnvironmentId;
     readonly reference: PullRequestRef;
@@ -106,8 +105,7 @@ export function usePullRequestFilesViewed(options: {
         }
         return;
       }
-      // Answered for from the next read on, whatever it says. A push landing between the write
-      // and that read comes back as `dismissed`, and the press must not stand over it.
+      // The next read can report dismissed after a push; retire presses regardless of its value.
       for (const path of mine) answeredFrom.current.set(path, committedStates.current);
       refresh();
     });
@@ -116,7 +114,6 @@ export function usePullRequestFilesViewed(options: {
   const currentTarget = useEffectEvent(() => ({ environmentId, reference }));
   const flushTarget = useEffectEvent(flush);
 
-  // Flush remaining presses to the departing scope before clearing state.
   useEffect(() => {
     const leaving = currentTarget();
     scope.current = scopeKey;
@@ -132,7 +129,6 @@ export function usePullRequestFilesViewed(options: {
     };
   }, [scopeKey]);
 
-  // Handed to every file header the viewer draws; a new identity would rebuild all of them.
   const setViewed = useStableCallback((path: string, viewed: boolean) => {
     setOverlay((current) => new Map(current).set(path, viewed));
     queued.current.set(path, viewed);

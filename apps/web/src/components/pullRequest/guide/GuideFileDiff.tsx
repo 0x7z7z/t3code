@@ -19,7 +19,7 @@ export function GuideFileDiff({
   loadDiffFiles: FileDiffContentsLoader;
 }) {
   const { resolvedTheme } = useTheme();
-  // Expansion mutates diff metadata; clone it so excerpts retain the original patch.
+  // Expansion mutates metadata; clone to preserve excerpt patches.
   const expandable = cloneFileDiffMetadata(file);
   const options = {
     diffStyle: "unified" as const,

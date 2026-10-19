@@ -316,10 +316,7 @@ export interface TimelineEndState {
   readonly scrollLength?: number;
 }
 
-/**
- * Streaming can make strict isAtEnd flicker false for a frame; re-arm near the real content
- * bottom.
- */
+// Streaming can briefly unset isAtEnd; re-arm near the content bottom.
 const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 
 export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boolean | undefined {
@@ -330,8 +327,7 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   if (contentLength === undefined || scroll === undefined || scrollLength === undefined) {
     return state.isAtEnd;
   }
-  // The composer inset cancels its hidden viewport area. LegendList subtracts it again, so its
-  // isAtEnd is only a fallback.
+  // LegendList double-subtracts the composer inset, so its isAtEnd is only a fallback.
   return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
@@ -709,10 +705,7 @@ interface SupersededAttemptFold {
   readonly hiddenEntryIds: ReadonlySet<string>;
 }
 
-/**
- * Interrupted streams can also be `completed`; only the attempt's last output proves the reply
- * finished.
- */
+// Interrupted streams can be `completed`; only the attempt's last output proves completion.
 function completeSupersededReplyEntryIds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
 ): ReadonlySet<string> {
@@ -795,10 +788,7 @@ function deriveSupersededAttemptFolds(
   return foldsByAnchorEntryId;
 }
 
-/**
- * Use the turn lifecycle: after send, the previous turn remains active until the server creates
- * the next one.
- */
+// After send, the previous turn stays active until the server creates its replacement.
 function deriveUnsettledRunId(
   latestRun: TimelineLatestRun | null,
   runningRunId: RunId | null = null,
@@ -815,10 +805,7 @@ function deriveUnsettledRunId(
   return isSettled ? null : latestRun.runId;
 }
 
-/**
- * Children can outlive their launching turn or attempt; keep their cards visible while the
- * waiting footer counts them.
- */
+// Children can outlive their launching turn; keep cards visible while the footer counts them.
 function liveSubagentCardEntryIds(entries: ReadonlyArray<TimelineEntry>): ReadonlySet<string> {
   const visible = new Set<string>();
   let batch: Array<Extract<TimelineEntry, { kind: "event" }>> = [];
@@ -881,10 +868,7 @@ function responseBoundaryRunId(entry: TimelineEntry): RunId | null {
   return null;
 }
 
-/**
- * Promptless provider restarts replace the native turn; group them under the initiating prompt
- * until settled.
- */
+// Group promptless restarts under the initiating prompt until settled.
 function lastResponseBoundaryIndex(timelineEntries: ReadonlyArray<TimelineEntry>): number {
   return timelineEntries.findLastIndex(timelineEntryStartsResponse);
 }
@@ -973,17 +957,14 @@ function deriveTurnFolds(input: {
     entries: Array<TimelineEntry>;
     terminalEntry: Extract<TimelineEntry, { kind: "message" }> | null;
     hasStreamingMessage: boolean;
-    /**
-     * Entry timestamps omit provider startup and may collapse steered turns to one
-     * instantaneous message.
-     */
+    // Entry timestamps omit startup and can collapse steered turns to an instant.
     startBoundary: string | null;
     anchorEntryId: string;
   }
   const groupsByRunId = new Map<RunId, TurnGroup>();
   const runlessFailedKeys = new Set<RunId>();
 
-  // Key runless responses per prompt so the first V2 run cannot unfold every imported turn.
+  // Key runless responses per prompt to prevent V2 runs unfolding imported turns.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
   let pendingBoundary: { createdAt: string; anchorEntryId: string } | null = null;
@@ -1002,7 +983,7 @@ function deriveTurnFolds(input: {
     if (!ownRunId) {
       continue;
     }
-    // Resumed subagent items retain their original position and must fold with that turn.
+    // Resumed subagents keep their position and fold with their original turn.
     const runId =
       responseKey !== null && (promptIndexByRunId.get(ownRunId) ?? -1) > index
         ? responseKey
@@ -1094,7 +1075,7 @@ function deriveTurnFolds(input: {
 
     const isLatestInterruptedTurn =
       input.latestRun?.runId === runId && input.latestRun.status === "interrupted";
-    // A steer can leave trailing work after the terminal message; use whichever ended last.
+    // Steering can leave work after the terminal message.
     const lastEntryEnd =
       lastEntry.kind === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
     const elapsedMs =
@@ -1218,8 +1199,7 @@ function attachTrailingToolGroupsToAssistant(
   return result;
 }
 
-// Delegation already has a durable child card. Remove its tool row only after
-// the returned task ID identifies that child; pending calls can share a prompt.
+// Hide delegation rows only when task ids identify durable child cards; prompts can repeat.
 function withoutSubagentDelegationRows(entries: ReadonlyArray<TimelineEntry>) {
   const childrenByRun = new Map<RunId, Set<string>>();
   for (const entry of entries) {
@@ -1307,7 +1287,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
-  /** Provider-native subagent work has no app run; treat runless entries as the live response. */
+  /** Native subagent work has no app run; runless entries form the live response. */
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
@@ -1964,7 +1944,7 @@ export interface MessagesTimelineRowsProjection {
   readonly rows: MessagesTimelineRow[];
 }
 
-/** Imported V1 turns fold under synthetic keys, which their entry run ids cannot open. */
+/** Imported V1 turns require synthetic fold keys instead of entry run ids. */
 export function timelineEntryTurnFoldRunId(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -2022,8 +2002,7 @@ function replaceStreamingMessageRows(
     expandedWorkGroupIds,
     ...context
   } = input;
-  // V2 shell and checkpoint selectors produce fresh summaries for each event.
-  // Equivalent summaries must not invalidate a text-only projection.
+  // Shell/checkpoint selectors rebuild summaries per event; compare contents.
   if (
     timelineEntries.length !== previousEntries.length ||
     !shallow(previousContext, context) ||
@@ -2153,7 +2132,7 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
       return a.proposedPlan === (b as typeof a).proposedPlan;
 
     case "html-render": {
-      // Entries rebuild on any tool update; an equal page must keep its mounted frame.
+      // Tool updates rebuild entries; preserve frames for unchanged pages.
       const bh = b as typeof a;
       return a.createdAt === bh.createdAt && htmlRenderReferencesEqual(a.htmlRender, bh.htmlRender);
     }

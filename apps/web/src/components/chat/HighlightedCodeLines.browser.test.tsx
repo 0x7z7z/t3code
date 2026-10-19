@@ -11,7 +11,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// React writes inline styles through CSSOM, so normalize Shiki's style strings the same way.
+// Normalize Shiki styles through CSSOM, as React does.
 function normalizedHtml(html: string) {
   const host = document.createElement("div");
   host.innerHTML = html;

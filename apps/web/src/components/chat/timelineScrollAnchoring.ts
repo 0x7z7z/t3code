@@ -73,10 +73,7 @@ export function getRowBottom(state: TimelineListMeasurementState, index: number)
   return top + Math.max(1, height);
 }
 
-/**
- * Exclude the composer inset spacer by measuring the last row. Unknown geometry counts as
- * fitting.
- */
+/** Measure the last row to exclude the composer spacer. Unknown geometry counts as fitting. */
 export function timelineContentOverflowsViewport(
   state: TimelineListMeasurementState | undefined,
   input: { readonly composerInset: number; readonly anchorOffset: number },

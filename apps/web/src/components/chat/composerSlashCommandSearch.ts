@@ -12,10 +12,7 @@ type SlashSearchItem = Extract<
   { type: "slash-command" | "provider-slash-command" | "skill" }
 >;
 
-/**
- * Providers expand slash commands only at the start of the whole message; elsewhere they
- * receive literal text.
- */
+/** Providers expand slash commands only at the message start. */
 export function slashCommandItemsForPromptPosition(
   items: ReadonlyArray<SlashSearchItem>,
   isAtPromptStart: boolean,

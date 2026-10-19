@@ -173,7 +173,7 @@ describe("host editor access", () => {
   it("uses the selected grant for both the button and a retained shortcut", async () => {
     state.allowed.add(selected);
     await renderPicker();
-    // Revoke without rerendering: the mounted button and shortcut must re-check the grant.
+    // Revoke without rerendering to exercise execution-time grant checks.
     state.allowed.delete(selected);
     state.allowed.add(primary);
     await click(primaryButton());

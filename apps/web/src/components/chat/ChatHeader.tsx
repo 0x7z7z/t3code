@@ -60,8 +60,7 @@ export function resolveRenameCommit(input: {
   return { action: "commit", title: trimmed };
 }
 
-// The native desktop menu swallows input, so wait through the OS double-click interval to allow
-// rename.
+// Delay the input-swallowing native menu through the double-click rename interval.
 const TITLE_MENU_OPEN_DELAY_MS = 500;
 export const ChatHeader = memo(function ChatHeader({
   activeThreadEnvironmentId,
