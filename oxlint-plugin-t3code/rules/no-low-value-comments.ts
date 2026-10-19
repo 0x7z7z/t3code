@@ -7,6 +7,9 @@ const DIVIDER_LINE_PATTERN = /^(?:[-=*#~_/+]{3,}.*|.*[-=*#~_]{3,})$/u;
 const TEST_STEP_PATTERN = /^(?:arrange|act|assert|given|when|then)\s*[:.]?$/iu;
 const TASK_MARKER_PATTERN = /\b(?:TODO|FIXME|XXX|HACK)\b/u;
 const TASK_LINK_PATTERN = /#\d+|https?:\/\//u;
+// `owner/repo#123` names an external tracker; a bare `#123` is our own history.
+const BARE_ISSUE_REF_PATTERN = /(?<![\w/&#-])#\d{3,6}(?![\w-])/u;
+const CODE_SPAN_PATTERN = /`[^`]*`/gu;
 const JSDOC_TYPE_PATTERN = /^@(?:param|returns?|type|typedef)\s+\{/u;
 const EMPTY_JSDOC_TAG_PATTERN = /^@(?:param(?:\s+\[?[\w$.]+\]?)?|returns?)$/u;
 const COMMENTED_CODE_PATTERN =
@@ -86,6 +89,12 @@ export default defineRule({
       }
       if (TASK_MARKER_PATTERN.test(text) && !TASK_LINK_PATTERN.test(text)) {
         return "Link the issue that tracks this, or drop the marker.";
+      }
+      if (
+        !TASK_MARKER_PATTERN.test(text) &&
+        BARE_ISSUE_REF_PATTERN.test(text.replace(CODE_SPAN_PATTERN, ""))
+      ) {
+        return "Drop the PR or issue number; git history records it. Keep the reason.";
       }
       if (isTypeScript && lines.some((line) => JSDOC_TYPE_PATTERN.test(line))) {
         return "Drop the JSDoc type; TypeScript already has it.";
