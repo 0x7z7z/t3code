@@ -88,8 +88,6 @@ const layerOrchestratorToolkit = McpHttpServer.layerOrchestratorToolkit.pipe(
   Layer.provide(Layer.mock(GitVcsDriver.GitVcsDriver)({})),
 );
 
-// Effect returns a declared tool failure as `isError` with its encoded payload
-// as JSON text, never as `structuredContent`.
 const declaredFailure = (result: McpSchema.CallToolResult) => {
   const text = result.content[0];
   return result.isError === true && text?.type === "text" ? JSON.parse(text.text) : undefined;
@@ -1535,9 +1533,7 @@ describe("orchestrator MCP toolkit", () => {
             });
             expect(yield* Ref.get(scheduledStore)).toHaveLength(0);
 
-            // OpenCode 1.15 has emitted this exact nested-object-as-JSON-string
-            // shape. Decode it at the MCP boundary rather than failing a task
-            // the model otherwise specified correctly.
+            // OpenCode 1.15 emits nested objects as JSON strings.
             const serializedScheduleCall = yield* invoke("schedule_task", {
               prompt: "check for new pull requests",
               schedule: '{"type":"interval","everyMs":3600000}',
@@ -1912,9 +1908,6 @@ describe("orchestrator MCP toolkit", () => {
             yield* invoke("task_status", { taskId: activeChildFollowup.taskId });
             yield* Ref.set(continuationOffers, []);
 
-            // A send into a child run the server started has no task to join.
-            // It gets its own task only when it starts a new attempt; a steer
-            // into the running attempt leaves no run that could settle one.
             const childSteerText = "Include the parent's latest guidance before finishing.";
             const steerIntoUntaskedChildRun = (
               target: { readonly providerInstanceId: ProviderInstanceId; readonly model: string },
@@ -1987,8 +1980,7 @@ describe("orchestrator MCP toolkit", () => {
               { providerInstanceId: claudeInstanceId, model: claudeModel },
               "steer-untasked-run",
             );
-            // A steer that misses the turn is sent again as its own run, so
-            // end the turn only once the steer reached it.
+            // End the turn only after the steer arrives, or it retries as a separate run.
             yield* Deferred.await(steerReceived);
             steerReceivedGates.delete(childSteerText);
             yield* invoke("t3_thread_interrupt", {

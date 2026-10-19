@@ -352,9 +352,7 @@ describe("readAntigravityUsage", () => {
       const cache = makeAntigravityUsageCache();
       assert.deepStrictEqual((yield* readAntigravityUsage(dir, 0, cache)).errors, []);
 
-      // ctime has the kernel's timestamp granularity, which can be a few
-      // milliseconds, so repeat the forged rewrite until it lands on a later tick
-      // than the cached read, as any real rewrite does.
+      // Repeat rewrites until ctime advances past the cached read; kernel timestamp granularity can span milliseconds.
       const stat = () => Effect.promise(() => NodeFSP.stat(path));
       const cached = yield* stat();
       do {

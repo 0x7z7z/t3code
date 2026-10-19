@@ -1,7 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-// The Windows cleanup shell must outlive this process (it deletes the
-// directory this executable runs from), which Effect's scoped ChildProcess
-// cannot express: it kills the child when the scope closes.
+// Windows cleanup must outlive this executable to delete its directory; scoped ChildProcess kills children on exit.
 import * as NodeChildProcess from "node:child_process";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -35,10 +33,7 @@ export interface UninstallPlan {
   readonly userdataDir: string;
 }
 
-/**
- * Only a launcher that points into this home's `runtime/versions` is claimed: a plain copy of the
- * executable, or a launcher for another home, is not ours to delete.
- */
+/** Delete only launchers targeting this home's runtime/versions. */
 export const findOwnedLauncher = Effect.fn("cli.uninstall.find_launcher")(function* (input: {
   readonly launchedAs: string | undefined;
   readonly versionsDir: string;

@@ -552,8 +552,7 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
 
   it.effect("accepts an encoded Content-Length when the body is compressed", () =>
     Effect.gen(function* () {
-      // dl.google.com gzips the archive and reports the encoded size. The decoded
-      // stream is still checked byte for byte and by hash.
+      // dl.google.com reports the gzip-encoded size; byte and hash checks use the decoded stream.
       const { installation, validations } = yield* makeHarness({
         contentLength: completeArchive.byteLength - 1_000,
         contentEncoding: "gzip",
@@ -825,8 +824,7 @@ it.layer(NodeServices.layer)("Antigravity installation", (it) => {
       }),
   );
 
-  // Real posix executables in a real temp dir, resolved by a linux-mocked
-  // PATH walk; a Windows temp path cannot be split on `:`.
+  // The mocked Linux PATH walk needs POSIX paths; Windows temp paths contain colons.
   it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "honors explicit paths and reports invalid overrides without falling back",
     () =>

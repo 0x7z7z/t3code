@@ -211,8 +211,7 @@ export const AntigravityDriver: ProviderDriver<
               : cause,
           ),
         );
-        // Isolate unpacked runtimes so one session's teardown cannot delete a sibling's files.
-        // Windows handles can outlive kill; the next driver start sweeps failed removals.
+        // Isolate each session's unpacked runtime; sweep failed Windows removals at the next start because handles outlive kill.
         const runtimeTempDirectory = yield* Effect.acquireRelease(
           fileSystem.makeTempDirectory({ directory: profile.tempDirectory, prefix: "run-" }).pipe(
             Effect.mapError(
@@ -335,9 +334,7 @@ export const AntigravityDriver: ProviderDriver<
         usesBrowser: antigravityAuthUsesBrowser(auth.authMethod),
       });
 
-      // The probe must not spawn. The agent is a PyInstaller one-file bundle
-      // that unpacks about 1 GB per launch, and the health check runs every
-      // minute.
+      // Never spawn in the minute-by-minute probe; PyInstaller unpacks about 1 GB per launch.
       const probe = Effect.gen(function* () {
         yield* modelCatalog.refreshInBackground;
         if (authConfigIssue !== null) {

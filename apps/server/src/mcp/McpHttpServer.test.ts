@@ -688,7 +688,6 @@ it.effect("keeps the snapshot text under the agent's output ceiling", () =>
       expect(parsed.consoleEntries[0]?.text).toBe("entry 60");
       expect(notice?.type === "text" ? notice.text : "").toContain("accessibilityTree");
       expect(notice?.type === "text" ? notice.text : "").toContain("60 older console entries");
-      // Claude Code shows the model structuredContent instead of the text, so it is bounded too.
       expect(snapshot.structuredContent).toEqual({
         ...parsed,
         omitted: expect.arrayContaining(["60 older console entries"]),
@@ -1014,8 +1013,6 @@ it.effect("registers annotated tools and preserves authenticated request context
         alternateTabId,
       );
 
-      // Arrays and primitives are wrapped so structuredContent stays a JSON object.
-      // Claude Code rejects the whole result otherwise.
       const evaluateTool = server.tools.find(({ tool }) => tool.name === "preview_evaluate");
       expect(evaluateTool?.tool.outputSchema).toMatchObject({ type: "object" });
       const evaluated = yield* server

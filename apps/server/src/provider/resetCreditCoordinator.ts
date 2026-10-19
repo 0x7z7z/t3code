@@ -26,13 +26,11 @@ export class ResetCreditCoordinator extends Context.Service<
 >()("t3/provider/resetCreditCoordinator") {}
 
 /** @public */
-/** @public Service construction is part of the canonical Effect module API. */
 export const make = Effect.gen(function* () {
   const crypto = yield* Crypto.Crypto;
   const statesRef = yield* Ref.make<ReadonlyMap<string, AccountRedemptionState>>(new Map());
 
-  // Get-or-create through one Ref.modify so two first redemptions for the
-  // same account cannot each install their own lock.
+  // Create account locks atomically so concurrent first redemptions cannot use separate locks.
   const stateFor = Effect.fn("ResetCreditCoordinator.stateFor")(function* (accountKey: string) {
     const existing = (yield* Ref.get(statesRef)).get(accountKey);
     if (existing) return existing;

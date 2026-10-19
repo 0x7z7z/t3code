@@ -331,11 +331,7 @@ interface ServerDownload {
   readonly completedAt: string;
 }
 
-/**
- * Operations an agent may run on any tab in its thread, even while a human
- * drives it. Evaluate is not one: page script can change anything, so it needs
- * the same control as clicking.
- */
+/** Read-only operations remain available during human control; evaluate requires control because scripts can mutate the page. */
 const READ_OPERATIONS: ReadonlySet<PreviewAutomationRequest["operation"]> = new Set([
   "status",
   "snapshot",
@@ -381,9 +377,7 @@ const modifiersOf = (message: Record<string, unknown>) => {
   return Number.isInteger(value) && value >= 0 && value < 16 ? value : 0;
 };
 
-// Cmd shortcuts from Apple viewers are no editing shortcut for Linux or headless
-// Chromium, so they carry the command. Ctrl already works natively on Linux,
-// except copy and cut, which headless Chromium only runs as commands.
+// Linux/headless Chromium needs commands for Cmd editing shortcuts and Ctrl copy/cut.
 const editingCommand = (key: string, modifiers: number) => {
   const modifier = modifiers & 0b0111;
   if (modifier !== 2 && modifier !== 4) return null;
@@ -407,10 +401,7 @@ const editingCommand = (key: string, modifiers: number) => {
 
 const CLIPBOARD_TEXT_LIMIT = 1024 * 1024;
 const CLIPBOARD_WORLD = "t3-preview-clipboard";
-// Headless Chromium shares one clipboard between every context, so the copy
-// a viewer's copy or cut key makes is read from this world instead of the
-// clipboard. Page scripts cannot see the world, and only a copy made while a
-// real key is handled counts.
+// Chromium shares its clipboard across contexts; capture real copy/cut keys in a page-inaccessible world instead.
 const CLIPBOARD_SCRIPT = `(() => {
   let keying = false;
   let copied = "";
@@ -505,8 +496,7 @@ const make = Effect.gen(function* () {
       : null;
 
   const updateFileChooserInterception = (tab: ServerTab) => {
-    // Native desktop views use the OS picker. Only agents and streamed controllers
-    // have an uploader that can answer an intercepted request.
+    // Only agents and streamed controllers can answer intercepted uploads; native desktop views use the OS picker.
     const intercept = !tab.desktop || tab.agentOperating || tab.control.controller !== null;
     if (intercept === tab.fileChooserIntercepted) return;
     tab.fileChooserIntercepted = intercept;
@@ -736,8 +726,7 @@ const make = Effect.gen(function* () {
     if (!desktop) await prepareContext(context);
     const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
     const cdp = await context.newCDPSession(page);
-    // The desktop's page is already a normal browser. A popup's first request
-    // went out before it became a tab; everything after presents as Chrome.
+    // Desktop pages already present as Chrome; popups' initial requests predate tab adoption.
     if (!desktop) await presentAsChrome(cdp, host);
     if (!desktop) await recordCopies(cdp);
     page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
@@ -817,9 +806,7 @@ const make = Effect.gen(function* () {
         timestamp: new Date().toISOString(),
       });
       if (!isMainNavigation(request)) return;
-      // A navigation a newer one replaced leaves the status to the newer one. A
-      // popup's first request can predate the listener, so it is untracked and
-      // superseded by any tracked one.
+      // Newer navigations own status; untracked initial popup requests yield to any tracked navigation.
       const generation = navigationGenerations.get(request) ?? 0;
       if (generation !== tab.navigationGeneration) return;
       // An aborted navigation is usually a download; its `download` event settles the status.
@@ -1105,11 +1092,7 @@ const make = Effect.gen(function* () {
     });
   };
 
-  /**
-   * A frame in its own process, such as one with an `Origin-Agent-Cluster`
-   * header, is out of the page session's reach, so it records copies through
-   * its own session until that target closes.
-   */
+  /** Out-of-process frames need their own copy-recording session until target closure. */
   const recordFrameCopies = async (tab: ServerTab, frame: Frame) => {
     if (frame === tab.page.mainFrame() || tab.frameSessions.has(frame)) return;
 
@@ -1742,8 +1725,7 @@ const make = Effect.gen(function* () {
               : "The requested server preview tab does not exist.",
           );
         }
-        // Only an explicit tabId reuses a tab this session did not open; a tab
-        // it last read (such as the user's) is not taken over implicitly.
+        // Reusing another session's tab requires explicit tabId; reading it grants no implicit takeover.
         const existing =
           found && (request.tabIdExplicit || found.control.agentId === request.agentSessionId)
             ? found
@@ -1850,8 +1832,7 @@ const make = Effect.gen(function* () {
       dropTab(tab, false);
       return {};
     }
-    // A click can be waiting for its dialog. Resolve it outside the serial queue,
-    // with the same owner check, so the operation can finish and control can drain.
+    // Resolve dialogs outside the queue, with ownership checked, to unblock waiting clicks.
     if (request.operation === "dialog") {
       if (tab.control.controller !== null)
         throw new BrowserControlInterrupted("A human controls this tab.", "humanControl");
@@ -2253,8 +2234,7 @@ const make = Effect.gen(function* () {
           // Dropped frames must still release Chromium.
           if (Queue.offerUnsafe(output, next)) return;
           if (next._tag === "frame") runFork(next.ack);
-          // State a stalled viewer cannot miss replaces its backlog. It runs
-          // synchronously so an older replacement can never land after a newer one.
+          // Replace stalled viewers' backlogs synchronously so older state cannot overtake newer state.
           else if (next._tag === "gone" || next._tag === "control" || next._tag === "fileChooser") {
             const dropped = Effect.runSyncExit(Queue.clear(output));
             if (dropped._tag === "Failure") return;
@@ -2358,8 +2338,7 @@ const make = Effect.gen(function* () {
       });
       broadcastViewport(tab);
       yield* Effect.promise(() => startScreencast(1));
-      // An idle page does not repaint for a new screencast, so the viewer
-      // starts from a still unless a live frame beat it.
+      // Idle pages do not repaint on screencast start; seed a still unless a live frame arrived.
       if (!screencastStarted) yield* Effect.promise(pushStill);
       return {
         output,
@@ -2422,9 +2401,7 @@ const make = Effect.gen(function* () {
     ),
     Effect.forkScoped,
   );
-  // The page came back, for example after its DevTools closed. Reconnect now
-  // rather than on the next viewer or agent, or the tab's URL and title stop
-  // reaching every client in the meantime.
+  // Reconnect returned pages immediately so all clients keep receiving URL and title changes.
   yield* desktopChannel.attached.pipe(
     Stream.runForEach((key) =>
       Effect.gen(function* () {

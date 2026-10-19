@@ -195,9 +195,7 @@ const readDatabase = Effect.fn("readDatabase")(function* (
     if (!tables.has("gen_metadata") && !tables.has("steps")) {
       return yield* new AntigravityDatabaseDecodeError({ path });
     }
-    // A rowid seek works whatever the table's indexes. Antigravity declares idx as the INTEGER
-    // PRIMARY KEY, so rowid order is idx order; the sort keeps idx order where rows are stored
-    // otherwise.
+    // Seek by rowid regardless of indexes; idx normally aliases rowid, but sort for layouts where it does not.
     const readMetadata = Effect.fnUntraced(function* (
       query: string,
       pageRows: number,
@@ -214,8 +212,7 @@ const readDatabase = Effect.fn("readDatabase")(function* (
           }>(query, [after, pageRows])
           .pipe(Effect.withTracerEnabled(false));
         for (const row of rows) {
-          // Skipped here rather than in SQL, so a statement never scans past
-          // more than one page of steps that have no metadata.
+          // Filter outside SQL to bound scans to one page, including rows without metadata.
           if (step && row.data === null) continue;
           const idx = row.idx;
           if (typeof idx !== "number") {
@@ -323,8 +320,7 @@ interface CachedDatabase {
   readonly candidates: readonly UsageCandidate[];
 }
 
-/** Cache fingerprints include DB and WAL size/mtime/ctime: rows land in WAL, and ctime
- * detects content writes that restore mtime. Keys are canonical paths. */
+/** Fingerprint canonical DB/WAL paths by size, mtime and ctime; WAL holds new rows, and ctime catches restored mtimes. */
 export const makeAntigravityUsageCache = () => new Map<string, CachedDatabase>();
 
 export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* (

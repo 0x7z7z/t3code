@@ -4,10 +4,7 @@ import * as NodeTty from "node:tty";
 
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-/**
- * Electron's Windows GUI executable leaves stdin unset under ELECTRON_RUN_AS_NODE.
- * Reopen console input only for the launcher; preserve redirected input and non-console output.
- */
+/** Electron's Windows GUI executable leaves stdin unset under ELECTRON_RUN_AS_NODE. */
 export function needsConsoleStdin(input: {
   readonly platform: NodeJS.Platform;
   readonly env: NodeJS.ProcessEnv;
@@ -32,10 +29,7 @@ const isOpen = (fd: number) => {
   }
 };
 
-/**
- * Call before anything reads `process.stdin`. Returns the reopened console descriptor
- * for interactive children, or undefined without changing stdin.
- */
+/** Call before reading process.stdin. Returns the reopened fd for children, or undefined without changing stdin. */
 export function attachConsoleStdin(): number | undefined {
   const needed = needsConsoleStdin({
     platform: HostProcess.Platform.defaultValue(),
@@ -43,8 +37,7 @@ export function attachConsoleStdin(): number | undefined {
     stdinOpen: isOpen(0),
     stdoutIsConsole: NodeTty.isatty(1),
   });
-  // The marker describes this process's own start; a server started here
-  // must not pass it on to the shells and `t3` runs it spawns.
+  // The launcher marker must not propagate to child shells or t3 processes.
   delete process.env.T3CODE_DESKTOP_CLI_LAUNCHER;
   if (!needed) return undefined;
   let fd: number;

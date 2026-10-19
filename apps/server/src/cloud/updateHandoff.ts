@@ -26,7 +26,6 @@ export const pendingServiceUpdateExists = Effect.gen(function* () {
   return Option.isSome(stateText) && serviceStateHasPendingUpdate(stateText.value);
 });
 
-// A pending update plus no explicit-stop marker identifies a replacement-server handoff.
 export const pendingUpdateHandoffExists = Effect.gen(function* () {
   if (!(yield* pendingServiceUpdateExists)) {
     return false;

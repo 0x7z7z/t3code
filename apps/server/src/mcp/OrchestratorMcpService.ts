@@ -167,9 +167,7 @@ export interface OrchestratorMcpServiceShape {
     scope: McpInvocationScope,
     input: OrchestratorMcpDeleteScheduledTaskInput,
   ) => Effect.Effect<OrchestratorMcpDeleteScheduledTaskResult, OrchestratorMcpFailure>;
-  /**
-   * The value never reaches the agent: the result is a status.
-   */
+  /** Only status reaches the agent, never this value. */
   readonly requestSecret: (
     scope: McpInvocationScope,
     input: OrchestratorMcpRequestSecretInput,
@@ -207,8 +205,7 @@ function failure(code: OrchestratorMcpFailure["code"], message: string): Orchest
   return new OrchestratorMcpFailure({ code, message });
 }
 
-/** Background subagents keep their provider instance live after a run; credentials last until
- * the provider process exits. Archived threads and other instances cannot act. */
+/** Background subagents retain credentials until provider exit; archived threads and other instances cannot act. */
 export const isLiveCallerShell = (
   shell: Pick<
     OrchestrationV2ThreadShell,
@@ -303,8 +300,7 @@ function providerConstraints(
   return constraints;
 }
 
-/** Models without descriptors skip those checks. Duplicate ids fail because consumers
- * disagree on which value wins. */
+/** Skip checks without descriptors; reject duplicate IDs because consumers disagree on precedence. */
 function invalidOptionSelections(
   selections: ReadonlyArray<ProviderOptionSelection>,
   descriptors: ReadonlyArray<ProviderOptionDescriptor> | undefined,
@@ -1075,10 +1071,7 @@ const make = Effect.gen(function* () {
       return { ...caller, target } as const;
     });
 
-  /**
-   * A thread caller writes to another thread only while its own run is live,
-   * so a credential that outlived its session cannot reach across threads.
-   */
+  /** Cross-thread writes require a live caller run; stale session credentials cannot authorize them. */
   const assertLiveCallerForOtherThread = (
     scope: McpInvocationScope,
     parent: Pick<OrchestrationV2ThreadProjection, "thread" | "runs"> | undefined,
@@ -1185,8 +1178,7 @@ const make = Effect.gen(function* () {
     readonly parent: Pick<OrchestrationV2ThreadProjection, "thread">;
     readonly target: OrchestratorMcpTarget | undefined;
     readonly providers: ReadonlyArray<ServerProvider>;
-    /** Receipt replays cannot start new work, so they bypass current project settings.
-     * Only use this when dispatch reuses the exact command id checked for a receipt. */
+    /** Receipt replays bypass current settings because they start no work. Dispatch must reuse the checked command ID. */
     readonly skipProjectEnablementFilter?: boolean;
   }): Effect.Effect<ResolvedTarget, OrchestratorMcpFailure> =>
     Effect.gen(function* () {
@@ -1507,8 +1499,7 @@ const make = Effect.gen(function* () {
           "orchestration_error",
           `Unable to watch delegated task ${taskId}: ${errorMessage(error)}`,
         );
-      // Sequences are global, so one cursor taken before the first read
-      // replays anything either thread records after it.
+      // One global cursor before both reads captures later events from either thread.
       const afterSequence = yield* threadManagement
         .getThreadEventSequence(scope.thread.threadId)
         .pipe(Effect.mapError(streamError));
@@ -1554,11 +1545,7 @@ const make = Effect.gen(function* () {
     runtimeModeRank(modes.runtimeMode) <= runtimeModeRank(limits.runtimeMode) &&
     interactionModeRank(modes.interactionMode) <= interactionModeRank(limits.interactionMode);
 
-  /**
-   * Its webhook URL starts runs, so only a caller that may start one sees it: never a client
-   * approved for read-only access, and a thread caller only with a live turn, at modes covering
-   * every mode the task runs at.
-   */
+  /** Webhook URLs start runs: hide them from read-only clients and require live thread callers whose modes cover the task. */
   const summarizeScheduledTask = (
     scope: McpInvocationScope,
     caller: {
@@ -1584,11 +1571,7 @@ const make = Effect.gen(function* () {
       );
     });
 
-  /**
-   * A scheduled task the caller may change: one whose runs execute at modes no
-   * broader than the caller's own, so editing its prompt cannot run work above
-   * the caller's limits.
-   */
+  /** Task runs must stay within the caller's modes so prompt edits cannot escalate access. */
   const loadScheduledTask = (
     scheduledTaskId: ScheduledTask["id"],
     limits: {
@@ -1654,8 +1637,7 @@ const make = Effect.gen(function* () {
           interactionMode: limits.interactionMode,
           createdBy: "agent",
           creationSource: "mcp",
-          // Scope the idempotency key by provider session so two callers
-          // reusing the same clientRequestId cannot collide on one task row.
+          // Scope idempotency keys by provider session to avoid collisions between callers.
           ...(input.clientRequestId === undefined
             ? {}
             : {
@@ -1715,9 +1697,7 @@ const make = Effect.gen(function* () {
             : input.bindToCurrentThread && parent !== undefined
               ? parent.thread.id
               : null;
-        // Rebinding changes where runs execute, so the workspace strategy must
-        // follow: unbinding a root-strategy task would otherwise run loose
-        // prompts in the shared project checkout.
+        // Update workspace strategy on rebinding so unbound root tasks cannot run in the shared checkout.
         const workspaceStrategy =
           input.bindToCurrentThread === undefined
             ? existing.workspaceStrategy
@@ -1994,9 +1974,7 @@ const make = Effect.gen(function* () {
                 failure("invalid_request", "Unable to resolve the parent checkout commit."),
               ),
             );
-          // Launch preparation creates the worktree from the project root, so a
-          // parent checkout in another repository (such as a Git folder inside
-          // Scratch) would hand it a commit it cannot find.
+          // Worktrees start from the project root; commits from a parent in another repository cannot resolve there.
           if (parent.thread.worktreePath !== null) {
             yield* gitDriver
               .resolveCommit({ cwd: project.workspaceRoot, revision: base.commitSha })
@@ -2027,9 +2005,7 @@ const make = Effect.gen(function* () {
             runtimeMode,
             interactionMode,
             ...(workspaceStrategy === undefined ? {} : { workspaceStrategy }),
-            // Async delegations wake the parent on every child terminal; wait
-            // delegations deliver through the blocking tool call, so a wake is
-            // only needed if the parent settled first (timeout, disconnect).
+            // Async children always wake the parent; waited children need a wake only after the tool call has settled.
             completionWake: input.mode === "wait" ? "settled_only" : "always",
           })
           .pipe(
@@ -2081,8 +2057,7 @@ const make = Effect.gen(function* () {
         if (Option.isSome(waited) && isTerminalTaskStatus(waited.value.status)) {
           return waited.value;
         }
-        // An incomplete wait gives up delivery: upgrade so a later terminal
-        // wakes the parent even mid-turn.
+        // An incomplete wait needs a later wake, even mid-turn.
         yield* threadManagement
           .dispatch({
             type: "delegated_task.wake-policy",
@@ -2205,8 +2180,7 @@ const make = Effect.gen(function* () {
               ),
             );
         });
-        // Checked above; a user raising one of these threads meanwhile is
-        // caught again under that thread's lock, which leaves it running.
+        // The thread lock catches modes raised since this check and leaves that thread running.
         const refused = yield* Ref.make<DispatchModeRefusal | undefined>(undefined);
         const stopWithinLimit = stopChild.pipe(
           Effect.provideService(DispatchModeLimit, {

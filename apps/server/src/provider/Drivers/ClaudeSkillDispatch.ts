@@ -1,16 +1,6 @@
-/**
- * Claude Code's only user-side invocation is a text block whose first character
- * is `/`: the harness expands `/name args` into the SKILL.md body, and every
- * character after the name (newlines included) arrives as `ARGUMENTS`. Only one
- * skill expands per message; a second `/x` becomes argument text
- *    (anthropics/claude-code#87113).
- */
+/** Only a text block starting with / invokes a skill; all trailing text becomes ARGUMENTS, including newlines and further /commands (anthropics/claude-code#87113). */
 
-/**
- * Same token shape the composer and timeline chips recognise
- * (`packages/shared/src/composerInlineTokens.ts`), so a rendered chip and a
- * dispatched skill are always the same set.
- */
+/** Match packages/shared/src/composerInlineTokens.ts so displayed chips and dispatched skills accept the same tokens. */
 const SKILL_MENTION_PATTERN =
   /(^|\s)\p{Sc}(?![0-9][0-9_]*(?:[kKmMbBtT]|[eE][0-9]+)?(?:\s|$))(?=[a-zA-Z0-9:_-]*[a-zA-Z])([a-zA-Z0-9][a-zA-Z0-9:_-]*)(?=\s|$)/gu;
 

@@ -3491,8 +3491,7 @@ it.layer(
 
     it.effect("returns ready and labels Bedrock-backed Claude as authenticated", () =>
       Effect.gen(function* () {
-        // Bedrock authenticates via external AWS credentials, so the SDK init
-        // reports only `apiProvider` with no subscription or token.
+        // Bedrock's external AWS auth omits subscription and token fields from SDK init.
         const status = yield* checkClaudeProviderStatus(
           defaultClaudeSettings,
           claudeCapabilities({ apiProvider: "bedrock" }),
@@ -3561,8 +3560,7 @@ it.layer(
 
     it.effect("keeps a third-party backend authenticated without any token source", () =>
       Effect.gen(function* () {
-        // Bedrock and Vertex authenticate outside the CLI, so the account
-        // payload is empty by design rather than because nobody logged in.
+        // Bedrock and Vertex use external auth, so empty account payloads are expected.
         const status = yield* checkClaudeProviderStatus(
           defaultClaudeSettings,
           claudeCapabilities({ tokenSource: "none", apiProvider: "bedrock" }),

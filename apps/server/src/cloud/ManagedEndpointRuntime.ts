@@ -74,22 +74,16 @@ const RELAY_RESTART_BACKOFF_MAX_MS = 60_000;
 const TUNNEL_AUTHORIZATION_FAILURES_BEFORE_RECOVERY = 4;
 // Unknown rejection wording can leave a dead tunnel unconnected; periodically request recovery.
 const CONNECTOR_REGISTRATION_TIMEOUT = Duration.minutes(3);
-// cloudflared resolves the edge only at startup, so after a network change it
-// can stay alive with zero connections, dialing addresses that no longer route.
+// cloudflared resolves edges only at startup and can keep dialing stale addresses after a network change.
 const CONNECTOR_READINESS_INTERVAL = Duration.seconds(30);
 const CONNECTOR_READINESS_REQUEST_TIMEOUT = Duration.seconds(5);
 const CONNECTOR_NOT_READY_CHECKS_BEFORE_RESTART = 6;
 const CONNECTOR_NOT_READY_CHECKS_MAX = 60;
 const RELAY_CLIENT_METRICS_LINE = /\bStarting metrics server on (127\.0\.0\.1:\d+)\/metrics\b/u;
-// A failed background install of the pinned relay client is retried no sooner
-// than this, so a crash-looping connector or an offline host does not redownload
-// on every reconcile.
+// Pace failed installs so crash loops and offline hosts do not redownload on every reconcile.
 const RELAY_CLIENT_INSTALL_RETRY_INTERVAL_MS = 10 * 60_000;
 
-/**
- * A PATH binary or an explicit override is the user's choice, and the CLI asks
- * before downloading, so both stay put.
- */
+/** Preserve user-chosen PATH binaries and overrides; CLI downloads require consent. */
 function needsPinnedRelayClient(executable: RelayClient.RelayClientStatus): boolean {
   return (
     executable.status === "missing" ||
@@ -148,7 +142,7 @@ const stopConnector = (connector: ActiveConnector | null) =>
       )
     : Effect.void;
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const relayClient = yield* RelayClient.RelayClient;
@@ -257,16 +251,14 @@ export const make = Effect.gen(function* () {
             const desiredConfig = yield* Ref.get(desiredConfigRef);
             if (!desiredConfig || desiredConfig.providerKind !== "cloudflare_tunnel") return;
             const active = yield* Ref.get(activeRef);
-            // A self-updated binary in the pinned folder shares the installed path,
-            // so the version decides whether the running connector is current.
+            // Self-updated binaries share the pinned path; compare versions to detect replacements.
             if (
               active?.executable.executablePath === installed.executablePath &&
               active.executable.version === installed.version
             ) {
               return;
             }
-            // A fresh binary can fail its probe while a scanner holds it; restarting
-            // then would land on the same older binary, so leave it to the retry.
+            // A scanner can block a fresh binary's probe; retry instead of restarting onto the older binary.
             const resolved = yield* relayClient.resolve;
             if (
               resolved.status !== "available" ||
@@ -284,8 +276,7 @@ export const make = Effect.gen(function* () {
             const next = yield* Ref.get(activeRef);
             if (!next) {
               yield* Effect.logWarning("Relay client did not start after the update", status);
-              // One that exited while detached was skipped by its supervisor, so
-              // ask for recovery like an exited connector.
+              // The supervisor skips exits while detached; request recovery explicitly.
               const previousRunning = previous
                 ? yield* previous.child.isRunning.pipe(Effect.orElseSucceed(() => false))
                 : false;
@@ -332,8 +323,7 @@ export const make = Effect.gen(function* () {
     yield* installPinnedRelayClient;
   }).pipe(Effect.forkIn(runtimeScope), Effect.asVoid);
 
-  // A healthy older connector and some missing-client activations skip installs in applyConfig;
-  // this paced loop retries both without the failure gate.
+  // Retry installs skipped by applyConfig without the failure gate.
   const retryPinnedRelayClientInstall = Effect.gen(function* () {
     while (true) {
       yield* Effect.sleep(Duration.millis(RELAY_CLIENT_INSTALL_RETRY_INTERVAL_MS));

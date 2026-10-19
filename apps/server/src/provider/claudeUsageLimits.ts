@@ -25,8 +25,7 @@ const WINDOWS: Readonly<
   seven_day: { kind: "weekly", label: "Weekly", windowDurationMins: WEEK_MINS },
 };
 
-/** Events use a bucket type; get_usage uses a changing display_name. Reuse the probed name
- * so mid-turn updates target the same row. */
+/** Reuse probed display names for streamed bucket types so mid-turn updates target the same row. */
 const OVERAGE_INCLUDED_EVENT_TYPE = "seven_day_overage_included";
 
 export interface ClaudeScopedLimitNames {
@@ -56,10 +55,7 @@ function scopedWindow(
   };
 }
 
-/**
- * `model_scoped` shipped in the CLI after the SDK typings we pin, so it is
- * read structurally until the `.d.ts` catches up.
- */
+/** Read model_scoped structurally because the pinned SDK typings predate it. */
 interface ModelScopedWindow {
   readonly display_name: string;
   readonly utilization: number | null;
@@ -103,11 +99,7 @@ function makeWindow(
   };
 }
 
-/**
- * Utilization is a 0–1 fraction on the streamed event. An overage-included
- * event before any probe has named the bucket is dropped: guessing a name
- * would draw a row the next probe cannot reconcile.
- */
+/** Stream utilization is 0-1. Drop unnamed overage buckets until probed to avoid unreconcilable rows. */
 export function claudeRateLimitEventToUpdate(
   info: SDKRateLimitInfo,
   names: ClaudeScopedLimitNames,
@@ -127,9 +119,7 @@ export function claudeRateLimitEventToUpdate(
   return undefined;
 }
 
-/**
- * Percentages on the `get_usage` response are already 0–100.
- */
+/** get_usage percentages are already 0-100. */
 export function claudeUsageResponseToLimits(input: {
   readonly response: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
   readonly checkedAt: string;
@@ -147,8 +137,7 @@ export function claudeUsageResponseToLimits(input: {
     if (!window || typeof window.utilization !== "number") continue;
     windows.push(makeWindow(id, window.utilization, isoFromString(window.resets_at)));
   }
-  // The CLI filters `model_scoped` to the overage-included allowlist, which
-  // today holds one model; the first entry is the one the event refers to.
+  // The CLI's overage allowlist currently has one model; events refer to its first entry.
   let overageIncluded: string | undefined;
   for (const entry of readModelScoped(response.rate_limits)) {
     if (typeof entry.utilization !== "number") continue;

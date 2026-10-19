@@ -164,7 +164,6 @@ const commonNonHttpServer = Effect.acquireRelease(
   ({ server }) => closeServer(server),
 );
 
-/** Mock Windows listener failure to test configured URLs without requiring lsof. */
 effectIt.layer(layerTestPortDiscovery)("PortDiscovery integration (configured URLs)", (it) => {
   it.effect(
     "scan() returns a configured HTTP server we just opened",

@@ -263,13 +263,9 @@ it.layer(NodeServices.layer)("Claude capability probe SDK boundary", (it) => {
         new URL("./testing/ClaudeCapabilitiesProbe.fixture.mjs", import.meta.url),
       );
       const invocationPath = path.join(tempDir, "invocation.json");
-      // The probe aborts the SDK without awaiting the child's exit, and on
-      // Windows a directory that is still some process's cwd cannot be
-      // removed. Keep the workspace outside the scoped directory and let it
-      // go with a retrying removal once the child has gone.
+      // The SDK abort does not await child exit; keep its Windows cwd outside scoped cleanup and remove with retries.
       const workspaceCwd = yield* fs.makeTempDirectory({ prefix: "t3-claude-probe-cwd-" });
-      // Node's own retry rather than an Effect schedule: it.effect runs on a
-      // TestClock, so a scheduled retry would wait for time nobody advances.
+      // Use Node retries; Effect retries would wait on an unadvanced TestClock.
       yield* Effect.addFinalizer(() =>
         Effect.promise(() =>
           NodeFSP.rm(workspaceCwd, {

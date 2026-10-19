@@ -34,8 +34,7 @@ import {
 
 const BOOT_SERVICE_NAME = "t3code";
 const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
-// `.service` suffix keeps the label distinct from the desktop app's bundle id
-// (com.t3tools.t3code), so launchd and TCC records never collide.
+// The .service suffix avoids collisions with the desktop bundle id in launchd and TCC.
 const BOOT_SERVICE_LAUNCHD_LABEL = "com.t3tools.t3code.service";
 const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
 const BOOT_SERVICE_UNIT_ENV = "T3_BOOT_SERVICE_UNIT";
@@ -95,20 +94,14 @@ export function renderBootServiceUnit(plan: BootServicePlan): string {
     // Let the launcher mark an explicit stop before it signals the server.
     // systemd still SIGKILLs the whole cgroup if graceful shutdown times out.
     "KillMode=mixed",
-    // Agents and terminals run in their own scopes in app-t3code-agents.slice
-    // (see process/agentScope.ts). Short helper commands still share this
-    // cgroup, and with the systemd default of OOMPolicy=stop, the kernel
-    // killing one of them stops the whole unit.
+    // Helpers share this cgroup; default OOMPolicy=stop would stop the unit if one is OOM-killed.
     "OOMPolicy=continue",
     "Restart=always",
     "RestartSec=5",
-    // The agents slice is a sibling in app.slice, so these weights keep the
-    // server responsive while agents saturate CPU or disk.
+    // Weights favor the server over the sibling agents slice during CPU or disk saturation.
     "CPUWeight=1000",
     "IOWeight=1000",
-    // systemd-oomd only honors this when the cgroup it watches is owned by the
-    // same user. Distros watch user-1000.slice, which root owns, so there it is
-    // ignored.
+    // systemd-oomd ignores this preference when the watched cgroup is root-owned, as user-1000.slice usually is.
     "ManagedOOMPreference=avoid",
     `StandardOutput=append:${escapeSystemdSpecifiers(plan.logPath)}`,
     `StandardError=append:${escapeSystemdSpecifiers(plan.logPath)}`,
@@ -128,16 +121,9 @@ export function renderBootServicePlist(
   plan: BootServicePlan,
   options: { readonly homeDir: string; readonly environmentPath: string },
 ): string {
-  // ExitTimeOut 90 matches systemd's default TimeoutStopSec. A plain stop
-  // completes within the launcher's 5s child grace, but a stop that queues
-  // behind an in-flight update transition can take much longer; launchd's
-  // system-defined default (5s on current macOS) would SIGKILL the launcher
-  // (and, with it, the process group) mid-handoff.
-  // ProcessType Interactive opts out of background-job resource throttling.
-  // AbandonProcessGroup stays at its default (false): launchd reaps leftover
-  // process-group members only when the launcher itself exits — the analog of
-  // KillMode=mixed's final cgroup kill — and not when the launcher restarts its
-  // child, so agent children survive server updates.
+  // Allow 90s stops for update handoffs.
+  // Interactive avoids background throttling.
+  // AbandonProcessGroup=false reaps agents only on launcher exit, preserving them across child updates.
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`,
@@ -184,9 +170,7 @@ export interface BootServiceStep {
   readonly step: string;
   readonly command: string;
   readonly args: ReadonlyArray<string>;
-  /**
-   * Non-zero exit is logged and ignored.
-   */
+  /** Non-zero exit is logged and ignored. */
   readonly optional?: boolean;
   readonly timeout?: Duration.Input;
 }
@@ -284,8 +268,7 @@ function launchdManager(input: {
   );
   const domainTarget = `gui/${input.uid}`;
   const serviceTarget = `${domainTarget}/${BOOT_SERVICE_LAUNCHD_LABEL}`;
-  // bootout/enable may fail for unloaded jobs. Bootstrap starts RunAtLoad/KeepAlive jobs;
-  // a separate kickstart would immediately kill and restart them.
+  // Unloaded jobs may reject bootout/enable. Bootstrap starts RunAtLoad/KeepAlive jobs; kickstart would restart them.
   return {
     kind: "launchd",
     unitPath,
@@ -294,8 +277,7 @@ function launchdManager(input: {
         homeDir: input.homeDir,
         environmentPath: input.environmentPath,
       }),
-    // bootout --wait is undocumented but waits through ExitTimeOut; otherwise bootstrap can race
-    // the draining job and fail EIO.
+    // bootout --wait is undocumented but waits through ExitTimeOut, preventing bootstrap EIO races.
     stop: [
       {
         step: "stopping the installed launch agent",
@@ -326,8 +308,7 @@ function launchdManager(input: {
         args: ["bootstrap", domainTarget, unitPath],
       },
     ],
-    // No `launchctl disable` here: a persisted override would sabotage a later
-    // reinstall.
+    // Persisted launchctl disable overrides would block reinstall.
     deactivate: [
       {
         step: "stopping the service",
@@ -483,19 +464,9 @@ export class BootService extends Context.Service<
       readonly allowDowngrade?: boolean;
       readonly start?: boolean;
     }) => Effect.Effect<BootServicePlan, BootServiceError>;
-    /**
-     * Only when the unit serves this base dir: the unit name is per user, so
-     * another home's service is left alone. Resolves false when nothing was
-     * restarted.
-     */
+    /** Restart only this home's service; return false if nothing restarted. */
     readonly restart: Effect.Effect<boolean, BootServiceError>;
-    /**
-     * Run `operation` while this home's installed service is stopped, then
-     * start it again when it was enabled (systemd) or loaded (launchd)
-     * beforehand. A service that belongs to another home is left alone. The
-     * service is started again even when stopping it failed; the operation's
-     * own failure is reported ahead of a failure to restart.
-     */
+    /** Stop only this home's service; restore enabled/loaded services even after stop failure. Operation errors take precedence over restart errors. */
     readonly withStopped: <A, E, R>(
       operation: Effect.Effect<A, E, R>,
     ) => Effect.Effect<A, E | BootServiceError, R>;
@@ -780,8 +751,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
           if (serviceStateHasPendingUpdate(previousStateText.value)) {
             return yield* new BootServiceUpdatePendingError();
           }
-          // A remote update can finish after the CLI checks status. Read its
-          // final version after the launcher stops and before changing files.
+          // Read the final version after stopping the launcher; a remote update may finish after the status check.
           const installedVersion = serviceStateActiveVersion(previousStateText.value);
           if (
             installedVersion !== undefined &&
@@ -799,9 +769,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         .makeDirectory(path.dirname(unitPath), { recursive: true })
         .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
       if (!start && installed) {
-        // Written first: once the files below name the new version, the running
-        // service is behind them, and a failure between the two writes must not
-        // leave it looking current.
+        // Mark restart pending before updating version files so a partial write cannot report the old service as current.
         yield* fs.writeFileString(restartPendingPath, `${input.cliVersion}\n`, { mode: 0o600 });
       }
       yield* writeDurably(
@@ -817,8 +785,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         )}\n`,
       );
       if (!start && installed) {
-        // A remote update begun after the check can overwrite this state from the launcher's
-        // in-memory copy. Detect that before repointing the unit.
+        // A concurrent remote update can overwrite launcher state; detect it before repointing the unit.
         const written = yield* fs.readFileString(statePath);
         if (serviceStateActiveVersion(written) !== input.cliVersion) {
           return yield* new BootServiceUpdatePendingError();
@@ -880,8 +847,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       ) {
         return yield* operation;
       }
-      // Crash-looping systemd units and throttled launchd jobs can look inactive but restart
-      // mid-repair. Stop unconditionally; restore only an active, enabled, or loaded unit.
+      // Inactive units may still restart during repair; stop unconditionally, restoring only active, enabled, or loaded services.
       const restore =
         manager.kind === "systemd"
           ? yield* Effect.map(
@@ -898,9 +864,7 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
               yield* probe("launchctl", ["print", `gui/${uid}/${BOOT_SERVICE_LAUNCHD_LABEL}`]),
             );
       return yield* Effect.acquireUseRelease(
-        // Restored services require every stop step so no process retains the database.
-        // A failed stop may still have stopped the service, so restore either way.
-        // Unloaded services need only best-effort stop (launchd bootout fails for them).
+        // Require full stops before database work; restore even after stop failure. Unloaded services use best-effort stop.
         runSteps(manager.stop.map((step) => ({ ...step, optional: !restore }))).pipe(Effect.exit),
         (stopped): Effect.Effect<A, E | BootServiceError, R> =>
           Exit.isSuccess(stopped) ? operation : Effect.failCause(stopped.cause),

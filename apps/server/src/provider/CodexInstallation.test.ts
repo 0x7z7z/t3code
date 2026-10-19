@@ -455,7 +455,7 @@ const windowsPackage: Record<string, string> = {
     entrypoint: "bin/codex.exe",
   }),
 };
-// Stands in for Windows' bsdtar: CRLF listings, and extraction writes the Windows layout.
+// Emulate Windows bsdtar's CRLF listing and extraction layout.
 const makeWindowsTar = (fs: FileSystem.FileSystem, commands: Array<string>) =>
   ChildProcessSpawner.make((command) =>
     Effect.gen(function* () {

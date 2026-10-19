@@ -12,7 +12,7 @@ import {
 } from "./triagePrompt.ts";
 
 it("stays byte-identical to .github/triage/PLAYBOOK.md", () => {
-  // Older releases fetch the repo playbook, so it must agree with the bundled copy.
+  // Older releases fetch the repository playbook.
   const canonicalPath = NodePath.join(
     import.meta.dirname,
     "../../../../.github/triage/PLAYBOOK.md",
@@ -27,8 +27,7 @@ it("seed prompt names the context file and embeds the playbook", () => {
 });
 
 it("launch prompt stays a single argv-safe line naming the prompt file", () => {
-  // The launch argument goes through cmd.exe on Windows (.cmd shims), which
-  // cannot carry newlines; the playbook itself must stay on disk.
+  // Windows .cmd shims cannot carry multiline argv.
   const launch = buildTriageLaunchPrompt(String.raw`C:\Users\a b\.t3\userdata\triage\x\prompt.md`);
   assert.notInclude(launch, "\n");
   assert.include(launch, String.raw`C:\Users\a b\.t3\userdata\triage\x\prompt.md`);

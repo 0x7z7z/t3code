@@ -219,14 +219,12 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
   );
   yield* runtime.auth.controller.subscribe("managed-codex-snapshot").pipe(
     Stream.filter((state) => ["idle", "succeeded", "failed", "cancelled"].includes(state.phase)),
-    // Sign-out closes the scope of an in-flight probe, which fails that refresh
-    // with an interrupt. Keep listening so the sign-out's own idle still refreshes.
+    // Sign-out interrupts in-flight probes; keep listening for its subsequent idle refresh.
     Stream.runForEach(() => snapshot.refresh.pipe(Effect.ignoreCause({ log: true }))),
     Effect.forkScoped,
   );
   const resolveRuntime = runtime.auth.controller.withAccess!(runtime.resolve);
-  // Launch settings resolve per session from the signed-in token. The registry
-  // already wraps openSession in withAccess, so resolve without re-entering it.
+  // Resolve session launch settings from the signed-in token without re-entering the registry's withAccess wrapper.
   const orchestrationAdapter = yield* createCodexAdapterV2(input, {
     onUsageLimits: (update) => snapshot.applyUsageLimits(update),
     resolveRuntime: runtime.resolve,
@@ -308,8 +306,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
             }),
             Effect.scoped,
             Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-            // Fail rather than return the machine snapshot: the registry
-            // publishes any returned snapshot as this workspace's inventory.
+            // Fail instead of returning machine inventory, which the registry would publish as workspace inventory.
             Effect.mapError(
               (cause) =>
                 new ProviderDriverError({

@@ -156,8 +156,7 @@ describe("Antigravity subscription limits", () => {
     Effect.gen(function* () {
       const { probe } = yield* fixture({
         summaryByHost: {
-          // The daily endpoint has answered with only the Claude/GPT group; the
-          // other endpoint returns the full default summary.
+          // The daily endpoint can omit Gemini while the other endpoint returns all groups.
           "daily-cloudcode-pa.googleapis.com": {
             groups: [
               {

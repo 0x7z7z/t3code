@@ -8,10 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-// On macOS, Node can bind 127.0.0.1:<port> while another process (such as the
-// desktop app with network access on) listens on *:<port>. Linux refuses that
-// bind unless both sockets set SO_REUSEPORT, so on Linux the preload adds it to
-// the picker's probe and the holder sets it too. macOS needs neither.
+// Linux needs SO_REUSEPORT on both sockets to reproduce macOS allowing loopback and wildcard binds on one port.
 const MACOS_BIND_PRELOAD = `const net = require("node:net");
 const listen = net.Server.prototype.listen;
 net.Server.prototype.listen = function (port, host, callback) {

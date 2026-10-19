@@ -156,12 +156,7 @@ export const resolveHostCliCommand = (subcommand: string, args: ReadonlyArray<st
     return { command: withArgs(`${call} ${subcommand}`), launcher: true };
   });
 
-/**
- * `sudo` resets PATH on most distributions, which drops a user-installed Node
- * (nvm, fnm, a tarball) and with it `npx` or a global `t3`, so the command
- * carries PATH through unless Node is on root's PATH too. An absolute launcher
- * needs neither.
- */
+/** sudo can drop user-installed Node from PATH; preserve PATH unless root has Node or the launcher is absolute. */
 export const resolveRootCliCommand = (subcommand: string) =>
   Effect.gen(function* () {
     const { command, launcher } = yield* resolveHostCliCommand(subcommand);

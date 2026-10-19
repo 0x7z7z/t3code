@@ -60,11 +60,7 @@ const headlessFlag = Flag.Boolean("headless").pipe(
   Flag.withDefault(false),
 );
 
-/**
- * Inside an SSH session there is no local browser to complete the loopback
- * OAuth callback, so the device authorization grant is the only flow that
- * can work.
- */
+/** SSH sessions need device authorization because they cannot complete browser loopback OAuth. */
 export const headlessSessionConfig = Config.all({
   sshConnection: Config.String("SSH_CONNECTION").pipe(Config.option),
   sshTty: Config.String("SSH_TTY").pipe(Config.option),

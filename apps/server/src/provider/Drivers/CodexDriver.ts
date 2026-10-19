@@ -183,8 +183,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
         ),
       );
 
-      // Kick the TTL-gated manifest refresh in the background and classify with the in-memory
-      // manifest, so a slow or hung fetch never delays the provider check.
+      // Refresh manifests in the background; classify from memory so network stalls cannot delay health checks.
       const checkProvider = modelCatalog.refreshInBackground.pipe(
         Effect.andThen(
           Effect.zipWith(
@@ -267,8 +266,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
               ),
             );
 
-      // Credits belong to the account holding auth.json, not the instance or continuation key.
-      // Auth overlays have separate accounts; plain instances share the home.
+      // Credits follow auth.json's account; overlays isolate accounts, while plain instances share a home.
       const accountKey = homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath;
       const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
         resetCreditCoordinator

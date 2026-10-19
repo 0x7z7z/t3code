@@ -16,10 +16,7 @@ import type { UsageTokenTotals } from "@t3tools/contracts";
 
 import { resolveCodexHomeLayout } from "./CodexHomeLayout.ts";
 
-/**
- * Codex `token_count` events carry no model or service tier, so both are carried forward: the model
- * from the most recent `turn_context`, the tier from the most recent `thread_settings_applied`.
- */
+/** token_count omits model and tier; inherit them from turn_context and thread_settings_applied. */
 export const CodexScanState = Schema.Struct({
   model: Schema.mutableKey(Schema.String),
   speed: Schema.mutableKey(Schema.Literals(["standard", "fast", "ultrafast"])),
@@ -43,12 +40,7 @@ export function initialCodexScanState(): CodexScanState {
   };
 }
 
-/**
- * A forked or subagent rollout opens with the parent's full history copied in,
- * every line re-stamped to the fork instant. Those copies are written in one
- * synchronous burst (observed gaps 0-40ms), while the child's first genuine
- * usage event only lands after a real model turn (observed 5s+).
- */
+/** Forks copy and restamp parent history in a burst (0-40ms gaps); genuine child usage follows a model turn (5s+ observed). */
 const FORK_COPY_MAX_GAP_MS = 1000;
 
 function isForkedSessionMeta(payload: Record<string, unknown>): boolean {
@@ -62,10 +54,7 @@ function isForkedSessionMeta(payload: Record<string, unknown>): boolean {
   return typeof (spawn as Record<string, unknown>)["parent_thread_id"] === "string";
 }
 
-/**
- * Deltas come from `last_token_usage`. Summing those across a session reconciles with the session's
- * final `total_token_usage`, provided consecutive duplicate events are dropped, which this does.
- */
+/** Sum last_token_usage, dropping consecutive duplicates, to reconcile with final total_token_usage. */
 export function parseCodexLine(line: string, state: CodexScanState): UsageRecord | null {
   let parsed: unknown;
   try {
@@ -86,9 +75,7 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
   const payloadType = payloadRecord["type"];
 
   if (record["type"] === "session_meta") {
-    // Only the first meta describes this file's own session. A forked rollout
-    // repeats the ancestors' metas right after it; letting those through would
-    // reassign every subsequent record to an ancestor session.
+    // Only the first meta identifies this session; copied ancestor metas would misattribute later records.
     if (state.sawSessionMeta) return null;
     state.sawSessionMeta = true;
     const id = payloadRecord["id"] ?? payloadRecord["session_id"];
@@ -122,14 +109,12 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
   if (typeof last !== "object" || last === null) return null;
   const lastRecord = last as Record<string, unknown>;
 
-  // An eligible token_count alone may consume the signature; a no-model event must not hide
-  // its re-emitted copy after turn_context arrives.
+  // Only eligible counts consume signatures; no-model events must allow replay after turn_context arrives.
   const timestampMs = parseTimestampMs(record["timestamp"]);
   if (timestampMs === null) return null;
   if (state.model.length === 0) return null;
 
-  // Codex re-emits an unchanged token_count on some stream boundaries. Summing
-  // those would double count, so identical consecutive payloads are skipped.
+  // Codex repeats unchanged counts at stream boundaries; drop consecutive duplicates to avoid double counting.
   const signature = JSON.stringify(lastRecord);
   if (signature === state.lastUsageSignature) return null;
   state.lastUsageSignature = signature;
@@ -171,10 +156,7 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
   };
 }
 
-/**
- * Codex omits the field when no tier was requested, which bills as standard, as
- * do `default` and `standard`. `fast` is accepted as an alias of `priority`.
- */
+/** Missing, default and standard tiers bill as standard; fast aliases priority. */
 function codexSpeed(serviceTier: unknown): UsageSpeed {
   if (serviceTier === "priority" || serviceTier === "fast") return "fast";
   if (serviceTier === "ultrafast") return "ultrafast";
@@ -199,8 +181,7 @@ export const codexUsageFormat: TranscriptUsageFormat<CodexScanState> = {
       info: { last_token_usage: true },
     },
   },
-  // `turn_context`, `thread_settings_applied` and `session_meta` lines hold no
-  // usage, but they carry the model, tier and session the reducer needs.
+  // Metadata lines carry model, tier and session even without usage.
   usageMarkers: ['"token_count"', '"turn_context"', '"thread_settings_applied"', '"session_meta"'],
   parseLine: (line, state) => orEmpty(parseCodexLine(line, state)),
   parseProjected: (projected, state) => orEmpty(parseCodexRecord(projected, state)),

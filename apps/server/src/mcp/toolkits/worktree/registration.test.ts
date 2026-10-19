@@ -150,9 +150,6 @@ it.effect("production mcp layer lists worktree tools over http", () =>
       expect(status?.annotations?.readOnlyHint).toBe(true);
       expect(status?.annotations?.destructiveHint).toBe(false);
 
-      // MCP requires every tool input schema to be a top-level object schema.
-      // A non-object schema (e.g. the anyOf produced by an empty
-      // Schema.Struct({})) makes clients reject the entire server.
       for (const tool of tools) {
         expect(tool.inputSchema.type, `inputSchema.type of ${tool.name}`).toBe("object");
       }

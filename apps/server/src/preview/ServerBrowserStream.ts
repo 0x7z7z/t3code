@@ -103,15 +103,13 @@ const makeHandler = (browser: ServerBrowser.ServerBrowser["Service"]) =>
             }),
           );
         const incoming = NodeHttpServerRequest.toIncomingMessage(request);
-        // JPEGs are already compressed. Disabling deflate also keeps all
-        // pending writes in the socket buffer we bound below, not a zlib queue.
+        // JPEGs are compressed; deflate would move pending writes outside our bounded socket buffer.
         delete incoming.headers["sec-websocket-extensions"];
         const transport = incoming.socket;
         const socket = yield* request.upgrade;
         const reader = yield* socket.reader;
         const writer = yield* socket.writer;
-        // A refused upgrade reads as an auth failure to ticket clients, so a
-        // missing tab is a close code they stop on.
+        // Ticket clients treat refused upgrades as auth failures; a missing-tab close code stops retries.
         const gone = writer.write(new Socket.CloseEvent(TAB_GONE_CODE, "tab closed"));
         if (attached._tag === "gone") {
           yield* gone;
@@ -124,10 +122,7 @@ const makeHandler = (browser: ServerBrowser.ServerBrowser["Service"]) =>
           return HttpServerResponse.empty();
         }
         const viewer = attached.viewer;
-        // `write` returns once the frame is queued, so Chromium's ack for each
-        // frame waits for the viewer's `ack` message instead. Only one frame
-        // is on the wire and only the newest waits behind it, so replies never
-        // queue behind stale images on a slow link.
+        // Ack Chromium only after viewer ack, keeping one frame in flight and only the newest pending so stale images cannot delay replies.
         let inFlight: Effect.Effect<void> | null = null;
         let pending: Frame | null = null;
         const disconnectSlowViewer = Effect.sync(() => transport.destroy()).pipe(
@@ -178,8 +173,7 @@ const makeHandler = (browser: ServerBrowser.ServerBrowser["Service"]) =>
         );
         const receive = (chunk: Uint8Array | string) => {
           const message = parseMessage(chunk);
-          // Ownership serializes actions in the service. Keep reading so dialog
-          // replies and takeover can unblock an action already waiting on the page.
+          // Keep reading during serialized actions so dialog replies and takeover can unblock them.
           if (!isAck(message))
             return canOperate
               ? viewer.input(message).pipe(Effect.forkScoped, Effect.asVoid)

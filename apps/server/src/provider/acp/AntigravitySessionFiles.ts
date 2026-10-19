@@ -42,8 +42,7 @@ export const removeAntigravitySessionFiles = Effect.fn("removeAntigravitySession
   Effect.catch(() => Effect.logWarning("Could not remove temporary Antigravity session files.")),
 );
 
-/** Sweep only the private runtime directory before launching processes. System temp is shared,
- * and Windows does not lock data files against removal of a live extraction. */
+/** Sweep only private runtimes before launch; Windows does not protect live extracted data files from deletion. */
 export const removeAntigravityRuntimeTempDirs = Effect.fn("removeAntigravityRuntimeTempDirs")(
   function* (tempDirectory: string) {
     const fs = yield* FileSystem.FileSystem;

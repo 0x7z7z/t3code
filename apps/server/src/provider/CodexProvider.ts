@@ -262,11 +262,7 @@ export function applyPreferredCodexDefaultModel(
   });
 }
 
-/**
- * Codex has no static default capability set, so a bare custom slug borrows
- * the first built-in's descriptors; an entry with its own capabilities keeps
- * them.
- */
+/** Bare custom slugs borrow the first built-in's capabilities; explicit capabilities take precedence. */
 function appendCustomCodexModels(
   models: ReadonlyArray<ServerProviderModel>,
   customModels: ReadonlyArray<CustomModelSetting>,
@@ -347,8 +343,7 @@ const readCodexModelsCacheFetchedAt = Effect.fn("readCodexModelsCacheFetchedAt")
   );
 });
 
-/** The shared cache varies by originator; wait for this app-server's startup refresh
- * before listing, or plain-CLI models can hide entitled tiers such as Sol Ultrafast. */
+/** Wait for the originator-specific startup refresh; the plain-CLI cache may hide entitled tiers. */
 const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(function* (input: {
   readonly client: CodexClient.CodexAppServerClient["Service"];
   readonly codexHome: string;
@@ -371,12 +366,7 @@ const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(functio
   return yield* requestAllCodexModels(input.client);
 });
 
-/**
- * App-server starts its catalog refresh before `initialize` names the client,
- * so that first fetch goes out as the plain CLI, misses tiers like Sol
- * Ultrafast, and overwrites the shared `models_cache.json`. Naming the
- * originator at spawn closes that race.
- */
+/** Set originator at spawn; the pre-initialize refresh otherwise overwrites shared cache with plain-CLI models. */
 export const codexAppServerEnvironment = (
   environment: NodeJS.ProcessEnv | undefined,
 ): NodeJS.ProcessEnv => ({

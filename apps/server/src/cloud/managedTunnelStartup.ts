@@ -3,8 +3,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 
-// "revoked" leads to no action: relinking a deregistered environment is the
-// user's call, so startup neither retries nor relinks it.
+// Relinking revoked environments is the user's choice; startup takes no action.
 export type ManagedTunnelRegistrationResult =
   | { readonly status: "not_linked" | "ready" | "unavailable" | "superseded" | "revoked" }
   | {
@@ -67,11 +66,8 @@ export const retryManagedTunnelRegistration = <A, E, R>(
   );
 };
 
-// Every managed host shares one relay, so a host stuck in a bad loop must not
-// turn into a fleet-wide request storm.
+// Back off to keep one bad host from flooding the shared relay.
 export const MANAGED_TUNNEL_RECOVERY_COOLDOWN = Duration.minutes(2);
 
-// Existing hosts register on their first boot after an upgrade, and desktop
-// auto-update delivers that boot to many hosts at once. Spread the first
-// registration so the relay and Cloudflare see a ramp instead of a spike.
+// Stagger first registration because desktop updates reboot many hosts together.
 export const MANAGED_TUNNEL_FIRST_REGISTRATION_JITTER = Duration.seconds(30);

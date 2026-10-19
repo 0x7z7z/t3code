@@ -176,8 +176,7 @@ describe("terminatePosixOwnedProcessTree", () => {
       expect(AcpSessionRuntime.resolveLinuxCgroupTargetCommand("grok", scratch, { PATH: "" })).toBe(
         bareGrok,
       );
-      // Undefined PATH uses Node's default search path (/usr/bin:/bin), not cwd alone
-      // (bareGrok lives only in cwd / PATH=scratch).
+      // Undefined PATH searches /usr/bin:/bin; the bareGrok fixture lives only in cwd.
       expect(
         AcpSessionRuntime.resolveLinuxCgroupTargetCommand("grok", scratch, { PATH: undefined }),
       ).toBeUndefined();
@@ -304,8 +303,7 @@ describe("terminatePosixOwnedProcessTree", () => {
         },
       );
       expect(missingTargetResult.status, missingTargetResult.stderr).toBe(125);
-      // CI's /bin/sh is dash, which runs the EXIT trap after a failed exec. Bash does not,
-      // so run the same wrapper under bash too.
+      // dash runs EXIT traps after failed exec; bash does not, so exercise both.
       const missingTargetBash = NodeChildProcess.spawnSync("bash", missingTarget.args, {
         encoding: "utf8",
       });
@@ -648,8 +646,7 @@ describe("terminatePosixOwnedProcessTree", () => {
 
   it.live("rotates more than 64 live parents without scanning retained tombstones", () =>
     Effect.gen(function* () {
-      // The server fixture's process group is the runner's real pid, so a synthetic
-      // parent sharing it would be skipped as the server's own group.
+      // Use a different synthetic parent group; the fixture shares the runner's real group, which cleanup skips.
       const parentPidBase = process.pid < 500_000 ? 500_000 : 1_000;
       const parents = Array.from({ length: 130 }, (_, index) =>
         identity(parentPidBase + index, 100, parentPidBase + index, parentPidBase + index),

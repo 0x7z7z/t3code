@@ -92,10 +92,7 @@ export const hydrateCachedProvider = (input: {
     : hydratedProvider;
 };
 
-/**
- * Cache contents must still carry matching `instanceId` + `driver` identity
- * before hydration. The filename alone is not trusted as a routing key.
- */
+/** Require matching instanceId and driver before hydration; filenames alone cannot authorize routing. */
 export const resolveProviderStatusCachePath = Effect.fn("resolveProviderStatusCachePath")(
   function* (input: {
     readonly cacheDir: string;

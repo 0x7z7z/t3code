@@ -80,7 +80,6 @@ function makeSession(frame?: ReturnType<typeof makeFrame>) {
       if (method === "Page.getLayoutMetrics") return { cssVisualViewport: { pageX: 0, pageY: 0 } };
       if (method === "Page.captureScreenshot") return { data: "ZnJhbWU=" };
       if (method === "Page.getFrameTree") return { frameTree: { frame: { id: "main" } } };
-      // Snapshots read password fields from their own isolated world in each frame.
       if (method === "Page.createIsolatedWorld") {
         return {
           executionContextId: (input as { worldName?: string }).worldName === "t3-preview" ? 1 : 7,
@@ -919,7 +918,6 @@ it.live("a tab opened to a file the browser cannot show reports the file to down
       const page = contexts[0]!.page;
       const pdf = "https://example.com/paper.pdf";
       const request = { url: () => pdf, method: () => "GET", isNavigationRequest: () => true };
-      // What Chromium reports when a navigation turns into a download.
       page.emit("requestfailed", {
         ...request,
         frame: () => page,

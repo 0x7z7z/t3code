@@ -119,8 +119,7 @@ const runInteractiveSession = (input: {
   Effect.callback<number, TriageAgentSpawnError>((resume) => {
     const child = NodeChildProcess.spawn(input.command, [...input.args], {
       cwd: input.cwd,
-      // The agent reads the user's terminal; under the desktop app's Windows
-      // launcher that is the reopened console, not the (missing) inherited stdin.
+      // The Windows desktop launcher supplies terminal input through the reopened console.
       stdio: [interactiveStdin(), "inherit", "inherit"],
       shell: input.shell,
     });
@@ -211,16 +210,14 @@ export const triageCommand = Command.make("triage", {
       } else if (installed.length === 1) {
         selected = installed[0];
       } else if (installed.length > 1) {
-        // Both streams must be terminals: with stdout redirected the picker
-        // prompt is invisible and the command would hang waiting on it.
+        // The picker needs terminal output too, or its invisible prompt hangs.
         if (!process.stdin.isTTY || !process.stdout.isTTY) {
           return yield* new TriageAgentChoiceRequiredError();
         }
         selected = yield* pickAgent(installed);
       }
 
-      // Windows .cmd shims cannot carry multiline argv; keep the playbook on disk for the agent
-      // and the no-agent paste fallback.
+      // Windows .cmd shims cannot carry multiline argv; keep the playbook on disk for both launch and paste fallback.
       const promptFilePath = path.join(scratchDir, "prompt.md");
       yield* fs.writeFileString(promptFilePath, buildTriageSeedPrompt(contextFilePath));
 

@@ -173,10 +173,7 @@ const resolveThemePaths = Effect.fn(function* (explicitBaseDir: Option.Option<st
   };
 });
 
-/**
- * A permission or I/O error must propagate: reading it as "no settings" would
- * have the caller write a fresh sparse file over settings it never saw.
- */
+/** Propagate read errors to avoid overwriting unread settings with a sparse file. */
 const readSettingsObject = Effect.fn(function* (settingsPath: string) {
   const fs = yield* FileSystem.FileSystem;
   const exists = yield* fs
@@ -195,10 +192,7 @@ const readSettingsObject = Effect.fn(function* (settingsPath: string) {
   return { raw, settings };
 });
 
-/**
- * A running server owns this file too, and its write path is an in-process
- * semaphore that cannot serialize against another process.
- */
+/** The server's in-process semaphore cannot serialize writes from this process. */
 const CONCURRENT_WRITE_ATTEMPTS = 5;
 
 const writeDefaultTheme = Effect.fn(function* (input: {
@@ -212,8 +206,7 @@ const writeDefaultTheme = Effect.fn(function* (input: {
     const setAt = DateTime.formatIso(yield* DateTime.now);
     const next =
       input.themeId.length > 0
-        ? // The timestamp is the set-generation: it lets clients apply a re-set
-          // of the same value they already applied once.
+        ? // The timestamp lets clients reapply the same theme.
           { ...settings, defaultTheme: input.themeId, defaultThemeSetAt: setAt }
         : Object.fromEntries(
             Object.entries(settings).filter(
@@ -289,8 +282,7 @@ const publishThemeFile = Effect.fn(function* (input: {
 
   const fileBasename = path.basename(input.filePath, ".json");
   const themeId = Option.getOrElse(input.explicitId, () => fileBasename);
-  // The same rules the watcher applies when it reads the directory back, so a
-  // publish cannot report success for a file that will then be skipped.
+  // Match watcher validation so published files will not be skipped.
   if (!isEnvironmentThemeId(themeId) || UNPUBLISHABLE_THEME_IDS.has(themeId)) {
     return yield* new ThemeFileIdInvalidError({ themeId, filePath: input.filePath });
   }

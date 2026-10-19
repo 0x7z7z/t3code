@@ -349,8 +349,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     completeStream = false,
   ) {
     if (completeStream) {
-      // Discard this generation's commands and complete the RPC stream so a
-      // responsive desktop can re-register after a timeout eviction.
+      // Close the evicted generation's RPC stream so a responsive desktop can re-register.
       yield* Queue.clear(queue);
       yield* Queue.end(queue);
     } else {
@@ -540,8 +539,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         if (!hasLiveAssignment) assignments.delete(assignmentKey);
         return [undefined, { ...current, assignments }] as const;
       }
-      // The environment host may install Chromium on its first open (up to
-      // ten minutes). Keep that request alive without replaying its effects.
+      // First open may install Chromium for ten minutes; keep it alive without replaying effects.
       const timeoutMs =
         input.timeoutMs ?? (input.operation === "open" && connection.preferred ? 660_000 : 15_000);
       const canReuseAssignedTab =
@@ -602,8 +600,7 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
     });
     const awaitResponse = Effect.fn("PreviewAutomationBroker.awaitResponse")(function* () {
       const offered = yield* SynchronizedRef.modifyEffect(state, (current) => {
-        // A route can outlive its generation while another request evicts it.
-        // Serialize the live-generation check and offer with queue closure.
+        // Serialize generation checks and offers with queue closure; routes can outlive eviction.
         if (
           current.clients.get(connection.clientId)?.queue !== connection.queue ||
           !current.pending.has(requestId)
@@ -632,16 +629,14 @@ export const make = Effect.gen(function* PreviewAutomationBrokerMake() {
         }
         return yield* new PreviewAutomationRequestQueueClosedError(requestContext);
       }
-      // The browser starts its operation timer after delivery. Allow its timeout
-      // response to arrive before treating the entire host as unresponsive.
+      // The browser timer starts on delivery; allow its timeout response before evicting the host.
       const responseTimeoutMs =
         input.updateCurrentTab === false ? timeoutMs : timeoutMs + HOST_RESPONSE_GRACE_MS;
       const result = yield* Deferred.await(deferred).pipe(Effect.timeoutOption(responseTimeoutMs));
       return yield* Option.match(result, {
         onNone: () =>
           Effect.gen(function* () {
-            // Never replay actions that may have applied. Slow metadata reads change nothing and
-            // must not evict the host needed by the next call.
+            // Never replay possibly applied actions; slow metadata reads must not evict the host.
             if (input.updateCurrentTab !== false) {
               yield* disconnect(connection.clientId, connection.queue, true);
             }

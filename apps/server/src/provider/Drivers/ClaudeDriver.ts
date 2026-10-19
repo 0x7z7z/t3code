@@ -118,8 +118,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      // The server cwd is $HOME in packaged desktop builds, and `claude`
-      // wrappers that scope themselves to their cwd refuse to run there.
+      // Packaged desktop starts in $HOME, where cwd-scoped claude wrappers may refuse to run.
       const { stateDir } = yield* ServerConfig.ServerConfig;
       const httpClient = yield* HttpClient.HttpClient;
       const latestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
@@ -194,9 +193,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         modelCatalog,
       );
 
-      // Per-instance capabilities cache: keyed on binary + resolved HOME so
-      // account-specific probes never share auth metadata across instances.
-      // A transient miss may reuse the last account once, but its usage windows keep their age.
+      // Key auth probes by binary and resolved HOME to isolate accounts. One transient fallback keeps the original usage age.
       const lastGoodCapabilities = yield* Ref.make<ClaudeCapabilitiesProbe | undefined>(undefined);
       const capabilitiesProbeCache = yield* Cache.makeWith(
         () =>
