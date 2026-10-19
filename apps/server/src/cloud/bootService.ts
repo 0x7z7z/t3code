@@ -77,7 +77,7 @@ export interface BootServicePlan {
   readonly unitPath: string;
 }
 
-/** Pure renderer: service units cannot rely on the user's shell or PATH. */
+/** Service units cannot rely on the user's shell or PATH. */
 export function renderBootServiceUnit(plan: BootServicePlan): string {
   // The user manager has no reliable network-online target; server networking retries itself.
   return [
@@ -123,7 +123,7 @@ function escapeXmlText(value: string): string {
   return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-/** Pure renderer: launch agents cannot rely on the user's shell or PATH. */
+/** Launch agents cannot rely on the user's shell or PATH. */
 export function renderBootServicePlist(
   plan: BootServicePlan,
   options: { readonly homeDir: string; readonly environmentPath: string },
@@ -191,12 +191,7 @@ export interface BootServiceStep {
   readonly timeout?: Duration.Input;
 }
 
-/**
- * Stop commands block until the service manager gives up: 90s by default for
- * systemd's TimeoutStopSec, and ExitTimeOut=90 in the rendered plist. This
- * must stay above both, or the runner cancels the stop mid-shutdown and the
- * next step races a still-loaded service.
- */
+/** Must exceed systemd TimeoutStopSec and launchd ExitTimeOut (both 90s) to avoid shutdown races. */
 const STOP_STEP_TIMEOUT = Duration.seconds(120);
 
 export interface BootServiceManager {
@@ -289,10 +284,8 @@ function launchdManager(input: {
   );
   const domainTarget = `gui/${input.uid}`;
   const serviceTarget = `${domainTarget}/${BOOT_SERVICE_LAUNCHD_LABEL}`;
-  // bootout/enable are optional: they fail on not-loaded states that are fine
-  // to proceed from. The strict `bootstrap` runs last and is also the start:
-  // loading a RunAtLoad/KeepAlive plist starts the job, so a separate kickstart
-  // would kill and restart a server it just booted.
+  // bootout/enable may fail for unloaded jobs. Bootstrap starts RunAtLoad/KeepAlive jobs;
+  // a separate kickstart would immediately kill and restart them.
   return {
     kind: "launchd",
     unitPath,
@@ -301,10 +294,8 @@ function launchdManager(input: {
         homeDir: input.homeDir,
         environmentPath: input.environmentPath,
       }),
-    // Without --wait, bootout returns in milliseconds while the job drains
-    // for up to ExitTimeOut, and a bootstrap during the drain fails EIO.
-    // --wait (present on modern macOS, absent from the man page) blocks until
-    // the job is removed from the domain; STOP_STEP_TIMEOUT outlives it.
+    // bootout --wait is undocumented but waits through ExitTimeOut; otherwise bootstrap can race
+    // the draining job and fail EIO.
     stop: [
       {
         step: "stopping the installed launch agent",
@@ -775,11 +766,8 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     const installed = yield* fs
       .exists(unitPath)
       .pipe(Effect.mapError((cause) => new BootServiceInstallError({ cause })));
-    // With start=false the service keeps running while its files change. The
-    // launcher reads the state file once at startup and the unit only matters
-    // on the next start, so that is safe as long as the launcher is not in the
-    // middle of a remote update, which is the one time it writes the state file
-    // itself.
+    // With start=false, changing startup-only files is safe except during a remote update,
+    // when the launcher also writes its state file.
     const start = options?.start !== false;
     if (installed && start) {
       yield* runSteps(manager.stop);
@@ -829,12 +817,8 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
         )}\n`,
       );
       if (!start && installed) {
-        // The launcher only writes this file while a remote update is in
-        // flight. One that began after the check above lands either before
-        // this write (then the launcher's copy in memory is what it keeps
-        // acting on, and its next write puts its own outcome back) or after
-        // it, which this read catches: the file no longer says what was just
-        // written, so stop here before repointing the unit.
+        // A remote update begun after the check can overwrite this state from the launcher's
+        // in-memory copy. Detect that before repointing the unit.
         const written = yield* fs.readFileString(statePath);
         if (serviceStateActiveVersion(written) !== input.cliVersion) {
           return yield* new BootServiceUpdatePendingError();
@@ -896,11 +880,8 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
       ) {
         return yield* operation;
       }
-      // `is-active` fails while a crash-looping unit sits in `activating
-      // (auto-restart)`, and a throttled launchd job is loaded without a pid;
-      // both would start the server mid-repair. So the unit is always
-      // stopped, and started again when it was active, enabled or loaded
-      // before; a disabled unit caught crash-looping stays stopped.
+      // Crash-looping systemd units and throttled launchd jobs can look inactive but restart
+      // mid-repair. Stop unconditionally; restore only an active, enabled, or loaded unit.
       const restore =
         manager.kind === "systemd"
           ? yield* Effect.map(
@@ -917,12 +898,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
               yield* probe("launchctl", ["print", `gui/${uid}/${BOOT_SERVICE_LAUNCHD_LABEL}`]),
             );
       return yield* Effect.acquireUseRelease(
-        // Every stop step is required when the service is to be restored: a
-        // step that was fine to skip during uninstall would leave the server
-        // holding the database. A stop that fails (a timeout, say) may still
-        // have stopped the service, so the restore below runs either way.
-        // Nothing to restore means nothing is expected to be loaded, and the
-        // stop is best-effort (launchd's bootout fails on an unloaded job).
+        // Restored services require every stop step so no process retains the database.
+        // A failed stop may still have stopped the service, so restore either way.
+        // Unloaded services need only best-effort stop (launchd bootout fails for them).
         runSteps(manager.stop.map((step) => ({ ...step, optional: !restore }))).pipe(Effect.exit),
         (stopped): Effect.Effect<A, E | BootServiceError, R> =>
           Exit.isSuccess(stopped) ? operation : Effect.failCause(stopped.cause),

@@ -43,12 +43,7 @@ export const ClaudeExecutableFileCheck = Context.Reference<ExecutableFileCheck>(
   },
 );
 
-/**
- * The SDK spawns the given path without a shell and without Windows PATH / PATHEXT resolution,
- * so a bare command name like `claude` fails with "native binary not found" and an npm
- * `claude.cmd` shim fails with `spawn EINVAL`. CLI probes avoid this via `resolveSpawnCommand`,
- * which can fall back to `shell: true`; the SDK offers no such escape hatch.
- */
+/** On Windows the SDK skips shell and PATH/PATHEXT lookup: bare names and .cmd shims fail. */
 export const resolveClaudeSdkExecutablePath = Effect.fn("resolveClaudeSdkExecutablePath")(
   function* (binaryPath: string, environment: NodeJS.ProcessEnv): Effect.fn.Return<string> {
     const platform = yield* HostProcess.Platform;

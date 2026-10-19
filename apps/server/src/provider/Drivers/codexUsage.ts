@@ -122,10 +122,8 @@ function parseCodexRecord(parsed: unknown, state: CodexScanState): UsageRecord |
   if (typeof last !== "object" || last === null) return null;
   const lastRecord = last as Record<string, unknown>;
 
-  // Only an event that is otherwise eligible may consume the duplicate
-  // signature. A token_count arriving before its turn_context (no model yet)
-  // must not poison it, or the re-emitted copy after the model is known would
-  // be skipped as a duplicate and those tokens never counted.
+  // An eligible token_count alone may consume the signature; a no-model event must not hide
+  // its re-emitted copy after turn_context arrives.
   const timestampMs = parseTimestampMs(record["timestamp"]);
   if (timestampMs === null) return null;
   if (state.model.length === 0) return null;

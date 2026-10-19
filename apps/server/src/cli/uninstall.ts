@@ -172,9 +172,7 @@ const runUninstall = Effect.fn("cli.uninstall.run")(function* (input: {
     yield* Console.log(`Removed ${plan.launcher}.`);
   }
   if (plan.runtimeDir !== undefined) {
-    // This process runs from inside runtimeDir. POSIX unlinks a running
-    // executable fine; Windows refuses, so the tree is removed after this
-    // process exits by a detached shell, and the user is told either way.
+    // Windows refuses to unlink this running executable; a detached shell removes it after exit.
     if (platform === "win32") {
       const runtimeDir = plan.runtimeDir;
       const comspec = environment["ComSpec"] ?? environment["COMSPEC"] ?? "cmd.exe";

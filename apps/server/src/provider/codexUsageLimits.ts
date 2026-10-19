@@ -143,12 +143,7 @@ export function codexRateLimitsFailureMessage(error: CodexErrors.CodexAppServerE
   }
 }
 
-/**
- * Codex sends `account/rateLimits/updated` as a partial view of the snapshot: a
- * field the update omits keeps the value observed earlier in the session, so a
- * later notification that only names the limit it reached must not drop the
- * windows an earlier one carried.
- */
+/** Rate-limit notifications are partial: omitted fields preserve earlier session values. */
 export function mergeCodexRateLimits(
   previous: CodexRateLimitSnapshot | undefined,
   update: CodexRateLimitSnapshot,

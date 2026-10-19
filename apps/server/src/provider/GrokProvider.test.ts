@@ -400,8 +400,6 @@ it.layer(NodeServices.layer)("checkGrokProviderStatus", (it) => {
     }),
   );
 
-  // A stand-in for the Grok CLI: `--version` and `models` print canned text,
-  // and `agent stdio` execs the mock ACP agent so `initialize` returns model metadata.
   const writeFakeGrokCli = (input: {
     readonly modelsOutput: string;
     readonly acp: boolean;

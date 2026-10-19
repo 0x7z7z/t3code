@@ -170,11 +170,7 @@ class AntigravityDatabaseDecodeError extends Schema.TaggedError<AntigravityDatab
   }
 }
 
-/**
- * One statement.all() holds the event loop until every row it returns is in memory, and a
- * generation row carries the conversation's whole context so far, often megabytes, so generations
- * are read one at a time.
- */
+/** Generation rows can hold megabytes of context; read one at a time to bound blocking statement.all(). */
 const GENERATION_PAGE_ROWS = 1;
 const STEP_PAGE_ROWS = 64;
 
@@ -327,12 +323,8 @@ interface CachedDatabase {
   readonly candidates: readonly UsageCandidate[];
 }
 
-/**
- * Parsed databases keyed by canonical path. An entry is reused only while both
- * the database and its `-wal` sidecar keep the same size, mtime and ctime: new
- * rows land in the WAL without touching the main file until a checkpoint, and
- * ctime moves on any content write even when mtime is restored.
- */
+/** Cache fingerprints include DB and WAL size/mtime/ctime: rows land in WAL, and ctime
+ * detects content writes that restore mtime. Keys are canonical paths. */
 export const makeAntigravityUsageCache = () => new Map<string, CachedDatabase>();
 
 export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* (
@@ -447,7 +439,6 @@ export const readAntigravityUsage = Effect.fn("readAntigravityUsage")(function* 
       names.sort((a, b) => a.localeCompare(b));
       for (const name of names) {
         const path = pathService.join(directory, name);
-        // Like a directory listing's entry types: symlinks are neither files nor directories.
         const isLink = Exit.isSuccess(yield* Effect.exit(fileSystem.readLink(path)));
         const type = isLink
           ? "SymbolicLink"

@@ -70,10 +70,7 @@ const CODEX_APP_SERVER_PROBE_FORCE_KILL_AFTER = "2 seconds" as const;
 const CODEX_CATALOG_REFRESH_TIMEOUT = "3 seconds" as const;
 const CODEX_CATALOG_REFRESH_POLL = "100 millis" as const;
 const CODEX_CLIENT_NAME = "T3 Code";
-// Codex's probe does a full handshake plus account, models, and skills requests, which can
-// legitimately run past the shared 10s AUTH_PROBE_TIMEOUT_MS on a loaded or slow machine
-// (most often reported on Windows). Give Codex its own longer budget instead of raising the
-// timeout for every provider.
+// Handshake plus account/models/skills requests can exceed the shared 10s probe budget.
 const CODEX_AUTH_PROBE_TIMEOUT_MS = 20_000;
 
 const CODEX_PRESENTATION = {
@@ -350,12 +347,8 @@ const readCodexModelsCacheFetchedAt = Effect.fn("readCodexModelsCacheFetchedAt")
   );
 });
 
-/**
- * Every Codex client on the machine shares that file, and the backend tailors
- * the catalog to each client's originator: the plain CLI does not get Sol
- * Ultrafast. App-server refreshes the catalog online at startup, so wait until
- * a write newer than this process's spawn lands, then list again.
- */
+/** The shared cache varies by originator; wait for this app-server's startup refresh
+ * before listing, or plain-CLI models can hide entitled tiers such as Sol Ultrafast. */
 const requestCodexChatGptModels = Effect.fn("requestCodexChatGptModels")(function* (input: {
   readonly client: CodexClient.CodexAppServerClient["Service"];
   readonly codexHome: string;
@@ -411,9 +404,7 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
   readonly cwd: string;
   readonly environment?: NodeJS.ProcessEnv | undefined;
 }) {
-  // `~` is not shell-expanded when env vars are set via `child_process.spawn`,
-  // so `CODEX_HOME=~/.codex_work` would reach codex verbatim and trip
-  // "CODEX_HOME points to '~/.codex_work', but that path does not exist".
+  // Expand CODEX_HOME explicitly: spawn passes a literal ~ that Codex rejects.
   const resolvedHomePath = input.homePath
     ? expandHomePath(input.homePath, yield* HostProcess.HomeDirectory)
     : undefined;

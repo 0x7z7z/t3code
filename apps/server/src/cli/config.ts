@@ -329,8 +329,7 @@ export const resolveServerConfig = (
     const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
       baseDirIsExplicit: Option.isSome(explicitBaseDir),
     });
-    // An interactive CLI must not start over a discovered server. Lifetime locking
-    // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
+    // Preflight rejects existing servers; lifetime locking arbitrates concurrent starts.
     if (options?.rejectRunningServer && mode === "web") {
       const runtime = yield* readPersistedServerRuntimeState(derivedPaths.serverRuntimeStatePath);
       // A killed container can leave a record with the new server's own PID.

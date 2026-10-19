@@ -312,9 +312,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
         ),
       );
 
-      // Same rules as Codex: serialised on the config directory that holds the
-      // login, one request id kept until Claude answers (a cooldown or rate
-      // limit is an answer), then a re-probe.
+      // Serialize on the login directory and retain the request id until Claude answers, including cooldowns.
       const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
         Effect.gen(function* () {
           const current = yield* snapshot.getSnapshot;

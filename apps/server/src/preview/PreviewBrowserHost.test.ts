@@ -20,7 +20,6 @@ const LDD_IN_BARE_DEBIAN = `\tlinux-vdso.so.1 (0x00007ffd2d1f8000)
 const SANDBOX_ABORT =
   "[1005/163106.285700:FATAL:content/browser/zygote_host/zygote_host_impl_linux.cc:129] No usable sandbox! If you are running on Ubuntu 23.10+ or another Linux distro that has disabled unprivileged user namespaces with AppArmor, see https://chromium.googlesource.com/";
 
-// What the real loader prints when the browser's `--version` cannot start it.
 const LOADER_ERROR =
   "chrome-headless-shell: error while loading shared libraries: libglib-2.0.so.0: cannot open shared object file: No such file or directory";
 

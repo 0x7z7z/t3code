@@ -11,7 +11,6 @@ import { browserCommand } from "./browser.ts";
 
 it.effect("setup in a root shell warns that the server cannot run as root", () =>
   Effect.gen(function* () {
-    // Every file read fails, so setup finds nothing to install and changes nothing.
     yield* Command.runWith(browserCommand, { version: "0.0.0" })([
       "setup",
       "--base-dir",
@@ -20,7 +19,6 @@ it.effect("setup in a root shell warns that the server cannot run as root", () =
       Effect.provide(FileSystem.layerNoop({})),
       Effect.provideService(HostProcess.Platform, "linux"),
       Effect.provideService(HostProcess.UserId, 0),
-      // A root user who follows the old advice runs setup through sudo.
       Effect.provideService(HostProcess.Environment, { SUDO_USER: "root" }),
     );
     const output = (yield* TestConsole.logLines).join("\n");

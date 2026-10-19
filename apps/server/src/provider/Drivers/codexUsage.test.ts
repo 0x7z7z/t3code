@@ -87,9 +87,7 @@ describe("parseCodexLine", () => {
     expect(speedAfter(settings({ model: "gpt-6-astra" }), 4)).toBe("standard");
   });
 
-  // A forked/subagent rollout opens with the parent's history copied in and
-  // every line re-stamped to the fork instant, then the ancestors' session
-  // metas. Counting those again multiplied usage ~1.85x on real data (#5758).
+  // Forked rollouts copy and re-stamp parent history and ancestor metas; do not count them again.
   describe("forked rollouts", () => {
     const meta = (overrides: {
       id: string;

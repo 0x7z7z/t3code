@@ -356,9 +356,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
   }
 
   const status = yield* service.status;
-  // The unit name is per user, not per T3 home. Only touch the service when it
-  // serves the home this update targets; otherwise it belongs to another
-  // install on this machine and restarting it would take that server down.
+  // Service names are per user, so another home's unit belongs to a different install.
   const servesThisHome =
     status.installedBaseDir !== undefined &&
     path.resolve(status.installedBaseDir) === path.resolve(input.baseDir);
@@ -490,10 +488,7 @@ const runUpdate = Effect.fn("cli.update.run")(function* (input: {
     targetEntryPath: runtime.entryPath,
   });
 
-  // The service switch runs in this process against the target version: the downloaded runtime
-  // has already proven it runs (the `--version` check above), and doing it here rather than
-  // through the target's own CLI means a downgrade to a version without today's commands still
-  // works.
+  // Switch through this CLI so downgrades work even if the target version lacks the command.
   let serviceUpdated = false;
   if (serviceInstalled && !serviceCurrent) {
     yield* Console.log(

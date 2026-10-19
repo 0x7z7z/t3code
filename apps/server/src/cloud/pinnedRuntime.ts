@@ -91,11 +91,7 @@ export type PinnedRuntimeProgress =
   | { readonly stage: "download"; readonly received: number; readonly total: number | undefined }
   | { readonly stage: "verify" | "extract" | "validate" | "cached" };
 
-/**
- * The sentinel is written only after extraction and validation succeed; checking the entry file
- * alone is not enough, since tar writes the executable before the last native package and a
- * killed install leaves a plausible-looking but broken tree behind.
- */
+/** Tar writes the executable before native packages; only a validated install gets a sentinel. */
 
 interface PinnedRuntimeInstallInput {
   readonly baseDir: string;

@@ -232,12 +232,7 @@ function antigravityEnvironment(
   };
 }
 
-/**
- * The agent reads its user-global skills under `GEMINI_HOME`, which T3 points
- * at the private profile. Link the two skill directories back to the user's
- * real `~/.gemini` so global skills load, while MCP servers, hooks, and
- * credentials stay isolated.
- */
+/** Private GEMINI_HOME isolates credentials/hooks/MCP; link global skills from the real ~/.gemini. */
 const linkAntigravityUserSkills = Effect.fn("linkAntigravityUserSkills")(function* (input: {
   readonly profileDirectory: string;
   readonly userHome: string;

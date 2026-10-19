@@ -7,12 +7,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import { parse as parseYamlDocument } from "yaml";
 
-/**
- * The home directory the agent expands `~` against, matching Python's
- * `os.path.expanduser` in the launch environment T3 hands the process:
- * `USERPROFILE`, then `HOMEDRIVE` + `HOMEPATH`, on Windows and `HOME`
- * elsewhere.
- */
+/** Match Python os.path.expanduser: USERPROFILE, then HOMEDRIVE+HOMEPATH on Windows; HOME elsewhere. */
 export function resolveAntigravityUserHome(
   platform: NodeJS.Platform,
   environment: NodeJS.ProcessEnv,

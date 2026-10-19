@@ -512,8 +512,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   it.effect("uses bootstrap envelope values as fallbacks when flags and env are absent", () =>
     Effect.gen(function* () {
       const { join, resolve } = yield* Path.Path;
-      // The resolver absolutises the configured home, so the expectation must
-      // carry the host's drive on Windows.
       const baseDir = resolve("/tmp/t3-bootstrap-home");
       const fd = yield* openBootstrapFd(
         makeDesktopBootstrap({

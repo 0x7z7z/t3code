@@ -12,11 +12,7 @@ import {
 } from "@t3tools/provider-core/server/usage";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
-/**
- * T3 Code writes one record per assistant *content block*, and every one of those records repeats
- * the same complete `usage` object for the parent message. Summing them overcounts by roughly
- * 2.4x on a real workload, so the caller must drop repeats by `dedupeKey` and keep the first.
- */
+/** Content blocks repeat full parent-message usage; callers must keep the first record per dedupeKey. */
 export function parseClaudeLine(line: string): UsageRecord | null {
   let parsed: unknown;
   try {

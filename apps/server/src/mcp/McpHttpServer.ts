@@ -175,13 +175,8 @@ const layerMcpAuthMiddleware = HttpRouter.middleware<{
   provides: McpInvocationContext.McpInvocationContext;
 }>()(makeMcpAuthMiddleware).layer;
 
-/**
- * Claude Code moves an MCP result above its output limit to a file and hands
- * the agent a notice instead, so a snapshot that carries the full accessibility
- * tree and page text loses its locators too. Claude Code also shows the model
- * `structuredContent` in place of the text blocks when a result has both, so
- * both carry the same bounded snapshot.
- */
+/** Claude Code spills oversized results to files, losing locators, and prefers structuredContent
+ * over text. Keep the same bounded snapshot in both. */
 export const MAX_SNAPSHOT_TEXT_BYTES = 20_000;
 const MAX_SNAPSHOT_VISIBLE_TEXT_CHARS = 8_000;
 const MAX_SNAPSHOT_ELEMENT_NAME_CHARS = 200;
@@ -316,7 +311,6 @@ const boundSnapshotMetadata = (metadata: SnapshotMetadata) => {
     } else {
       const keep = Math.floor(lists[key].length / 2);
       dropped[key] += lists[key].length - keep;
-      // slice(-0) keeps everything, so spell out the empty case.
       lists[key] =
         keep === 0
           ? []
@@ -395,7 +389,6 @@ const saveScreenshot = Effect.fn("McpHttpServer.saveScreenshot")(function* (
 const decodeAsAdvertised = <Tools extends Record<string, Tool.Any>>(
   toolkit: Toolkit.Toolkit<Tools>,
 ): Toolkit.Toolkit<Tools> =>
-  // The clones keep each tool's id, name and decoded parameter type, so handlers still match.
   Toolkit.make(
     ...Object.values(toolkit.tools).map((tool) =>
       tool.setParameters(Schema.toCodecJson(tool.parametersSchema)),
@@ -417,8 +410,7 @@ const previewSnapshotFailure = <E>(cause: Cause.Cause<E>) => {
     typeof firstFailure._tag === "string"
       ? firstFailure._tag
       : "PreviewSnapshotError";
-  // Preview errors build their message on the server, never from page output,
-  // and it tells the agent what to do next, such as falling back to a shell browser.
+  // Preview errors contain server-authored recovery guidance, never page output.
   const message = isPreviewAutomationError(firstFailure) ? firstFailure.message : undefined;
   const result = new McpSchema.CallToolResult({
     isError: true,
@@ -746,12 +738,7 @@ const registerHtmlPreview = Effect.fn("McpHttpServer.registerHtmlPreview")(funct
   );
 });
 
-/**
- * `McpServer.toolkit` asks for every service its tools declare when it
- * registers them, but the auth middleware provides `McpInvocationContext` to
- * each request instead. Registration must not get one: the services it
- * captures would replace the request's.
- */
+/** Capture McpInvocationContext per request; registration-time services would override it. */
 export const toolkitRegistration = <Tools extends Record<string, Tool.Any>, EX, RX>(
   toolkit: Toolkit.Toolkit<Tools>,
   handlers: McpToolAccess.HandlersLayer<Tools, EX, RX>,

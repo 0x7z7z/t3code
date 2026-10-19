@@ -62,12 +62,7 @@ function isCodexStandaloneCommandPath(commandPath: string): boolean {
   return normalizeCommandPath(commandPath).includes("/packages/standalone/");
 }
 
-/**
- * `codex update` replaces the standalone tree under `CODEX_HOME`. That tree
- * lives in the shared home even when an auth-overlay shadow home is in use
- * (the overlay only carries auth and a few local entries), so the updater
- * runs against `sharedHomePath` rather than the instance's effective home.
- */
+/** `codex update` owns the shared home's standalone tree; auth-overlay homes do not carry it. */
 function makeCodexMaintenanceResolver(sharedHomePath: string) {
   return makePackageManagedProviderMaintenanceResolver({
     provider: DRIVER_KIND,
@@ -272,13 +267,8 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
               ),
             );
 
-      // Redemption spends something on the user's account. It serialises on
-      // the account (instances sharing a Codex home share the credit), keeps
-      // one idempotency key until Codex reports an outcome, and is bounded so
-      // a hung app-server cannot hold the account lock.
-      // Keyed on the directory holding auth.json: an auth-overlay instance has
-      // its own account under `effectiveHomePath`, while plain instances share
-      // the common home. The continuation key would conflate the two.
+      // Credits belong to the account holding auth.json, not the instance or continuation key.
+      // Auth overlays have separate accounts; plain instances share the home.
       const accountKey = homeLayout.effectiveHomePath ?? homeLayout.sharedHomePath;
       const consumeResetCredit: NonNullable<ProviderInstance["consumeResetCredit"]> = () =>
         resetCreditCoordinator
@@ -308,10 +298,7 @@ export const CodexDriver: ProviderDriver<CodexSettings, CodexDriverEnv, Path.Pat
                   cause,
                 }),
             ),
-            // The windows just changed; re-probe so the snapshot says so. A
-            // failed probe republishes the pre-redemption limits rather than
-            // marking them failed, so "confirmed" means `checkedAt` moved past
-            // what was published before the redemption started.
+            // Failed probes republish old limits; confirmation requires checkedAt to change.
             Effect.tap((outcome) =>
               Effect.gen(function* () {
                 const before = (yield* snapshot.getSnapshot).usageLimits?.checkedAt;

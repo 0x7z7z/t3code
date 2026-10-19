@@ -12,10 +12,7 @@ import {
 } from "./triagePrompt.ts";
 
 it("stays byte-identical to .github/triage/PLAYBOOK.md", () => {
-  // Old releases fetch the repo copy from `main` and follow it when it differs
-  // from their bundled playbook. The two must say the same thing at HEAD, or a
-  // playbook edit silently changes behavior only for old (or only for new)
-  // installs.
+  // Older releases fetch the repo playbook, so it must agree with the bundled copy.
   const canonicalPath = NodePath.join(
     import.meta.dirname,
     "../../../../.github/triage/PLAYBOOK.md",
@@ -72,8 +69,6 @@ it("context file carries every path the playbook depends on", () => {
 });
 
 it("context file labels the CLI version as the CLI's, not the user's build", () => {
-  // `npx t3 triage` can resolve a different `t3` than the app the bug
-  // happened on (#13337), so the agent must not read it as the user's version.
   const context = buildTriageContext({
     generatedAt: "2026-09-24T00:00:00.000Z",
     cliVersion: "0.0.42",

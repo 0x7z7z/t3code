@@ -54,11 +54,7 @@ export class ProviderRegistry extends Context.Service<
       provider?: ProviderDriverKind,
     ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
-    /**
-     * When the instance id is unknown the call resolves with the currently
-     * cached list (no error) — matching the legacy `refresh` shim behaviour so
-     * transport layers don't have to special-case unknowns.
-     */
+    /** Unknown instance ids return the cached list without error. */
     readonly refreshInstance: (
       instanceId: ProviderInstanceId,
     ) => Effect.Effect<ReadonlyArray<ServerProvider>>;
@@ -156,13 +152,8 @@ const shouldRetainMissingProviderModels = (provider: ServerProvider): boolean =>
   }
 
   if (provider.driver === ProviderDriverKind.make("acpRegistry")) {
-    // ACP Registry discovery probes return the agent's complete inventory, so
-    // a completed probe replaces the model list — otherwise agents that rename
-    // or collapse models leave stale entries pinned forever through the
-    // snapshot cache. Only a completed probe reports `nativeSessions`;
-    // readiness-only and failed probe snapshots only know the "default"
-    // placeholder and stay partial. Auth is no signal here: agents without
-    // sign-in stay "unknown" after every probe.
+    // Only completed ACP discovery reports nativeSessions and a full inventory. Other probes
+    // carry a default placeholder; auth stays unknown even after success for agents without sign-in.
     return !(
       provider.installed &&
       provider.status === "ready" &&
@@ -341,9 +332,7 @@ const snapshotInstanceKey = (provider: ServerProvider): ProviderInstanceId => {
   return provider.instanceId;
 };
 
-// Each call re-captures the instance's `snapshot` closures, so after
-// `ProviderInstanceRegistry` rebuilds an instance (e.g. because its settings
-// changed), a fresh source rides the new PubSub instead of a closed one.
+// Rebuilt instances have new PubSubs; capture their fresh closures instead of a closed source.
 const buildSnapshotSource = (instance: ProviderInstance): ProviderSnapshotSource => ({
   instanceId: instance.instanceId,
   driverKind: instance.driverKind,
@@ -692,9 +681,7 @@ export const layer = Layer.effect(
       provider: ProviderDriverKind,
       options?: { readonly fresh?: boolean },
     ) {
-      // Read the instance registry, not `liveSubsRef`: the latter trails
-      // reconciliation, and an update must never run a retired instance's
-      // command against a freshly configured executable.
+      // liveSubsRef trails reconciliation and could run a retired instance's command; read the registry.
       const instance = yield* instanceRegistry.getInstance(instanceId);
       if (!instance || instance.driverKind !== provider) {
         return makeManualProviderMaintenanceCapabilities(provider);
@@ -753,10 +740,7 @@ export const layer = Layer.effect(
           }
         }
 
-        // Fork long-lived subscriptions to each new/rebuilt instance's
-        // change stream before reading its current snapshot. If the
-        // driver's own initial probe finishes during this sync, either
-        // the current read or the active subscriber observes the result.
+        // Subscribe before reading so a probe completing mid-sync is observed by at least one path.
         for (const [, instance] of newlyAdded) {
           const source = buildSnapshotSource(instance);
           yield* Stream.runForEach(source.streamChanges, (provider) =>

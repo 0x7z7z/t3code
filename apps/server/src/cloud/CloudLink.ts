@@ -715,10 +715,7 @@ const make = Effect.gen(function* () {
         if (Option.isNone(runtimeBytes)) return false;
         const config = Option.getOrNull(decodeRuntimeConfig(bytesToString(runtimeBytes.value)));
         if (config === null || config.providerKind !== "cloudflare_tunnel") return false;
-        // With the marker required, only a config the relay already confirmed on
-        // this port may start. Without it, startup is falling back after the
-        // relay stayed unreachable: an unconfirmed origin may send traffic to a
-        // stale port, but that beats no remote access at all.
+        // Require the relay-confirmed port unless falling back after the relay stayed unreachable.
         if (requireConfirmedOrigin) {
           if (Option.isNone(markerBytes)) return false;
           const marker = Option.getOrNull(decodeConfirmedOrigin(bytesToString(markerBytes.value)));
@@ -773,10 +770,8 @@ const make = Effect.gen(function* () {
         : null;
       yield* endpointRuntime.applyConfig(null);
       yield* secrets.remove(CLOUD_ENDPOINT_CONFIRMED_ORIGIN);
-      // The stored runtime config is what reports the link as managed and what
-      // startup respawns, so drop it first and store it last. A write that
-      // fails part-way then leaves a link that reads as not managed, and the
-      // next relink repairs it instead of trusting a stale tunnel config.
+      // Drop runtime config first and store it last: a partial write must not look managed
+      // or respawn a stale tunnel on restart.
       yield* secrets.remove(CLOUD_ENDPOINT_RUNTIME_CONFIG);
 
       yield* secrets.set(RELAY_URL_SECRET, stringToBytes(payload.relayUrl));
@@ -1234,12 +1229,7 @@ const make = Effect.gen(function* () {
     ) {
       return false;
     }
-    // A shutdown that hands off to a pending update is not the environment going
-    // offline: the service launcher or the desktop app immediately brings a
-    // server back (the new version, or the old one after a rollback). Deleting
-    // the tunnel here forces that server to provision a replacement UUID, and the
-    // public hostname's route to the new tunnel takes 1-2 minutes to propagate —
-    // the dominant cost of an update restart.
+    // Update handoffs reuse the tunnel: replacing it adds 1-2 minutes of hostname propagation.
     if (
       (yield* withRuntimeFiles(desktopUpdateRestartPending)) ||
       (yield* withRuntimeFiles(pendingUpdateHandoffExists))
@@ -1273,12 +1263,8 @@ const make = Effect.gen(function* () {
     if (!response.ok) {
       return false;
     }
-    // The connector token died with the tunnel. Drop the stored config so the
-    // next start waits for the link reconcile instead of respawning the relay
-    // client with a dead token. Only dropped while it is still the config this
-    // shutdown released — a fast restart may already have reconciled and stored
-    // a fresh config for its replacement tunnel, and that one must survive this
-    // finalizer.
+    // Released tokens are dead. Drop only this shutdown's config, preserving a fast restart's
+    // replacement tunnel.
     const storedConfig = yield* secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG);
     if (
       Option.isSome(storedConfig) &&

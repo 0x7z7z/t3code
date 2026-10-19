@@ -44,9 +44,7 @@ const DEVICE_CODE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const DEVICE_AUTHORIZATION_DEFAULT_INTERVAL = Duration.seconds(5);
 // RFC 8628 §3.5: a slow_down response means "add 5 seconds to the interval".
 const DEVICE_AUTHORIZATION_SLOW_DOWN_INCREMENT = Duration.seconds(5);
-// Bounds one token or device-authorization request, including reading the
-// body. A stalled refresh holds the manager's semaphore and blocks every
-// other credential call.
+// A stalled OAuth request holds the semaphore and blocks all credential calls.
 const OAUTH_REQUEST_TIMEOUT = Duration.seconds(10);
 const boldTerminalText = (value: string): string => `\u001b[1m${value}\u001b[22m`;
 
@@ -474,10 +472,7 @@ export const make = Effect.gen(function* () {
       ),
       Layer.build,
     );
-    // The hosted /connect page establishes a Clerk session before forwarding
-    // the request to /oauth/authorize with the loopback redirect URI. Sending
-    // a signed-out browser to /oauth/authorize directly loses the authorize
-    // parameters across Clerk's sign-in redirect (#5051).
+    // /connect establishes a Clerk session first; /oauth/authorize loses parameters across sign-in.
     const authorizationUrl = buildConnectAuthorizeRequestUrl({
       hostedAppUrl,
       state,

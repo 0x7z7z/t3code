@@ -226,14 +226,8 @@ const make = Effect.gen(function* () {
 
     const ids = yield* handoffIds(scope);
 
-    // uninterruptibleMask: only the potentially slow worktree creation itself
-    // stays interruptible (restore). From the moment it succeeds, through the
-    // binding, continuation queue, setup script launch, and result
-    // construction, there is no interruptible gap: a client cancel can
-    // therefore neither orphan the created worktree before the rollback is
-    // armed, nor skip setting up a worktree the thread was just bound to
-    // (once the binding commits, the scheduled session detach can sever this
-    // request's connection and interrupt the fiber).
+    // Keep worktree creation interruptible, then mask through rollback registration, binding,
+    // continuation, and setup: binding can detach the session and interrupt this request.
     return yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
         const worktree = yield* restore(
@@ -274,10 +268,7 @@ const make = Effect.gen(function* () {
         ).pipe(Effect.ignoreCause({ log: true }));
 
         const recheckAndBind = Effect.gen(function* () {
-          // The projection was read before the potentially slow git work
-          // above; a concurrent binding (for example from the UI) could have
-          // attached the thread in the meantime. Re-check before committing so
-          // the race cannot leave a second, untracked worktree.
+          // A concurrent UI binding may have landed during git work; do not orphan a second worktree.
           const recheck = yield* loadThread(scope);
           if (recheck.thread.worktreePath !== null) {
             return yield* alreadyInWorktree(recheck.thread.worktreePath);
@@ -402,11 +393,8 @@ const make = Effect.gen(function* () {
     function* (callerScope, input) {
       yield* requireCapability(callerScope);
       const scope = yield* requireThreadScope(callerScope);
-      // uninterruptibleMask: the guard acquisition and the registration of the
-      // releasing finalizer happen with no interruptible gap in between. An
-      // interrupt landing between a bare add() and the start of an ensured
-      // effect would otherwise leak the guard entry and block every future
-      // handoff for this thread until restart.
+      // Acquire the guard and arm its finalizer without an interruptible gap, or cancellation
+      // can leave this thread blocked until restart.
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.suspend(() => {
           if (handoffThreadsInFlight.has(scope.thread.threadId)) {

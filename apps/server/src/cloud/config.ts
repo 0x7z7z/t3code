@@ -44,10 +44,6 @@ export function isAgentActivityPublishingEnabledValue(value: string | null): boo
   return value === "true";
 }
 
-/**
- * Mirrors the per-publish gate in AgentAwarenessRelay, so the descriptor
-    capability never advertises publishing that the publisher would skip.
- */
 export const readAgentActivityPublishingActive = (
   secrets: ServerSecretStore.ServerSecretStore["Service"],
 ): Effect.Effect<boolean> =>

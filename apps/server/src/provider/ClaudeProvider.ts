@@ -168,11 +168,7 @@ function apiProviderAuthMetadata(
   return apiProvider === "bedrock" ? { type: "bedrock", label: "Amazon Bedrock" } : undefined;
 }
 
-/**
- * The capability probe resolves for a logged-out CLI, so a completed probe only proves Claude
- * Code started. `tokenSource: "none"` is the CLI reporting it found no token at all, and is the
- * one shape that disproves authentication.
- */
+/** Probe completion only proves Claude started. Only tokenSource: "none" disproves auth. */
 function claudeAuthStatus(
   capabilities: Pick<
     ClaudeCapabilitiesProbe,
@@ -337,12 +333,7 @@ function waitForAbortSignal(signal: AbortSignal): Promise<void> {
   });
 }
 
-/**
- * We pass a never-yielding AsyncIterable as the prompt so that no user message is ever written
- * to the subprocess stdin. This means the Claude Code subprocess completes its local
- * initialization IPC (returning account info and slash commands) but never starts an API
- * request to Anthropic.
- */
+/** A never-yielding prompt allows local initialization IPC without sending an Anthropic request. */
 const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
@@ -380,9 +371,7 @@ const probeClaudeCapabilities = (
     Effect.timeout(CAPABILITIES_PROBE_TIMEOUT_MS),
     Effect.flatMap(({ q, init }) =>
       Effect.gen(function* () {
-        // Usage has its own deadline so a slow optional request cannot discard initialization.
-        // Only the rate limits are read, so skip the local transcript scan that fills
-        // `behaviors`: with a few GB of transcripts it outlasts the deadline.
+        // Optional usage gets its own deadline; skip the potentially multi-GB transcript scan for behaviors.
         const usageResult = includeUsage
           ? yield* Effect.tryPromise(() =>
               q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),

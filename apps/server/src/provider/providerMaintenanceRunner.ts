@@ -96,9 +96,7 @@ const runProviderMaintenanceCommandWithSpawner = Effect.fn("ProviderMaintenanceR
   }) {
     const collectCommandResult = Effect.fn("ProviderMaintenanceRunner.collectCommandResult")(
       function* () {
-        // On Windows the update tools are batch shims (e.g. `npm` -> `npm.cmd`), which a bare
-        // ChildProcess.spawn cannot launch (spawn npm ENOENT); resolveSpawnCommand finds the
-        // real `.cmd` and routes it through the shell.
+        // Windows batch shims require shell dispatch through resolveSpawnCommand.
         const resolved = yield* resolveSpawnCommand(input.command, input.args);
         const child = yield* input.spawner
           .spawn(
@@ -428,9 +426,7 @@ export const make = Effect.fn("ProviderMaintenanceRunner.make")(function* () {
               ).pipe(Effect.asVoid);
             yield* setRunningMessage("Checking for the latest version");
 
-            // The cached capabilities chose the lock; re-derive ownership
-            // now so the command that runs matches the executable as it is
-            // at click time, not as it was at the last health refresh.
+            // Recheck ownership after acquiring the cached lock in case the executable changed.
             const fresh = yield* providerRegistry.getProviderMaintenanceCapabilitiesForInstance(
               instanceId,
               provider,

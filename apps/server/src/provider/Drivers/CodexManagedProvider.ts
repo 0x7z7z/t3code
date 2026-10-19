@@ -285,10 +285,7 @@ export const makeManagedCodexProvider = Effect.fn("makeManagedCodexProvider")(fu
       enabled
         ? resolveRuntime.pipe(
             Effect.matchEffect({
-              // Signed out or not set up, there is nothing to scan with and the
-              // machine snapshot's empty inventory says as much. Otherwise the
-              // runtime failed for a signed-in account (a token refresh or
-              // reconnect) or before the first check, and the scan failed.
+              // Signed-out snapshots have an empty inventory; a signed-in runtime failure must fail the scan.
               onFailure: (cause) =>
                 snapshot.getSnapshot.pipe(
                   Effect.filterOrFail(

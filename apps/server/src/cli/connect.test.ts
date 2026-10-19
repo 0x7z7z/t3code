@@ -193,7 +193,6 @@ it.effect("keeps disconnect causes in structured logs and out of console warning
   );
 });
 
-/** Captures console lines from a successful local disconnect report. */
 const captureDisconnectReport = (input: {
   readonly clearAuthorization: boolean;
   readonly liveResult: {

@@ -1981,7 +1981,6 @@ describe("orchestrator MCP toolkit", () => {
                 projection.runs.some((run) => run.id === runId && run.status === status),
               );
 
-            // Claude steers into the running turn, which then ends.
             const steerReceived = yield* Deferred.make<void>();
             steerReceivedGates.set(childSteerText, steerReceived);
             const steeredSend = yield* steerIntoUntaskedChildRun(
@@ -2012,8 +2011,6 @@ describe("orchestrator MCP toolkit", () => {
             ).toEqual([]);
             expect(steeredSend.sent.taskId).toBeUndefined();
 
-            // This Codex session has active steering off, so the send restarts the
-            // turn as a new attempt that owns the follow-up task and settles it.
             const restarted = yield* steerIntoUntaskedChildRun(
               { providerInstanceId: codexInstanceId, model: codexModel },
               "restart-untasked-run",
@@ -2388,7 +2385,6 @@ describe("orchestrator MCP toolkit", () => {
             );
             expect(unlinked.linkedPullRequest).toBeNull();
 
-            // Links added through thread.pull-request.link leave linkedPullRequest unchanged.
             yield* orchestrator.dispatch({
               type: "thread.pull-request.link",
               commandId: CommandId.make("command:mcp-empty:link-other-repository"),

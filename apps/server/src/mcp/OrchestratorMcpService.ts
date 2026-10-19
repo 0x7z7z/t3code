@@ -207,13 +207,8 @@ function failure(code: OrchestratorMcpFailure["code"], message: string): Orchest
   return new OrchestratorMcpFailure({ code, message });
 }
 
-/**
- * A caller's thread is live while it is not archived, runs on the caller's
- * provider instance, and has an active run or a background subagent that
- * instance started. A background subagent outlives its run and calls tools
- * with its thread's credential, which is revoked when the provider process
- * goes away.
- */
+/** Background subagents keep their provider instance live after a run; credentials last until
+ * the provider process exits. Archived threads and other instances cannot act. */
 export const isLiveCallerShell = (
   shell: Pick<
     OrchestrationV2ThreadShell,
@@ -290,7 +285,6 @@ function providerConstraints(
     constraints.push("No V2 provider adapter is registered.");
   }
   if (provider === undefined) return constraints;
-  // Driver availability comes from the registry, even when health probes are skipped.
   if (!isProviderAvailable(provider)) {
     constraints.push(provider.unavailableReason ?? "Provider driver is unavailable.");
   }
@@ -309,11 +303,8 @@ function providerConstraints(
   return constraints;
 }
 
-/**
- * Models without descriptors skip the descriptor checks (mirroring how model slugs are only
- * validated when the provider advertises models), but duplicate ids always fail: downstream
- * consumers disagree on whether the first or last value of a duplicated id wins.
- */
+/** Models without descriptors skip those checks. Duplicate ids fail because consumers
+ * disagree on which value wins. */
 function invalidOptionSelections(
   selections: ReadonlyArray<ProviderOptionSelection>,
   descriptors: ReadonlyArray<ProviderOptionDescriptor> | undefined,
@@ -714,7 +705,6 @@ function threadSnooze(
   };
 }
 
-/** The same links `list_thread_pull_requests` reports, without the snapshot details. */
 function threadPullRequests(
   links: OrchestrationV2ThreadShell["pullRequests"],
 ): OrchestratorMcpThreadPullRequest[] {
@@ -1158,11 +1148,7 @@ const make = Effect.gen(function* () {
   const loadOrchestrationCapableInstanceIds = () =>
     providerAdapters.list().pipe(Effect.map((instanceIds) => new Set(instanceIds)));
 
-  /**
-   * Provider snapshots only re-probe while a client is in the foreground, so an
-   * unattended agent can see a provider as unavailable after it was fixed.
-   * Re-probe the requested instance once before refusing it.
-   */
+  /** Background agents miss foreground-only health probes; re-probe once before refusing. */
   const assertTargetEnabledForProject = (
     parent: Pick<OrchestrationV2ThreadProjection, "thread">,
     commandId: CommandId,
@@ -1199,13 +1185,8 @@ const make = Effect.gen(function* () {
     readonly parent: Pick<OrchestrationV2ThreadProjection, "thread">;
     readonly target: OrchestratorMcpTarget | undefined;
     readonly providers: ReadonlyArray<ServerProvider>;
-    /**
-     * Set only when the command that will dispatch this target already has a receipt: that
-     * dispatch can only replay the recorded result, never start anything new, so filtering
-     * candidates by the project's current settings would just refuse a retry that does no new
-     * work. Never set this for a resolution whose dispatch uses a different command id than the
-     * one checked for a receipt.
-     */
+    /** Receipt replays cannot start new work, so they bypass current project settings.
+     * Only use this when dispatch reuses the exact command id checked for a receipt. */
     readonly skipProjectEnablementFilter?: boolean;
   }): Effect.Effect<ResolvedTarget, OrchestratorMcpFailure> =>
     Effect.gen(function* () {
@@ -1827,9 +1808,7 @@ const make = Effect.gen(function* () {
               ),
             );
         yield* record("pending");
-        // Only this call can hand the agent its ref, so the card must not
-        // outlive it: a timeout, a failed wait or an aborted call closes it as
-        // cancelled.
+        // Only this call can return the secret ref; close the card if the wait fails or is cancelled.
         const closeCard = record("cancelled").pipe(
           Effect.catch((error) =>
             Effect.logWarning("Could not close a secret request card", { error: error.message }),
@@ -2032,9 +2011,7 @@ const make = Effect.gen(function* () {
           }
           workspaceStrategy = { type: "worktree", baseRef: base.commitSha, startFromOrigin: false };
         }
-        // ThreadManagementService.dispatch is the chokepoint for this command
-        // type's own enablement check, using the same command id and its
-        // receipt-replay exemption, so no separate assert runs here.
+        // Dispatch checks enablement with this command id and its receipt-replay exemption.
         const result = yield* threadManagement
           .dispatch({
             type: "delegated_task.request",
@@ -2150,9 +2127,7 @@ const make = Effect.gen(function* () {
         const current = yield* readTask(scope, input.taskId);
         const key = yield* requestKey(input.clientRequestId);
         const parentProjection = yield* loadProjection(scope.thread.threadId);
-        // Cancelling stops the child and every task under it, each a write to a
-        // thread its user may have raised above the parent's modes since it was
-        // delegated. All of them are checked before anything is stopped.
+        // Check the entire child tree before stopping anything; users may have raised its modes.
         const assertStoppable = (threadId: ThreadId): Effect.Effect<void, OrchestratorMcpFailure> =>
           Effect.gen(function* () {
             const shell = yield* threadManagement

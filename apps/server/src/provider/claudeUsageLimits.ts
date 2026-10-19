@@ -25,13 +25,8 @@ const WINDOWS: Readonly<
   seven_day: { kind: "weekly", label: "Weekly", windowDurationMins: WEEK_MINS },
 };
 
-/**
- * The streamed event names the overage-included bucket by type
- * (`seven_day_overage_included`), while `get_usage` names it by the model's
- * `display_name`. Which model that is changes over time, so the probe records
- * the name it saw and the event mapper reuses it; the mid-turn update then
- * lands on the row the probe drew instead of opening a second one.
- */
+/** Events use a bucket type; get_usage uses a changing display_name. Reuse the probed name
+ * so mid-turn updates target the same row. */
 const OVERAGE_INCLUDED_EVENT_TYPE = "seven_day_overage_included";
 
 export interface ClaudeScopedLimitNames {

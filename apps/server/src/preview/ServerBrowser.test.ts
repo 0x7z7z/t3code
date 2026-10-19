@@ -347,7 +347,6 @@ it.live.each(["desktop" as const, undefined])(
         expect(error.message).toContain("cannot control");
         expect(yield* manager.list({ threadId: scope.thread.threadId })).toEqual(before);
         expect(contexts).toHaveLength(1);
-        // A rejected explicit target must not replace this session's working tab.
         const reused = yield* broker.invoke<PreviewAutomationStatus>({
           scope,
           operation: "open",

@@ -157,12 +157,7 @@ const findRepositoryRoot = Effect.fn("findRepositoryRoot")(function* (
   }
 });
 
-/**
- * The CLI validates the whole map, not each entry: verified against it, one
- * entry with an unknown value (or a boolean) makes it drop every override in
- * that file, so this schema does the same rather than applying the valid
- * siblings the CLI ignores.
- */
+/** Claude drops the entire override map if any entry has an unknown value or boolean. */
 const SkillOverrideValue = Schema.Literals(["on", "name-only", "user-invocable-only", "off"]);
 
 // Lenient because these settings files are hand-edited and Claude Code itself
@@ -250,11 +245,7 @@ const resolveClaudeConfigDirPath = Effect.fn("resolveClaudeConfigDirPath")(funct
   if (homePath.length > 0) {
     return path.resolve(expandHomePath(homePath, home));
   }
-  // No tilde expansion here: the spawned CLI receives this env var verbatim
-  // (env vars are never shell-expanded), so a literal `~` must stay literal
-  // for discovery to scan the same directory the runtime would. A relative
-  // value is resolved against the workspace cwd — the subprocess's own cwd —
-  // for the same reason.
+  // Match the spawned CLI: preserve a literal ~ and resolve relative config against workspace cwd.
   const environmentConfigDir = environment.CLAUDE_CONFIG_DIR?.trim() ?? "";
   if (environmentConfigDir.length > 0) {
     return cwd ? path.resolve(cwd, environmentConfigDir) : path.resolve(environmentConfigDir);
@@ -262,11 +253,7 @@ const resolveClaudeConfigDirPath = Effect.fn("resolveClaudeConfigDirPath")(funct
   return path.join(home, ".claude");
 });
 
-/**
- * Roots are listed highest precedence first and the first hit for a name wins,
- * matching Claude Code: verified against the CLI with the same skill name in
- * both scopes, the user copy is the one that runs.
- */
+/** First name wins, matching Claude Code's precedence of user skills over project skills. */
 export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* (
   config: Pick<ClaudeSettings, "homePath"> & Partial<Pick<ClaudeSettings, "launchArgs">>,
   cwd?: string,
@@ -277,7 +264,6 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
   const configDirPath = yield* resolveClaudeConfigDirPath(config, environment ?? process.env, cwd);
   const skillOverrides = yield* readSkillOverrides(configDirPath, cwd, environment ?? process.env);
 
-  // Use the session's argument parser so discovery sees the same --add-dir value.
   const additionalDirectory = parseCliArgs(config.launchArgs ?? "").flags["add-dir"];
   const roots: ReadonlyArray<{ directory: string; scope: ClaudeSkillScope }> = [
     { directory: path.join(configDirPath, "skills"), scope: "user" },
@@ -316,12 +302,7 @@ export const discoverClaudeSkills = Effect.fn("discoverClaudeSkills")(function* 
         continue;
       }
 
-      // Claude Code identifies a skill by its directory, not by the
-      // frontmatter `name`: verified against the CLI, a skill in `probe-alias/`
-      // declaring `name: probe-alias-frontmatter` is published as
-      // `probe-alias`, and only `skillOverrides["probe-alias"]` switches it
-      // off. Keying off the frontmatter name would report a command that does
-      // not exist and miss the override that disables it.
+      // Claude identifies skills and override keys by directory, ignoring the frontmatter name.
       const name = entry.trim();
       if (!name) {
         continue;

@@ -102,9 +102,7 @@ describe("terminatePosixOwnedProcessTree", () => {
       const scratchRoot = NodePath.join(process.cwd(), "tmp");
       NodeFS.mkdirSync(scratchRoot, { recursive: true });
       const parent = NodeFS.mkdtempSync(NodePath.join(scratchRoot, "acp-cgroup-stale-siblings-"));
-      // Temp dirs are not cgroupfs: rmdir fails when control files exist, so the
-      // test injects populated/remove while still exercising the real selection
-      // and path-safety logic against a real parent directory tree.
+      // Unlike cgroupfs, temp directories cannot rmdir with control files; inject populated/remove.
       const populatedByPath = new Map<string, "0" | "1">();
       const writeSibling = (name: string, populated: "0" | "1" | null) => {
         const path = NodePath.join(parent, name);
@@ -942,7 +940,6 @@ describe("terminatePosixOwnedProcessTree", () => {
         grace: 0,
         rootPid: 100,
       });
-      // Zombies remain visible but must not fail residual teardown.
       expect(fixture.processes.get(100)?.state).toBe("Z");
       expect(fixture.processes.get(110)?.state).toBe("Z");
     }),

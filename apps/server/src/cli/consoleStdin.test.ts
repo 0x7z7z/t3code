@@ -16,13 +16,9 @@ describe("needsConsoleStdin", () => {
 
   it("leaves every other way of running the CLI alone", () => {
     for (const other of [
-      // Input the user piped or redirected.
       { ...launcher, stdinOpen: true },
-      // Output to a pipe or file: the desktop backend, scripts, CI.
       { ...launcher, stdoutIsConsole: false },
-      // The desktop backend runs the same executable but is not the launcher.
       { ...launcher, env: { ELECTRON_RUN_AS_NODE: "1", T3CODE_CLI_PATH: "C:\\t3.cmd" } },
-      // npm, the install scripts, and plain Node runs.
       { ...launcher, env: {} },
       { ...launcher, platform: "linux" as const },
       { ...launcher, platform: "darwin" as const },

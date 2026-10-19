@@ -37,11 +37,7 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
   const resolvedHomePath = yield* resolveClaudeHomePath(config);
   return {
     ...resolvedBaseEnv,
-    // Overriding HOME also relocates the macOS login keychain lookup
-    // ($HOME/Library/Keychains), so the spawned CLI can't find its stored
-    // OAuth credentials and reports "Not logged in". CLAUDE_CONFIG_DIR points
-    // Claude Code at its config dir directly while leaving HOME (and the
-    // keychain) intact.
+    // Changing HOME hides macOS Keychain credentials; use CLAUDE_CONFIG_DIR to keep login access.
     CLAUDE_CONFIG_DIR: resolvedHomePath,
   };
 });

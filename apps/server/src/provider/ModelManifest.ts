@@ -199,9 +199,7 @@ export const make = Effect.gen(function* () {
   let lastAttemptMs: number | null = null;
   const refreshSemaphore = yield* Semaphore.make(1);
 
-  // `Effect.cached` makes concurrent first readers await the same disk load
-  // rather than racing a "loaded" flag. Only `refreshed` takes the fetch
-  // semaphore; `current` must never wait behind an in-flight network refresh.
+  // Only refresh takes the fetch semaphore; current must not wait on network I/O.
   const ensureDiskCacheLoaded = yield* Effect.cached(
     Effect.gen(function* () {
       const fromDisk = yield* fileSystem.readFileString(cachePath).pipe(
@@ -209,8 +207,6 @@ export const make = Effect.gen(function* () {
         Effect.catchCause(() => Effect.succeed(null)),
       );
       if (fromDisk === null) return;
-      // Comparing edit dates, not fetch time, keeps this independent of when
-      // the cache was written relative to the release.
       if (manifestUpdatedAtMs(BUNDLED_MODEL_MANIFEST) > manifestUpdatedAtMs(fromDisk.manifest)) {
         return;
       }

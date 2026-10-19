@@ -567,7 +567,6 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(failure).toBe("repair failed");
       expect(control.active).toBe(true);
 
-      // A failed stop skips the operation but still starts the service again.
       control.failCommand = "systemctl --user stop t3code.service";
       let ran = false;
       const stopFailure = yield* service
@@ -585,8 +584,6 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect(control.active).toBe(true);
       control.failCommand = undefined;
 
-      // An enabled unit that is not active (crash-looping in auto-restart, say)
-      // is still stopped for the repair and started again afterwards.
       control.active = false;
       commands.length = 0;
       yield* service.withStopped(Effect.sync(() => commands.push("repair")));
@@ -598,11 +595,9 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
         "systemctl --user restart t3code.service",
       ]);
       expect(control.active).toBe(true);
-      // A running unit the user disabled is started again but stays disabled.
       control.enabled = false;
       yield* service.withStopped(Effect.void);
       expect(control).toMatchObject({ active: true, enabled: false });
-      // A unit that was neither enabled nor active stays stopped.
       control.active = false;
       control.enabled = false;
       commands.length = 0;

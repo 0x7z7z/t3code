@@ -5,14 +5,8 @@ import * as NodeTty from "node:tty";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 /**
- * Whether this process is the desktop app's `t3.cmd` running the CLI in a
- * terminal with no stdin. The launcher runs the app's executable with
- * `ELECTRON_RUN_AS_NODE`, and Electron's Windows executable is a GUI program:
- * on start it points stdout and stderr at the parent's console but leaves
- * stdin unset, so prompts see no terminal and children such as the agent
- * `t3 triage` starts inherit nothing to read from. Input the user piped or
- * redirected is a valid descriptor and is left alone, as is any run whose
- * output is not a console (the desktop backend, scripts).
+ * Electron's Windows GUI executable leaves stdin unset under ELECTRON_RUN_AS_NODE.
+ * Reopen console input only for the launcher; preserve redirected input and non-console output.
  */
 export function needsConsoleStdin(input: {
   readonly platform: NodeJS.Platform;
@@ -39,10 +33,8 @@ const isOpen = (fd: number) => {
 };
 
 /**
- * Reopens the console's input as `process.stdin` when {@link needsConsoleStdin}
- * holds, and returns its descriptor so interactive children can be given the
- * same console. Returns undefined, changing nothing, everywhere else.
- * Call before anything reads `process.stdin`.
+ * Call before anything reads `process.stdin`. Returns the reopened console descriptor
+ * for interactive children, or undefined without changing stdin.
  */
 export function attachConsoleStdin(): number | undefined {
   const needed = needsConsoleStdin({
@@ -73,5 +65,4 @@ export function attachConsoleStdin(): number | undefined {
 
 let consoleStdinFd: number | undefined;
 
-/** The stdin to hand an interactive child: the reopened console, or the inherited one. */
 export const interactiveStdin = (): number | "inherit" => consoleStdinFd ?? "inherit";

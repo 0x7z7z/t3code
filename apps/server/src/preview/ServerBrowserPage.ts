@@ -97,7 +97,6 @@ const targetLocator = (
 ): Locator | null => {
   const selector = input.locator ?? input.selector;
   if (selector === undefined) return null;
-  // Ignore quoted/escaped CSS values when looking for a selector-engine boundary.
   const engines = selector.replace(
     /\\.|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g,
     " ",
@@ -200,14 +199,9 @@ const answered = <A>(promise: Promise<A>) => {
   return Promise.race([promise.catch(() => undefined), late]).finally(() => clearTimeout(timer));
 };
 
-/**
- * Reads dotted values in isolated worlds, where page script can't change what `value`
- * returns, through the CDP session of the process each frame renders in. A frame in
- * another process that can't be attached, as in desktop tabs where only the page can,
- * is read in the page's own world, where its script can change `value`. `read` gives
- * each reader's values, or undefined for one that didn't answer, and fails when the
- * page's own frames don't or frames came or went.
- */
+/** Read isolated worlds through each frame's CDP session so page scripts cannot spoof values.
+ * Desktop tabs fall back to the page world for out-of-process frames.
+ * Missing own-frame responses or changed frames fail; other missing responses are undefined. */
 const openReaders = async (page: Page, cdp: CDPSession) => {
   const frames = page.frames();
   const owners = new Map<Frame, CDPSession | null | undefined>(
@@ -296,7 +290,6 @@ const openReaders = async (page: Page, cdp: CDPSession) => {
     /** Readers that didn't answer `before` aren't asked again. */
     read: async (before?: ReadonlyArray<unknown>) => {
       const now = page.frames();
-      // A frame added since the readers opened has none.
       if (now.length !== frames.length || now.some((frame, i) => frame !== frames[i])) {
         throw pageChanged();
       }
@@ -310,12 +303,8 @@ const openReaders = async (page: Page, cdp: CDPSession) => {
   };
 };
 
-/**
- * Matches each value as the snapshot prints it: raw, as a JSON name, as a
- * quoted value, and with '' for each quote inside a quoted key. A value under
- * four characters only matches between non-word characters; inside other words
- * it would mask unrelated text.
- */
+/** Match snapshot quoting forms. Values under four characters need word boundaries
+ * to avoid masking unrelated text. */
 const dottedPattern = (values: ReadonlyArray<string>) => {
   const sources = values
     .flatMap((value) => {
@@ -491,9 +480,8 @@ export const snapshot = async (input: SnapshotInput): Promise<PreviewAutomationS
   });
   const turn = (snapshotTurns.get(input.page) ?? 0) + 1;
   snapshotTurns.set(input.page, turn);
-  // A page that changed mid-capture, like one rotating ads, has usually settled by a second
-  // try. None starts late or after another snapshot began, since it would revoke the refs of
-  // whichever snapshot came next.
+  // Retry a changing page only before the deadline and before another snapshot starts;
+  // a later retry would revoke that newer snapshot's refs.
   const captured = capture(input, deadline).catch((cause: unknown) =>
     Date.now() < deadline &&
     snapshotTurns.get(input.page) === turn &&
@@ -554,9 +542,8 @@ export const type = async (page: Page, input: PreviewAutomationTypeInput) => {
     (locator !== null || (await target.count()) > 0) &&
     (await target.evaluate(
       (element) => {
-        // Like the desktop host: an enabled text control or contenteditable
-        // that actually takes focus. Anything else would swallow the text or
-        // send it to whichever field had focus before.
+        // Require an enabled text control or contenteditable that takes focus, or text could
+        // disappear or reach the previously focused field.
         const control = element as unknown as {
           readonly type?: string;
           readonly disabled?: boolean;
@@ -696,11 +683,7 @@ export const scroll = async (page: Page, input: PreviewAutomationScrollInput) =>
   await locator.evaluate((element, [x, y]) => element.scrollBy(x, y), delta);
 };
 
-/**
- * Runs an agent's expression, bounded by its request's deadline. Past it, the
- * page's script is terminated and the call fails, so the tab's control queue
- * frees for the next request instead of waiting on the script.
- */
+/** Terminate expired page scripts so a hung expression cannot block the tab's control queue. */
 export const evaluate = async (
   cdp: CDPSession,
   input: PreviewAutomationEvaluateInput,

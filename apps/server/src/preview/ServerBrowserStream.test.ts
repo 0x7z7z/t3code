@@ -215,7 +215,6 @@ it.effect("sends replies ahead of stale frames and only the newest frame after a
     ]);
     yield* Effect.promise(() => next.promise);
     expect(received).toEqual([1, "probe"]);
-    // Frames 2 and 3 were superseded before they could be sent.
     expect(released).toEqual([2, 3]);
 
     next = Promise.withResolvers();

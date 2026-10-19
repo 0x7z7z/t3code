@@ -1012,7 +1012,6 @@ const make = Effect.gen(function* () {
     const controller = [...tab.viewers].find((viewer) => viewer.id === tab.control.controller);
     if (!open || !controller) return;
     if (open.offeredTo !== controller.id) {
-      // A new controller gets a fresh id; the previous one can no longer answer.
       tab.fileChooser = { ...open, id: NodeCrypto.randomUUID(), offeredTo: controller.id };
       if (open.offeredTo !== null)
         for (const viewer of tab.viewers) viewer.push({ _tag: "fileChooserClosed", id: open.id });
