@@ -265,10 +265,8 @@ export class OrchestratorCommandIdConflictError extends Schema.TaggedError<Orche
 }
 
 /**
- * A command receipt only proves that this exact command already ran for the
- * thread it was recorded against. Replaying it for a command aimed at another
- * thread would report success for work that never happened there, so the
- * dispatcher rejects the reuse instead (mirrors v1's command-id conflict).
+ * A receipt proves execution only for its recorded thread. Reusing it for
+ * another thread would report success for work that never happened there.
  */
 export function canReplayCommandReceipt(
   receiptThreadId: ThreadId,
@@ -3453,13 +3451,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       });
     }
 
-    // Settle joins archive here: both mean "done with this
-    // thread", so a live provider session must not keep running background
-    // work (PR monitors, dev servers, subagent fleets) after any of them
-    // lands. The settle guard above already rejects active or blocked runs,
-    // so for settle this only ever stops an idle session; commands are
-    // decided serially against the projection, so a turn start that
-    // re-engages the thread cannot race this detach.
+    // Archiving or settling must stop idle background work. Settlement rejects
+    // active or blocked runs; serialized commands prevent a turn start racing
+    // this detach.
     const detachSessionIds = new Set(
       command.type === "thread.archive" || command.type === "thread.settle"
         ? (providerContext?.providerSessions ?? []).map((session) => session.id)
@@ -8778,9 +8772,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     });
 
   /**
-   * Its agent can call tools
-   * until the provider stops it, and a slow call can land after that, but nothing it starts
-   * may outlive the Stop. A restart continuation of that run must not start either.
+   * A late tool call may land after the provider stops, but neither its work
+   * nor a restart continuation may outlive Stop.
    */
   const stopReachedRun = (
     command: OrchestrationV2ServerCommand,
@@ -9634,7 +9627,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               Option.isNone(yield* Effect.findFirst(child.runs, awaitsRestartContinuation)));
           idleChildren.set(task.childThreadId, idle);
           if (!idle) continue;
-          // Stop can cancel an idle orphan without guessing which completed run owned its result.
           const now = yield* DateTime.now;
           const emitEvent = emit(events, command);
           yield* emitEvent({
@@ -10183,12 +10175,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   /**
-   * Every mutation here targets the PARENT thread, so callers must hold the
-   * parent thread's dispatch lock rather than the child's: the
-   * delegated_task.wake-policy handler rewrites the same subagent row under
-   * that lock with a full-row payload, and unserialized writers clobber each
-   * other (stale policy on the terminal row, or a terminal row regressed to
-   * running).
+   * Callers must hold the parent thread's dispatch lock. The wake-policy handler
+   * rewrites the same parent row with a full payload, so a stale writer can
+   * regress either its policy or terminal status.
    */
   const finalizeAppOwnedSubagentTask = (
     childControls: ProjectionRecords<
@@ -10869,10 +10858,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         yield* dispatchThreadVisit(command, events);
         break;
       case "thread.auto-settle": {
-        // Automatic settlement (#8600): the sweep evaluated a shell snapshot,
-        // so re-check against the live thread before settling. Any change
-        // after the snapshot — or any explicit override, including the
-        // un-settle button's "active" — wins over the sweep.
+        // The sweep evaluated a shell snapshot, so re-check the live thread.
+        // Changes after the snapshot and explicit overrides, including "active",
+        // take precedence over the sweep.
         const thread = yield* projectionStore
           .getThread(command.threadId)
           .pipe(
@@ -11669,10 +11657,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
         ),
       ),
-    // Live tail only. eventSink.stream() with no cursor replays the whole
-    // store from genesis first; domain-event subscribers (the awareness relay)
-    // react to new activity, and startup replay made them grind through the
-    // entire event history doing per-event work after every boot.
+    // Without a cursor, eventSink.stream replays the entire store. The awareness
+    // relay needs only new activity; startup replay scales with database history.
     streamDomainEvents: Stream.unwrap(
       eventSink
         .latestSequence()

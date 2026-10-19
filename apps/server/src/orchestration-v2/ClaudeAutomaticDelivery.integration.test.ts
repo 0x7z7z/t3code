@@ -376,8 +376,6 @@ it.effect.each(deliveries)(
               queuedRunId: queuedRun.id,
               targetRunId: parent.id,
             });
-            // Promotion cancels the queued run and moves its message into the
-            // running run as a steer that remembers where it came from.
             const promoted = yield* orchestrator.getThreadProjection(threadId);
             assert.equal(promoted.runs.find((run) => run.id === queuedRun.id)?.status, "cancelled");
             assert.equal(

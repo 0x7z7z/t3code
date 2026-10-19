@@ -316,10 +316,8 @@ export const layerWithOptions = (
       const mcpSessionRegistry = yield* McpSessionRegistry.McpSessionRegistry;
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
       /**
-       * When present, an unreadable settings file withholds browser access
-       * rather than granting it — an explicit "off" silently becoming "on"
-       * would violate the user's stated choice, whereas the reverse costs an
-       * agent one toolset and is visible immediately (#7083).
+       * When settings are available, an unreadable file must not turn an
+       * explicit browser-access opt-out into access.
        */
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
@@ -443,12 +441,9 @@ export const layerWithOptions = (
           : mcpPrepareLock.withLock(
               threadId,
               Effect.gen(function* () {
-                // Reuse a still-valid credential for this thread instead of
-                // rotating: long-lived provider processes (codex app-server)
-                // build their MCP client once per conversation and keep using
-                // the credential it started with, so a thread that detaches and
-                // re-attaches across a workspace handoff must come back to the
-                // same token or the process's tool calls fail auth.
+                // Long-lived provider processes build their MCP client once and retain its
+                // credential across workspace handoffs. Reattaching must reuse that
+                // token so the process's tool calls stay authorized.
                 const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
                   yield* agentAccessSettings(threadId);
                 const capabilities = new Set<
@@ -780,7 +775,7 @@ export const layerWithOptions = (
       >[number];
 
       // Their process is gone, so nothing will report them ending, and a
-      // leftover roster keeps the thread Waiting (#15239).
+      // leftover roster keeps the thread Waiting.
       const writeReleasedBackgroundWorkEvents = (
         released: ReadonlyArray<ReleasedBackgroundTasks>,
       ) =>
@@ -1063,10 +1058,8 @@ export const layerWithOptions = (
                     Effect.forEach(
                       entry.mcpCredentialIdByThread,
                       ([threadId, mcpCredentialId]) => {
-                        // Id-sensitive: a stale record for the same thread but
-                        // a DIFFERENT credential (left behind by an old session
-                        // the thread rotated away from) must not veto revoking
-                        // this session's own credential, or it leaks forever.
+                        // A stale session holding a different credential must not prevent
+                        // revocation of this one, or it leaks forever.
                         const heldElsewhere =
                           isMcpCredentialReserved(threadId, mcpCredentialId) ||
                           Array.from(current.values()).some(
@@ -1398,10 +1391,8 @@ export const layerWithOptions = (
                     Effect.andThen(
                       Effect.suspend(() => {
                         dropReservation();
-                        // Revoke only a credential this attach freshly minted: a
-                        // REUSED credential is by definition held by another
-                        // live provider process, and revoking it thread-wide
-                        // would break that process's MCP client mid-conversation.
+                        // Reused credentials are held by other live provider processes;
+                        // revoking them would break those processes' MCP clients.
                         if (preparedForCleanup?.issued !== true) return Effect.void;
                         const mcpCredentialId = preparedForCleanup.mcpCredentialId;
                         const attachedRuntime = attachedTo;
@@ -1919,7 +1910,6 @@ export const layerWithOptions = (
             if (event.type === "command_output.delta") {
               return commandOutput.append(event);
             }
-            // A settled item carries its final output, so its live tail can go.
             const releaseLiveOutput =
               event.type === "turn_item.updated" &&
               event.turnItem.type === "command_execution" &&

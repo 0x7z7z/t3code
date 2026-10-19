@@ -2434,9 +2434,6 @@ it.effect(
         const originalToken = original?.authorizationHeader.replace(/^Bearer\s+/, "");
         assert.isDefined(originalToken);
 
-        // Workspace-change handoff on a shared multi-thread session (codex):
-        // the thread detaches while the provider process keeps running, and the
-        // process's MCP client keeps using the credential it was started with.
         yield* manager.detach({ providerSessionId, threadId, detail: "Workspace changed." });
         assert.equal(
           (yield* registry.resolve(originalToken!))?.thread.threadId,
@@ -2444,9 +2441,6 @@ it.effect(
           "detach must not revoke the credential the live provider process still holds",
         );
 
-        // The continuation run re-attaches the same thread to the same session;
-        // the credential must be reused, not rotated, so the provider process's
-        // long-lived MCP client stays authorized.
         yield* manager.open({
           threadId,
           providerSessionId,

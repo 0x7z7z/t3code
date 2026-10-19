@@ -7,9 +7,8 @@ import { CLAUDE_COMPACT_FIRST_PROMPT } from "../claude_compact_after_peer_turn/i
 import { claudeCompactRuns } from "../claude_compact_after_peer_turn/output.ts";
 
 // A CLI before 2.1.252 neither echoes prompt uuids nor acknowledges them, so
-// nothing says the peer turn is not `/compact`'s. Its result settles the
-// `/compact` run, as it always has: the run must not wait for a result that
-// may never come.
+// nothing distinguishes a peer turn from /compact. Its result must settle
+// the run rather than wait for a result that may never come.
 export function assertClaudeCompactAfterPeerTurnNoEchoOutput(
   result: OrchestratorV2ScenarioResult,
   transcript: ProviderReplayTranscript,

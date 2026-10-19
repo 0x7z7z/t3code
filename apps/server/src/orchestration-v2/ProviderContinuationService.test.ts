@@ -222,9 +222,6 @@ describe("ProviderContinuationService", () => {
           readonly text: string;
           readonly notification: OrchestrationV2Notification;
         };
-        // An app-owned child buffers nothing in the adapter, so this text is
-        // the whole wake. Marking it "provider" would make ClaudeAdapterV2
-        // drop it and settle the turn having prompted nothing.
         assert.notEqual(command.creationSource, "provider");
         assert.equal(command.creationSource, "server");
         assert.equal(command.text, "Delegated task completed.");

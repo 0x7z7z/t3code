@@ -750,8 +750,6 @@ it.effect("keeps a held commentary draft before the steer when turn end flushes 
             Effect.forkScoped,
           );
 
-        // The cut-off draft starts first; the commentary after it is written,
-        // so the draft has been seen by the time the steer arrives.
         yield* Queue.offer(events, assistantItem("draft", "Let me look at the", true));
         const commentaryWritten = yield* watch(
           (event) => event.type === "turn-item.updated" && event.payload.id === "commentary",

@@ -27,31 +27,23 @@ import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
 /**
- * Live command output.
- *
- * Output never becomes an orchestration event. Adapters push raw chunks here
- * (through the session manager), the hub keeps a bounded, normalized tail per
- * running command, and `subscribe` serves one expanded row: the current tail,
- * then coalesced appends, then the persisted final output. Memory is bounded
- * per command and in count, and a client that is not showing the row receives nothing.
+ * Output never becomes an orchestration event. Subscribers receive the current
+ * tail, coalesced appends, then persisted final output. Only expanded rows
+ * subscribe; memory is bounded per command and in count.
  */
 
-/** Fastest a subscriber receives frames while output flows. */
 export const COMMAND_OUTPUT_FRAME_INTERVAL_MS = 100;
 /** After a subscriber falls behind and is sent the whole tail, it waits this long. */
 export const COMMAND_OUTPUT_REPLACE_INTERVAL_MS = 500;
-/** Raw text a subscriber may accumulate before it is sent the tail instead. */
 const COMMAND_OUTPUT_MAX_APPEND_CHARS = 16 * 1024;
 /** Running commands tracked at once; the least recently written is dropped beyond this. */
 const MAX_LIVE_COMMANDS = 64;
 /** Finished tails kept for a settle that reports no output of its own (an interrupt). */
 const MAX_FINISHED_COMMANDS = 16;
-/** Final output read from persistence is normalized from at most this many trailing chars. */
 const MAX_FINAL_SOURCE_CHARS = TERMINAL_OUTPUT_TAIL_CHARS * 4;
 
 interface Subscriber {
   pendingAppend: string;
-  /** The next frame must carry the whole tail. */
   needsReplace: boolean;
   /** `needsReplace` was caused by the subscriber falling behind. */
   overflowed: boolean;
@@ -61,7 +53,6 @@ interface Subscriber {
 export type CommandOutputTarget = OrchestrationV2SubscribeCommandOutputInput;
 
 export interface CommandOutputHubShape {
-  /** Add raw output for a running command. Called for every provider chunk. */
   readonly append: (input: CommandOutputTarget & { readonly chunk: string }) => Effect.Effect<void>;
   /**
    * The command settled. Its tail is kept briefly for a settle that carries no
@@ -84,7 +75,6 @@ function commandKey(target: CommandOutputTarget): string {
   return `${target.threadId}\u0000${target.itemId}`;
 }
 
-/** Claude Bash rows stored before #15505 hold the raw `{ stdout, stderr, interrupted, ... }` result. */
 const decodeLegacyClaudeBashResult = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({ stdout: Schema.String, stderr: Schema.String, interrupted: Schema.Boolean }),
@@ -100,7 +90,6 @@ function legacyClaudeBashOutput(output: string): string {
   return out.length > 0 && err.length > 0 && !out.endsWith("\n") ? `${out}\n${err}` : out + err;
 }
 
-/** The output a row shows from a persisted item, bounded before normalization. */
 function persistedCommandOutput(output: string | undefined): {
   readonly text: string;
   readonly truncated: boolean;
@@ -120,7 +109,6 @@ function persistedCommandOutput(output: string | undefined): {
   };
 }
 
-/** Sets `key` as the newest entry of `map`, dropping the oldest beyond `max`. */
 function setBounded<V>(
   map: Map<string, V>,
   key: string,
@@ -139,7 +127,6 @@ function setBounded<V>(
 export const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
-  // Insertion order doubles as recency: every write re-inserts its entry.
   const tails = new Map<string, TerminalOutputState>();
   const finished = new Map<string, TerminalOutputState>();
   const subscribers = new Map<string, Set<Subscriber>>();
@@ -280,7 +267,6 @@ export const make = Effect.gen(function* () {
           }
           lastFrameAt = yield* Clock.currentTimeMillis;
           throttle = COMMAND_OUTPUT_FRAME_INTERVAL_MS;
-          // A finished tail still shows until the settled item arrives.
           const tail = tails.get(key) ?? finished.get(key);
           if (settled !== undefined) {
             if (settled.output === undefined && tail !== undefined) {

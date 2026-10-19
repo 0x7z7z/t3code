@@ -542,8 +542,6 @@ describe("orchestrator replay recovery", () => {
         assert.equal(settled.subagents[0]?.status, "running");
         assert.equal(childRootStatus(childThreadOf(before, settled.thread.id)), "running");
 
-        // The server restarts with the subagent still working. No automatic
-        // continuation: the user's next message resumes it.
         const result = yield* Effect.scoped(
           runOrchestratorV2ProviderReplayScenario(
             {
@@ -565,7 +563,6 @@ describe("orchestrator replay recovery", () => {
         assert.equal(projection.subagents[0]?.status, "completed");
         const child = childThreadOf(result, projection.thread.id);
         assert.equal(child?.thread.id, projection.subagents[0]?.childThreadId);
-        // Recovery cancelled the child's work; the resume reopened and ended it.
         assert.equal(childRootStatus(child), "completed");
         const conversation = (child?.turnItems ?? [])
           .toSorted((left, right) => left.ordinal - right.ordinal)

@@ -2842,7 +2842,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     out("message.list", { sessionID: SESSION, order: "desc", limit: "50" }),
     reply("message.list", {
       data: [
-        // OpenCode appends an `idle` item after each execution it ends.
         ...(ended === undefined
           ? []
           : [{ id: "msg_idle_gap", time: { created: 3 }, type: "idle", outcome: ended }]),
@@ -3764,7 +3763,6 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
       );
       yield* runtime.startTurn(turnInput(thread));
       yield* runtime.startTurn(turnInput(other));
-      // The second turn starts and the first ends while the session stays running.
       assert.deepEqual(
         [...(yield* Fiber.join(collected))].flatMap((event) =>
           event.type === "provider_session.updated" ? [event.providerSession.status] : [],

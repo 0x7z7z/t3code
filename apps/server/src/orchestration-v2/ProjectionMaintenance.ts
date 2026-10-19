@@ -225,9 +225,9 @@ export const layer: Layer.Layer<
 
     const supersedableThreadEventTypes = new Set(SUPERSEDABLE_THREAD_EVENT_TYPES);
     const readStateThreadEventTypes = new Set(READ_STATE_THREAD_EVENT_TYPES);
-    // Keep subagent.updated and turn-item.updated rows: slimmed payloads reference their prompts.
-    // Discovery runs on the shared synchronous connection; json_extract over
-    // large payloads made 500-row pages block the event loop for ~90ms.
+    // Keep subagent.updated and turn-item.updated: slimmed payloads reference their prompts.
+    // Discovery shares the synchronous connection; json_extract over large
+    // payloads can block the event loop for ~90 ms on a 500-row page.
     const COMPACTION_PAGE_SIZE = 50;
 
     /**

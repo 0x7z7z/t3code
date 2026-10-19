@@ -555,9 +555,8 @@ export const make = Effect.gen(function* () {
     runSweep(null, threadId),
   );
 
-  // Then the project's settle script runs in the thread's own worktree; a
-  // thread in the shared checkout skips it, because other threads may still be
-  // working there.
+  // The settle script skips shared checkouts because other threads may
+  // still be working there.
   const cleanUpSettledThread = Effect.fn("ThreadSettlementServiceV2.cleanUpSettledThread")(
     function* (threadId: ThreadId) {
       const settled = yield* projections.getThread(threadId);

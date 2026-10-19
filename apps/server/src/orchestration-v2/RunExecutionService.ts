@@ -53,10 +53,8 @@ import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 export interface ProviderEventRoutingState {
   readonly ownedThreadIds: ReadonlySet<ThreadId>;
-  // Set once this run's root turn ended. A child thread created after that
-  // belongs to the run that is live then, so this one no longer adopts it,
-  // except a workflow member enrolled below: its coordinator keeps this run
-  // open, so the member is this run's to follow.
+  // A child created after the root turn ends belongs to the live run, except
+  // workflow members whose coordinator still keeps this run open.
   readonly rootTurnEnded: boolean;
   readonly workflowMemberParents: ReadonlyMap<ThreadId, ThreadId>;
   readonly ownedProviderThreadIds: ReadonlySet<ProviderThreadId>;

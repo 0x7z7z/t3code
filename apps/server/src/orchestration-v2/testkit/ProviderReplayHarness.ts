@@ -353,7 +353,6 @@ export function layerWithRegistry<Error>(
     IdAllocator.layer,
     layerProviderEventIngestorProvided,
   );
-  // The real hub, recording what each command streamed so fixtures can assert it.
   const layerCommandOutputHubProvided = CommandOutputRecorder.layer.pipe(
     Layer.provide(Layer.merge(layerEventSinkProvided, layerStores)),
   );

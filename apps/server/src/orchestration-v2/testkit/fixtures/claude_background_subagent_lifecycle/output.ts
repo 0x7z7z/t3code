@@ -67,9 +67,8 @@ function sendMessageToolUseIds(transcript: ProviderReplayTranscript): ReadonlyAr
   });
 }
 
-// The recording itself is the evidence for how the CLI resumes a subagent:
-// SendMessage re-emits task_started for the same task id under the
-// SendMessage call's tool_use_id.
+// SendMessage resumes a subagent by re-emitting task_started for the same
+// task id under the SendMessage call's tool_use_id.
 function assertRecordedResumeShape(transcript: ProviderReplayTranscript) {
   const agentAStarts = transcript.entries.flatMap((entry) =>
     entry.type === "emit_inbound" &&

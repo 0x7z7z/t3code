@@ -16,8 +16,8 @@ export const THREAD_RESUME_MAX_REPLAY_EVENTS = 128;
 export const THREAD_RESUME_MAX_REPLAY_ENCODED_BYTES = 1_048_576;
 
 /**
- * Keep the original preflight budget: decoded objects and temporary strings
- * cost more than their stored JSON, even if wire projection shrinks them later.
+ * Decoded objects and temporary strings cost more than their stored JSON,
+ * even if wire projection shrinks them later.
  */
 export const THREAD_RESUME_MAX_RAW_PAYLOAD_BYTES = 1_048_576;
 

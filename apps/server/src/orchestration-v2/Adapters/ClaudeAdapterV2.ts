@@ -274,10 +274,8 @@ const CLAUDE_MCP_REGISTRATION_TIMEOUT = "90 seconds";
 const WORKFLOW_MEMBER_TRANSCRIPT_FLUSH_MS = 500;
 
 /**
- * When the CLI exits it stops the MCP servers it started, but not their children: a plugin's
- * `bun run start` wrapper dies and its `bun server.ts` keeps running, writing to a pipe nobody
- * reads (#3089). Those stay in the CLI's group, so the rest of the group gets SIGKILL once the
- * CLI exits for any reason.
+ * The CLI stops its MCP servers on exit but leaves their children running
+ * in its process group, so the remaining group must be killed too.
  */
 function spawnClaudeProcessGroup(options: ClaudeSpawnOptions): ClaudeSpawnedProcess {
   const child = NodeChildProcess.spawn(options.command, options.args, {
@@ -1237,11 +1235,8 @@ export const CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__t3-code__html_render",
 ];
 
-// Claude Code aborts an HTTP MCP call after 60 s ("The operation timed out.")
-// unless the server config sets `timeout`. T3's wait tools (t3_thread_wait,
-// delegate_task mode=wait) legitimately block for up to an hour
-// (MAX_WAIT_TIMEOUT_MS in OrchestratorMcpService), so the budget sits just
-// above that and the server's own wait timeout is what ends a long call.
+// Claude defaults to a 60 s MCP timeout; T3 wait tools may block for an hour.
+// Leave the server's own wait timeout in control.
 export const CLAUDE_T3_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;
 
 // The SDK's `allowedTools` only pre-approves tool calls; availability is the separate `tools`
@@ -2619,10 +2614,7 @@ const awaitClaudeUserInputAnswers = Effect.fn("awaitClaudeUserInputAnswers")(fun
   return yield* Effect.raceFirst(Deferred.await(answers), cancellation);
 });
 
-/**
- * "[ede_diagnostic] ..." entries are CLI-internal telemetry (the CLI hides them from its own UI
- * too), so they must never become the error banner (#5557).
- */
+/** CLI-internal "[ede_diagnostic] ..." telemetry must never become the error banner. */
 function resultUserFacingError(result: SDKResultMessage): string | undefined {
   const errors = "errors" in result && Array.isArray(result.errors) ? result.errors : [];
   if (result.subtype === "success" && !result.is_error) {
@@ -3038,8 +3030,7 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
-  // Usage of the latest root request, merged from its stream events. Its
-  // assistant snapshots repeat message_start usage, which some proxies send
+  // Assistant snapshots repeat message_start usage, which some proxies send
   // as zeros, so they only fill in input the stream has not reported. A
   // compaction makes the usage stale (null) without forgetting the request.
   streamUsage: { readonly messageId: string; usage: ClaudeMessageUsage | null } | null;
@@ -3050,8 +3041,6 @@ interface ActiveClaudeTurnContext {
   readonly rejectedRateLimitTypes: Set<string>;
   readonly rateLimitResetTimes: Map<string, string | null>;
   latestAssistantRateLimited: boolean;
-  // Set while this turn's latest compaction status reports a failure, with
-  // Claude's error text when it sent one.
   compactionFailure: { readonly message: string | undefined } | null;
   // Usage of the results that steers ended, oldest first. The final result's
   // usage covers only its own segment, so the turn bills these as well.
@@ -3121,7 +3110,6 @@ interface ActiveClaudeToolCall {
   readonly presentation?: ClaudeToolPresentation;
 }
 
-/** Where a subagent's conversation items land: its child thread and root node. */
 interface ClaudeSubagentProjectionTarget {
   readonly childThreadId: ThreadId;
   readonly childRootNodeId: OrchestrationV2ExecutionNode["id"];
@@ -3130,11 +3118,9 @@ interface ClaudeSubagentProjectionTarget {
 }
 
 /**
- * Whether a transcript line ends the assistant's turn. Claude Code writes each
- * block of a message as its own line, `stop_reason: null` on all but the last,
- * and text before a tool call (`tool_use`) is not the reply. A line without the
- * field (no CLI writes one) keeps the turn open: waiting costs at most the flush
- * window, while ending the turn early can lose the reply.
+ * Claude writes each message block as a separate line, with stop_reason null
+ * until the last. Text before tool_use is not the reply. A missing stop_reason
+ * keeps the turn open: waiting costs the flush window; ending early can lose the reply.
  */
 function isClaudeTranscriptTurnEnd(entry: unknown): boolean {
   if (field(entry, "type") !== "assistant") return false;
@@ -3484,7 +3470,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         });
         const events = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
         const activeTurn = yield* Ref.make<ActiveClaudeTurnContext | null>(null);
-        // Foreground Bash calls whose output file is being tailed, by tool_use_id.
         const taskOutputTails = new Map<
           string,
           { readonly fiber: Fiber.Fiber<void>; readonly stop: Deferred.Deferred<void> }
@@ -3512,14 +3497,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               readonly attempt: number;
               readonly transcriptReadAttempts: number;
               readonly finalTranscriptRead: boolean;
-              // Where the next read of the member's transcript starts; every
-              // line before it is already projected into the member's thread.
               readonly agentId: string | undefined;
               readonly transcriptCursor: WorkflowAgentTranscriptCursor;
               readonly nextItemOrdinal: number;
               readonly toolCalls: Map<string, ActiveClaudeToolCall>;
               readonly textShown: boolean;
-              // The transcript reached the end of the member's last turn.
               readonly turnEnded: boolean;
               readonly resultShown: boolean;
               readonly result: string | undefined;
@@ -3595,9 +3577,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         // An idle outcome stays buffered for the parent's wake, but must not
         // settle the child again after that child resumes.
         const appliedSubagentOutcomes = new WeakSet<SDKMessage>();
-        // Subagent frames can precede the task_started that registers their
-        // subagent (the same race rememberPendingClaudeSubagentLaunch covers).
-        // They wait here and replay once task_started registers the owner.
+        // Subagent frames can precede the task_started that registers their owner.
         const pendingSubagentFramesByToolUseId = yield* Ref.make(
           new Map<string, ReadonlyArray<SDKMessage>>(),
         );
@@ -4262,7 +4242,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         });
 
         const buildToolCallArtifacts = (input: {
-          // Only a call in a run (runId set) needs its provider turn.
           readonly context: ActiveClaudeTurnContext | null;
           readonly nativeItemId: string;
           readonly toolName: string;
@@ -4665,8 +4644,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               (input.coordinator.task.status === "running"
                 ? (restarted ? 0 : (previous?.transcriptReadAttempts ?? 0)) < 3
                 : restarted || previous?.finalTranscriptRead !== true);
-            // The CLI forwards nothing a member says, so every frame while it
-            // runs reads what its transcript gained since the last one.
             const readLiveTranscript =
               status === "running" && transcriptDir !== undefined && agentId !== undefined;
             if (!changed && !readTranscript && !readLiveTranscript) continue;
@@ -4857,7 +4834,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                   transcriptCursor = read.value.cursor;
                   for (const line of read.value.lines) {
                     if (yield* projectSubagentTranscriptLine(target, line)) textShown = true;
-                    // A later line (a retry, or a resumed member) reopens the turn.
                     turnEnded = isClaudeTranscriptTurnEnd(line);
                   }
                   // A line longer than the cap can't advance; stop rather than spin.
@@ -5161,13 +5137,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             lastAssistantMessageId:
               input.reopen === true ? null : (existingSubagent?.lastAssistantMessageId ?? null),
           } satisfies ActiveClaudeSubagent;
-          // The same terminal protection, applied atomically: a concurrent
-          // fiber (live stream vs continuation drain) may have terminalized
-          // the registry entry after this update's lookup read it. A resume
-          // re-open (task_started) bypasses it only when the registered entry
-          // is still the terminal generation the lookup resolved; if a
-          // concurrent fiber installed a newer terminal entry meanwhile, the
-          // re-open must not clobber its result.
+          // Live ingestion can terminalize the entry after this lookup. A resume
+          // may reopen only that same terminal generation; it must not
+          // overwrite a newer generation's result.
           const accepted = yield* Ref.modify(sessionSubagentsByTaskId, (current) => {
             const registered = current.get(input.taskId);
             if (
@@ -5768,11 +5740,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           }
         });
 
-        /**
-         * Projects one transcript line of a subagent whose messages the CLI
-         * does not forward (a workflow member) the way a forwarded frame with
-         * its parent_tool_use_id is projected. Returns whether it carried text.
-         */
+        /** Returns whether the transcript line carried text. */
         const projectSubagentTranscriptLine = Effect.fnUntraced(function* (
           target: ClaudeSubagentProjectionTarget,
           line: unknown,
@@ -6949,7 +6917,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 message,
                 activeContext: null,
               });
-              // Record wake evidence first, while the child is still running.
               const registered = (yield* Ref.get(sessionSubagentsByTaskId)).get(message.task_id);
               const settled = settledTurnByNativeThread.get(liveQuery.nativeThreadId);
               const hasBufferedStart =
@@ -7292,7 +7259,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               const snapshotUsage = message.message.usage;
               const stream = context.streamUsage;
               if (stream === null || stream.messageId !== message.message.id) {
-                // Remember the request so a compaction can mark its later snapshots stale.
                 context.streamUsage = { messageId: message.message.id, usage: snapshotUsage };
                 yield* emitContextUsage(context, snapshotUsage);
               } else if (
@@ -7863,9 +7829,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 (usageLimited
                   ? "Claude usage limit reached. Send the message again once the limit resets."
                   : undefined));
-            // A /compact the usage limit stopped still ends in a success
-            // result. Failing the turn lets the usage-limit guard hold queued
-            // messages instead of sending them into the same limit (#19327).
+            // A /compact stopped by a usage limit still ends in a success result.
+            // Failing the turn lets the usage-limit guard hold queued messages
+            // instead of sending them into the same limit.
             const limitedCompaction =
               usageLimited && message.subtype === "success" && message.local_command === "compact"
                 ? context.compactionFailure
@@ -8136,11 +8102,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             toolName !== "ExitPlanMode" &&
             (toolName === "AskUserQuestion" || requiresClaudeApproval(context))
           ) {
-            // The SDK blocks on the answer, and the prompt echo cannot arrive
-            // until the held turn goes on, so the request is raised now and
-            // the held output goes with it to the pending prompt turn, as it
-            // did before this turn was held. ExitPlanMode is answered at once
-            // below, so its frames stay held.
+            // The SDK blocks on the answer, so the prompt echo cannot arrive until
+            // the request is answered. Release it with the held output;
+            // ExitPlanMode is answered below and keeps its frames held.
             yield* releaseHeldRootFrames(context);
             if (toolName !== "Agent") {
               yield* ensureToolCallStarted({
@@ -9250,7 +9214,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 nativeThreadId !== null &&
                 // A live process holds the conversation even before saving it.
                 (yield* Ref.get(queryContext))?.nativeThreadId !== nativeThreadId &&
-                // An unreadable transcript leaves the resume to the CLI, as before.
+                // An unreadable transcript leaves the resume to the CLI.
                 (yield* hasEmptyClaudeTranscript(nativeThreadId).pipe(
                   Effect.orElseSucceed(() => false),
                 ))

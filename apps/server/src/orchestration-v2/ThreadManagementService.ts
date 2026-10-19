@@ -386,10 +386,9 @@ export interface ThreadManagementServiceShape {
     readonly instanceId: ProviderInstanceId;
   }) => Effect.Effect<boolean>;
   /**
-   * A caller resolving a target ahead of a dispatch under this same command id
-   * can use it to skip project-enablement filtering: the dispatch will only
-   * replay the recorded result, never start anything new, so the filter would
-   * just refuse a retry the project's settings no longer allow fresh.
+   * Receipt replays start no new work. Callers may skip project-enablement
+   * filtering under the same command id so changed settings cannot refuse
+   * an accepted retry.
    */
   readonly hasReceipt: (commandId: CommandId) => Effect.Effect<boolean>;
   readonly waitForThread: (

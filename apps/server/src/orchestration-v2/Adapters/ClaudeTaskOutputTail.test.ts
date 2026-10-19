@@ -97,7 +97,6 @@ describe("tailClaudeTaskOutput", () => {
             ),
         }).pipe(Effect.forkScoped);
         yield* Deferred.await(first);
-        // Written right before the command exits, then the result arrives.
         yield* fileSystem.writeFileString(file, "one\ntwo\n");
         yield* Deferred.succeed(stop, undefined);
         yield* Fiber.join(fiber);

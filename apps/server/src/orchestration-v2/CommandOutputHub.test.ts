@@ -51,7 +51,6 @@ const modelSelection = {
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const ITEM_ID = TurnItemId.make("turn-item:command");
 
-/** What a client holds after applying frames, using the same shared normalizer. */
 function applyFrame(
   state: TerminalOutputState,
   frame: OrchestrationV2CommandOutputFrame,
@@ -151,7 +150,6 @@ const writeCommandItem = (
     });
   });
 
-/** Collect frames into a queue so the test takes them one receipt at a time. */
 const subscribeFrames = (threadId: ThreadId) =>
   Effect.gen(function* () {
     const hub = yield* CommandOutputHub.CommandOutputHub;
@@ -182,7 +180,6 @@ layer("CommandOutputHub", (it) => {
           const hub = yield* CommandOutputHub.CommandOutputHub;
           const threadId = yield* seedThread;
           yield* writeCommandItem(threadId, { status: "running" });
-          // Output that arrived before anyone looked, ending mid-escape and mid-redraw.
           yield* hub.append({
             threadId,
             itemId: ITEM_ID,
@@ -197,7 +194,6 @@ layer("CommandOutputHub", (it) => {
           let client = applyFrame(EMPTY_TERMINAL_OUTPUT, first);
           assert.equal(client.text, "\u001b[0;32mbuilding\u001b[0m\n55%");
 
-          // Chunks that land between frames arrive together in one append.
           yield* TestClock.adjust("1 second");
           yield* hub.append({ threadId, itemId: ITEM_ID, chunk: "1m" });
           yield* hub.append({ threadId, itemId: ITEM_ID, chunk: "\r100%\u001b[0m\ndone\n" });
@@ -211,7 +207,6 @@ layer("CommandOutputHub", (it) => {
             ).text,
           );
 
-          // The persisted item settles the row; its output is what the client keeps.
           yield* TestClock.adjust("1 second");
           yield* writeCommandItem(threadId, {
             status: "completed",
@@ -252,7 +247,6 @@ layer("CommandOutputHub", (it) => {
         const frames = yield* subscribeFrames(threadId);
         let client = applyFrame(EMPTY_TERMINAL_OUTPUT, yield* takeFrame(frames));
         assert.equal(client.text, "abc");
-        // 64 newer commands push this one's tail out of the hub.
         for (let index = 0; index < 64; index += 1) {
           yield* hub.append({
             threadId,
@@ -314,7 +308,6 @@ layer("CommandOutputHub", (it) => {
         let client = applyFrame(EMPTY_TERMINAL_OUTPUT, (yield* Queue.take(stamped)).frame);
         yield* TestClock.adjust("1 second");
 
-        // `yes | head -n 1000000`: 2 MB in 4 KB chunks, 64 KB every 100 ms.
         const chunk = "y\n".repeat(2_048);
         const sent: Array<{
           readonly frame: OrchestrationV2CommandOutputFrame;
@@ -338,7 +331,6 @@ layer("CommandOutputHub", (it) => {
         yield* drain;
 
         const bytes = sent.reduce((total, { frame }) => total + frame.text.length, 0);
-        // 3.2 s of flooding: a frame per chunk would be 512 frames and 2 MB.
         assert.isAtMost(sent.length, 10);
         assert.isAtMost(bytes, 10 * TERMINAL_OUTPUT_TAIL_CHARS);
         for (const { frame } of sent) {

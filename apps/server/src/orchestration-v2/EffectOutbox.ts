@@ -405,7 +405,6 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
             `,
             { concurrency: 1, discard: true },
           );
-          // EventSink owns the corresponding post-commit notification.
         }).pipe(Effect.mapError((cause) => new EffectOutboxError({ operation: "enqueue", cause }))),
       get: (effectId) =>
         sql<EffectRow>`

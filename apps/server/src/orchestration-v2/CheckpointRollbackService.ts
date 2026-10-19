@@ -202,7 +202,6 @@ export const layer: Layer.Layer<
             });
 
       const { worktreePath, branch } = projection.thread;
-      // Recreated only where the server would have made it, as turn start does.
       if (
         worktreePath != null &&
         branch != null &&

@@ -302,11 +302,7 @@ export const layerExecutor: Layer.Layer<
                           : { senderThreadId: message.senderThreadId }),
                       })
                       .pipe(
-                        // The turn that just completed leaves no further retry
-                        // target once the instance is off: the completed turn
-                        // stands as the thread's result instead of going
-                        // through the outbox's bounded retry on a refusal that
-                        // retrying cannot change.
+                        // A disabled instance cannot retry this completed turn; its result stands.
                         Effect.catchTags({
                           ThreadManagementProviderInstanceDisabledError: (disabledError) =>
                             Effect.logInfo(
