@@ -18,8 +18,7 @@ import {
 
 export function useAvailableSettingsSearchItems(scopeSearch: SettingsScopeSearch = {}) {
   const { environments } = useEnvironments();
-  // Explicit booleans keep flags out of the filter's compiler cache scope;
-  // otherwise plain-call results make environment updates rebuild the list.
+  // Explicit booleans keep flags out of the filter cache so environment updates do not rebuild the list.
   const hasEnvironment =
     environments.some((environment) => environment.serverConfig !== null) === true;
   const hasProviderSettingsEnvironment =

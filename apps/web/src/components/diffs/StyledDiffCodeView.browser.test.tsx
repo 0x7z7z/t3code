@@ -82,8 +82,7 @@ vi.mock("@pierre/diffs/worker/worker.js?worker", async (original) => {
   };
 });
 
-// Pierre's real viewer virtualizes into a shadow root; this stand-in renders each file through
-// the same worker pool and keeps the highlighted HTML readable.
+// The real viewer virtualizes in shadow DOM; this stand-in keeps worker-highlighted HTML readable.
 vi.mock(import("@pierre/diffs/react"), async (original) => ({
   ...(await original()),
   CodeView: ((props: CodeViewProps<undefined, undefined>) =>
@@ -359,8 +358,7 @@ function RevealViews({
 }) {
   const [viewer, setViewer] = useState<RevealHandle | null>(null);
   const [collapsed, setCollapsed] = useState(true);
-  // The reveal hook cancels pending clicks by scope identity, so a scope object
-  // must only be replaced when one of its inputs changes.
+  // Keep scope identity until inputs change; the reveal hook uses it to cancel pending clicks.
   const [storedRevealScope, setRevealScope] = useState(() => ({
     scope,
     selectedRequest: { selectedFile, requestId },

@@ -1272,8 +1272,7 @@ function keybindingAnchorIds(rows: ReturnType<typeof buildKeybindingRows>) {
   return ids;
 }
 
-// A separate hook caches rows on keybindings; inline, the compiler joins
-// them to the query's cache scope and rebuilds them on every keystroke.
+// Cache rows in a separate hook so the compiler does not rebuild them per search keystroke.
 function useKeybindingCatalog() {
   const serverKeybindings = useSettingsScope().environment?.serverConfig?.keybindings;
   const merged = mergeWithDefaultKeybindings(serverKeybindings ?? []);

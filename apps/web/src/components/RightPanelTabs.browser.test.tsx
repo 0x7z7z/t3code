@@ -20,7 +20,7 @@ vi.mock(import("./preview/previewBridge"), () => ({
 
 import { RightPanelTabs } from "./RightPanelTabs";
 
-// A real 1x1 PNG, so the browser keeps it instead of falling back on a decode error.
+// Use a decodable PNG so the browser does not fall back on decode error.
 const PIXEL_A =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const PIXEL_B =

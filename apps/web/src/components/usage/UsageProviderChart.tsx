@@ -174,8 +174,7 @@ export function chartScale(
   columns: readonly DayColumn[],
   loadingProviders: ReadonlySet<UsageProviderKind>,
 ) {
-  // Not the sum: layered series each measure from zero, so a combined peak
-  // would leave the plot permanently half empty.
+  // Layered series each start at zero; summing peaks would waste plot height.
   const peak = columns.reduce(
     (max, column) => column.bands.reduce((inner, band) => Math.max(inner, band.value), max),
     0,

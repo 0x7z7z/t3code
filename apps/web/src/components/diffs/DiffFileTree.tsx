@@ -98,8 +98,7 @@ export function DiffFileTree({
       const updates = buildDiffFileTreeUpdates(mountedPaths, paths);
       if (updates.length > 0) model.batch(updates);
     } else {
-      // A refreshed diff can change the rank of existing siblings. Mutations do not reorder
-      // those rows, so rebuild while carrying the reader's folder expansion forward.
+      // Mutations cannot reorder siblings after diff refresh; rebuild while retaining folder expansion.
       const collapsedDirectories = directoryPaths.filter((path) => {
         const directory = model.getItem(path);
         return directory !== null && "isExpanded" in directory && !directory.isExpanded();
@@ -200,8 +199,7 @@ export function DiffFileTree({
           ) {
             return;
           }
-          // Pierre does not emit a selection change for its sole selected row.
-          // Read selection before the row handles the click so new selections reveal only once.
+          // Pierre emits no change for its sole selected row; read before the click to avoid double reveals.
           const selected = model.getSelectedPaths();
           const path = selected.length === 1 ? selected[0] : undefined;
           if (!path || !paths.includes(path)) return;

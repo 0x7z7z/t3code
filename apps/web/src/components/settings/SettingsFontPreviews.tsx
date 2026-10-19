@@ -57,10 +57,7 @@ const DIFF_PREVIEW_PATCH = [
   "",
 ].join("\n");
 
-// The interactive FileDiff's mount lifecycle can race that highlighter when the typography views
-// remount it (toggling Advanced) and lock in an unhighlighted frame; a static preview needs none
-// of that lifecycle, so it uses the deterministic renderer and injects the finished HTML into a
-// shadow root, exactly as FileDiff would.
+// FileDiff remounts can retain unhighlighted frames after a race; use static highlighted HTML in shadow DOM.
 const diffPreviewHtmlByTheme = new Map<DiffThemeName, Promise<readonly string[]>>();
 
 function loadDiffPreviewHtml(theme: DiffThemeName): Promise<readonly string[]> {
@@ -75,8 +72,7 @@ function loadDiffPreviewHtml(theme: DiffThemeName): Promise<readonly string[]> {
   return promise;
 }
 
-// Unlayered rules override Pierre's light/dark surfaces in the shadow root
-// with inherited app code tokens so this preview matches the diff panel.
+// Unlayered shadow-root rules override Pierre surfaces with app code tokens to match the diff panel.
 const DIFF_PREVIEW_THEME_BRIDGE = `
   :host {
     color: var(--code-foreground);
@@ -163,8 +159,7 @@ export function TerminalFontPreview({ family, size }: { family: string; size: nu
     void surfaceRef.current?.setFont(previewTerminalFont(family, size));
   }, [family, size]);
 
-  // Re-read the terminal tokens on any theme change — switching between two
-  // palettes can leave resolvedTheme (light/dark) untouched.
+  // Palette changes may preserve light/dark mode; re-read terminal tokens for every theme change.
   useEffect(() => {
     const mount = mountRef.current;
     const surface = surfaceRef.current;

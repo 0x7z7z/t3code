@@ -81,8 +81,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// The lease overscans 160px around a 20px viewport, a 340px band. With 45px rows the band
-// covers exactly 8 rows at each scroll position below.
+// A 20px viewport plus 160px overscan on each side covers 8 rows at 45px spacing.
 const ROW_HEIGHT = 45;
 const SPACER = 1000;
 

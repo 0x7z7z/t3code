@@ -24,15 +24,10 @@ import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ThemeSearchSection } from "./ThemeSearchSection";
 
-/**
- * The guard runs on the size before the bytes are ever read: a large file
- * would otherwise be pulled into memory, highlighted, and rendered, which
- * locks the UI for as long as that takes.
- */
+/** Check file size before reading; loading and highlighting oversized themes locks the UI. */
 export const MAX_THEME_FILE_BYTES = 256 * 1024;
 
-/** Highlighting rebuilds the whole markup on every keystroke, so oversized
- *  pastes fall back to plain text instead of freezing the editor. */
+/** Highlighting rebuilds markup per keystroke; fall back to plain text for oversized pastes. */
 const MAX_HIGHLIGHTED_JSON_LENGTH = 20_000;
 
 function formatByteSize(bytes: number): string {

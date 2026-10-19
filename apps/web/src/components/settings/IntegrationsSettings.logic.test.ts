@@ -107,8 +107,7 @@ describe("browserProfileRemovalAvailable", () => {
   });
 });
 
-// Mirrors `BrowserImportFailedError.message`, which IPC flattens to a string
-// before the renderer sees it.
+// IPC flattens BrowserImportFailedError to its message.
 const failure = (reason: string) => ({
   message: `Importing cookies from safari failed: ${reason}.`,
 });

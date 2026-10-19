@@ -242,13 +242,12 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
           itemMetrics: {
             diffHeaderHeight: 32,
             hunkSeparatorHeight: 24,
-            // Pierre uses its general file spacing as a fallback in expanded-file layout paths.
-            // Keep it zero alongside the explicit paddingTop or expanding the first file can
-            // reintroduce the library's default 8px gap above its header.
+            // Zero both spacing and paddingTop; Pierre's expanded-file fallback otherwise adds an 8px header
+            // gap.
             spacing: 0,
             paddingTop: 0,
-            // Pierre always paints this 8px gap via --diffs-gap-fallback. Omitting
-            // it from the metric clips one row per expanded file from the scroll range.
+            // Include Pierre's 8px --diffs-gap-fallback in metrics or each expanded file loses a scrollable
+            // row.
             paddingBottom: 8,
           },
           layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },

@@ -80,7 +80,6 @@ describe("Files panel search", () => {
 
   async function search(value: string) {
     const input = searchInput();
-    // React tracks the last value it saw on the element, so set it through the native setter.
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
     await act(async () => {
       input.dispatchEvent(new Event("input", { bubbles: true }));

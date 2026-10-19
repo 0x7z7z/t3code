@@ -667,9 +667,8 @@ export function useSettingsRestore(onRestored?: () => void) {
     );
     if (!confirmed) return;
 
-    // Reset only dirty theme keys so storage failures cannot block unrelated
-    // settings. Re-read after confirmation to preserve changes from other tabs
-    // or the OS if rollback is needed.
+    // Reset only dirty theme keys so storage failures cannot block other settings; re-read after confirmation
+    // for safe rollback.
     let previousTheme = theme;
     try {
       previousTheme = readThemePreference();
@@ -687,9 +686,7 @@ export function useSettingsRestore(onRestored?: () => void) {
         }),
       );
     };
-    // Rollback restores the base preference first (which clears any mix) and
-    // then re-applies the captured mix on top, so no failure path can leave
-    // the pair of keys half-restored.
+    // Restore the base preference before the mix because restoring the base clears the mix.
     const previousHalves = liveHalves;
     const rollbackThemeState = () => {
       if (needsThemeReset) setTheme(previousTheme);
@@ -1684,8 +1681,7 @@ function SimpleFontRows() {
   );
 }
 
-// Font smoothing only renders on macOS, so a search jump to it elsewhere
-// must not flip the section - the target would never mount to be scrolled to.
+// Font smoothing exists only on macOS; elsewhere a search jump must not switch sections to an absent target.
 const ADVANCED_TYPOGRAPHY_TARGET_IDS: ReadonlySet<string> = new Set([
   "prompt-font",
   "terminal-font",
@@ -1769,8 +1765,7 @@ function FontFamilySettingsRow({
     if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current.id);
     commitTimerRef.current = null;
   };
-  // Bumped on every external value change, so a pending commit typed before one never lands,
-  // even if the value has since changed back to what it was typed against.
+  // Invalidate pending commits on every external change, even if the value changes back.
   const [adopted, setAdopted] = useState({ value, generation: 0 });
   if (adopted.value !== value) {
     setAdopted({ value, generation: adopted.generation + 1 });
@@ -1856,8 +1851,7 @@ function FontFamilySettingsRow({
         onKeyDown={(event) => {
           if (event.key === "Enter") flushDraft();
           if (event.key === "Escape") {
-            // Discard uncommitted typing without closing the settings page,
-            // which is what an unhandled Escape does.
+            // Consume Escape so discarding typing does not also close settings.
             event.preventDefault();
             event.stopPropagation();
             cancelPendingCommit();

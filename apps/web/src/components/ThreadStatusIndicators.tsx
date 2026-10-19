@@ -99,8 +99,7 @@ export function useLinkedThreadPullRequest(
   const currentStatus = current === null ? null : linkedPullRequestSnapshotStatus(current);
   const fallback =
     current === null ? ((!supportsLinks ? linkedPullRequest : null) ?? branchPullRequest) : null;
-  // The query atom and shared summary effect key on this object, and a sidebar row
-  // must not touch the summary cache on every render.
+  // Preserve reference identity so sidebar renders do not touch the summary cache.
   const reference = fallback == null ? null : linkedPullRequestReference(fallback);
   const queried = useEnvironmentQuery(
     !enabled || environmentId === null || reference === null
@@ -468,10 +467,7 @@ export function resolveThreadPr(input: {
   return gitStatus.pr ?? null;
 }
 
-/**
- * Parent-held PR snapshot for Sidebar V2. Rows remount when settlement
- * partitions move them, so terminal PR metadata must live above the row.
- */
+/** Hold terminal PR metadata above rows because settlement moves remount them. */
 export interface ThreadChangeRequestSnapshot {
   readonly branch: string;
   readonly pr: NonNullable<ThreadPr>;

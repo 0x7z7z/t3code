@@ -5,8 +5,7 @@ import { useProjects } from "../../state/entities";
 
 export function useSettingsProjectGroups() {
   const projects = useProjects();
-  // Object selectors create a new identity on every settings write,
-  // rebuilding all groups and re-rendering every settings row.
+  // Avoid object selector identities that rebuild groups and every settings row on each write.
   const sidebarProjectGroupingMode = useClientSettings(
     (settings) => settings.sidebarProjectGroupingMode,
   );

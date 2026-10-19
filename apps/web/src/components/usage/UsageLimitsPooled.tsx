@@ -201,10 +201,8 @@ function SegmentPopover({
   );
 }
 
-/**
- * The confirm is a sibling of the popover, not a child: dialogs stack under
- * popovers, and the popover closes as the confirm opens.
- */
+/** Mount confirmation beside the popover; dialogs stack below it and closing it would unmount
+ * confirmation. */
 function PoolSegment({
   account,
   window,

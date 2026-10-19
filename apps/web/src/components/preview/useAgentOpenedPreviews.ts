@@ -35,8 +35,8 @@ export function useAgentOpenedPreviews(input: {
     sheetLayout,
   } = input;
   const autoShowFloatingPreview = useClientSettings(selectAutoShowFloatingPreview);
-  // Baseline existing sessions so reloads cannot resurrect dismissed tabs.
-  // Exclude sessions whose device summary is missing so they can open later.
+  // Baseline sessions to preserve dismissals on reload; missing device summaries must remain eligible to open
+  // later.
   const previousDeviceSessions = useRef(new Map<string, Set<string>>());
   useEffect(() => {
     if (!threadRef || !deviceStateLoaded) return;

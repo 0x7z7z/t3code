@@ -212,9 +212,7 @@ const DEFAULT_TAILSCALE_SERVE_PORT = 443;
 const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
 const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
 
-// Sentinels for the consolidated WSL backend picker. The colon is
-// rejected by DISTRO_NAME_PATTERN (validated on the desktop side) so
-// neither can collide with a real distro name.
+// Colons are invalid in distro names, keeping picker sentinels collision-free.
 const BACKEND_VALUE_DEFAULT_WSL = "backend:default-wsl";
 const BACKEND_VALUE_WSL_OFF = "backend:wsl-off";
 
@@ -1516,8 +1514,7 @@ function SavedBackendListRow({
     serverUpdateState.status === "running" && serverUpdateState.stage === "resuming";
   const status = savedBackendStatus(environment);
   const serverVersion = environment.serverConfig?.environment.serverVersion ?? null;
-  // Discovery empties its map on every refresh, so hold the last descriptor
-  // seen or the glyph would blink back to the generic one each time.
+  // Discovery clears its map on refresh; retain the last descriptor to prevent generic-icon flashes.
   const relayDiscovery = useRelayEnvironmentDiscovery();
   const discoveredDescriptor = Option.getOrNull(
     relayDiscovery.environments.get(environmentId)?.status ?? Option.none(),
@@ -1581,8 +1578,8 @@ function SavedBackendListRow({
       subtitle={
         <span className="flex min-w-0 items-center gap-1">
           <Tooltip>
-            {/* The status can change while the tooltip is open, and base-ui only
-                re-measures the popup when the trigger's payload changes. */}
+            {/* Base UI remeasures open tooltips only when trigger payload changes; status can change
+             * meanwhile. */}
             <TooltipTrigger
               payload={statusTooltip}
               render={
@@ -2177,8 +2174,8 @@ export function ConnectionsSettings() {
   const desktopSshHosts = useEnvironmentQuery(
     isSshDiscoveryActive ? desktopSshHostsStateAtom : null,
   );
-  // The discovery atom is kept alive across dialog opens, so re-read SSH config
-  // each time the SSH tab is shown; stale hosts stay visible while it refreshes.
+  // Discovery survives dialog closes; refresh SSH config whenever the tab opens, retaining stale hosts while
+  // loading.
   const refreshDesktopSshHosts = desktopSshHosts.refresh;
   useEffect(() => {
     if (isSshDiscoveryActive) refreshDesktopSshHosts();
@@ -2677,8 +2674,8 @@ export function ConnectionsSettings() {
     }
   };
 
-  // T3 Connect environments get their own dialog: removing one here leaves its
-  // account registration, so it points to where that can be deregistered.
+  // Removing a T3 Connect route preserves account registration; use a separate dialog pointing to
+  // deregistration.
   const [pendingT3ConnectRemoval, setPendingT3ConnectRemoval] =
     useState<EnvironmentPresentation | null>(null);
   const handleRemoveSavedBackend = async (environment: EnvironmentPresentation) => {
@@ -3056,8 +3053,7 @@ export function ConnectionsSettings() {
     const defaultDistroName =
       desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
     if (value === BACKEND_VALUE_WSL_OFF) {
-      // Unavailable WSL can leave enabled=false with wslOnly=true. Switching
-      // to Windows must clear that persisted mode too.
+      // Unavailable WSL can remain wslOnly while disabled; switching to Windows must clear both.
       if (!desktopWslState.enabled && !desktopWslState.wslOnly) return;
       const wasWslOnly = desktopWslState.wslOnly;
       if (hasWslRegistrationToLose || wasWslOnly) {

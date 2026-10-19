@@ -13,8 +13,7 @@ export function ProjectMonogram({
   readonly color: ProjectIconColor;
   readonly className?: string | undefined;
 }) {
-  // Menu/button rules trim bare SVG margins for padded stroke icons.
-  // Wrap this unpadded tile so those rules cannot shift it.
+  // Wrap the tile to avoid menu/button SVG margin trimming.
   return (
     <span
       aria-hidden="true"

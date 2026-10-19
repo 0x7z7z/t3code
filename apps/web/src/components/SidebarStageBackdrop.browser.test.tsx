@@ -20,8 +20,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-// Gradients and patterns resolve url(#id) document-wide, so a repeated id would paint one
-// backdrop with another's definitions.
 it.each(["nightly", "dev"] as const)(
   "gives every %s backdrop its own SVG definitions when two are on the page",
   async (variant) => {

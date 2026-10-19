@@ -238,8 +238,7 @@ interface ChatMarkdownProps {
   onImageExpand?: ((preview: ExpandedImagePreview) => void) | undefined;
   extraRemarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
   renderContextReference?: ((reference: ChatMarkdownContextReference) => ReactNode) | undefined;
-  /** Loads GitHub-hosted media through `cwd`'s GitHub credential, which a private repository's
-      uploads need; without it those images and videos load unauthenticated and 404. */
+  /** Loads private GitHub media with `cwd`'s credential to avoid unauthenticated 404s. */
   githubMedia?: boolean | undefined;
   headingLevelOffset?: number | undefined;
 }
@@ -472,8 +471,7 @@ function isClosedCodeFence(node: ReactMarkdownExtraProps["node"], text: string):
   if (start === undefined || end === undefined) return false;
   const source = text.slice(start, end);
   const opening = /^(?:`{3,}|~{3,})/.exec(source)?.[0];
-  // One class for the blockquote prefix: nested quantifiers here backtrack
-  // exponentially on code lines that start with many `> ` markers.
+  // Nested quantifiers backtrack exponentially on repeated blockquote markers.
   const closing = /(?:^|\n)[ \t>]*(`{3,}|~{3,})[ \t\r]*$/.exec(source)?.[1];
   return (
     opening !== undefined &&
@@ -512,8 +510,7 @@ function extractCodeBlock(
   ) {
     return null;
   }
-  // With a custom `code` component the child's type is that component, not
-  // the "code" tag — the hast node react-markdown attaches still names it.
+  // Custom code components change the React element type; hast still identifies the code tag.
   if (onlyChild.type !== "code" && onlyChild.props.node?.tagName !== "code") {
     return null;
   }
@@ -536,11 +533,7 @@ function readInitialWordWrapSetting(): boolean {
   return getClientSettings().wordWrap;
 }
 
-/**
- * Whether any cell is clipped in the unwrapped layout. Only then does the wrap
- * toggle change anything, so short tables hide it. Measures with the container
- * briefly unwrapped and restores it before the browser paints.
- */
+/** Temporarily unwraps the table to measure clipping, restoring it before paint. */
 function tableHasClippedCells(container: HTMLElement, table: HTMLTableElement): boolean {
   const viewport = table.closest<HTMLElement>('[data-slot="scroll-area-viewport"]');
   const scrollLeft = viewport?.scrollLeft ?? 0;
@@ -578,8 +571,7 @@ function MarkdownTable({ children, ...props }: React.ComponentProps<"table">) {
     setHasClippedCells(tableHasClippedCells(container, table));
   };
 
-  // A streamed cell can grow until it clips while the table keeps its size,
-  // so remeasure after every render, not only on resize.
+  // Streaming can clip a cell without resizing the table, so measure every render.
   useLayoutEffect(measureClippedCells);
 
   // Column width changes can clip a cell without rendering this table.
@@ -720,8 +712,7 @@ function MarkdownDetails({
   const searching = use(MarkdownFindContext);
   const expanded = isOpen;
   const revealForFind = () => setIsOpen(true);
-  // Base UI only listens for `beforematch` on a panel mounted at its first
-  // render; a closed panel mounts later, when find starts, so listen here.
+  // Base UI misses beforematch on panels mounted after the first render.
   const revealRef = findRevealRef(revealForFind);
   const childNodes = Children.toArray(children);
   const summaryIndex = childNodes.findIndex(
@@ -891,8 +882,7 @@ function MarkdownCodeBlock({
     code.endsWith("\n") &&
     command.length > 0 &&
     !command.endsWith("\\") &&
-    // Control and invisible format characters (bidi overrides, zero-width) can
-    // make the rendered command differ from what the terminal would receive.
+    // Control and invisible format characters can make rendered commands differ from terminal input.
     !/[\p{Cc}\p{Cf}]/u.test(code.slice(0, -1));
 
   const handleCopy = () => {
@@ -1112,8 +1102,7 @@ function SuspenseShikiCodeBlock({
   if (isStreaming && !hasStreamed) setHasStreamed(true);
   const language = extractFenceLanguage(className);
   const cacheKey = createHighlightCacheKey(code, language, themeName);
-  // Once lines are mounted individually, keep that renderer when streaming
-  // finishes so switching to cached HTML cannot clear an existing selection.
+  // Retain the streamed renderer after completion to preserve selection.
   const cachedHighlightedHtml =
     !isStreaming && !hasStreamed ? highlightedCodeCache.get(cacheKey) : null;
 
@@ -1285,11 +1274,8 @@ function markdownImageCopy(alt: string, src: string, title: string | undefined):
   return `![${escapedAlt}](${src}${titleSuffix})`;
 }
 
-/**
- * `maxHeightRem` folds a height cap into the width bound: `max-height` alone
- * would not feed back through `aspect-ratio` once `width` is definite, so a
- * tall image would keep a box wider than the picture it draws.
- */
+/** Fold max height into the width bound; definite width prevents max-height feeding back through
+ * aspect-ratio. */
 function authoredImageSizeStyle(
   width: string | number | undefined,
   height: string | number | undefined,
@@ -1387,11 +1373,7 @@ const CHAT_MARKDOWN_IMAGE_FRAME_CLASS_NAME = cn(
   CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME,
 );
 
-/**
- * Callers key this on the file's identity, not its URL: a re-signed URL for
- * the same file keeps the decoded image on screen while the new bytes arrive,
- * and a different file starts from the slot again.
- */
+/** Key by file identity so re-signed URLs retain the decoded image while loading. */
 function ChatMarkdownImage(props: {
   readonly src: string | null;
   readonly sourceFailed?: boolean | undefined;
@@ -1780,8 +1762,7 @@ function handleMarkdownFragmentClick(event: ReactMouseEvent<HTMLAnchorElement>, 
     return;
   }
 
-  // Never let the browser follow the fragment or write it to the URL: desktop keeps
-  // its route in the hash, so replacing the hash navigates away from the thread.
+  // Desktop routes use the hash, so following a fragment would leave the thread.
   event.preventDefault();
   findMarkdownFragmentTarget(event.currentTarget, href)?.scrollIntoView({ block: "start" });
 }
@@ -1801,10 +1782,7 @@ function githubHeadingSlug(text: string): string {
     .replace(/ /g, "-");
 }
 
-/**
- * Like the sanitizer's ids, they carry the `user-content-` prefix so they cannot clobber app
- * element ids; fragment lookup strips it.
- */
+/** Prefix ids with user-content- to avoid clobbering app ids; fragment lookup strips it. */
 function rehypeHeadingIds() {
   return (tree: HeadingHastNode) => {
     const taken = new Set<string>();
@@ -2275,9 +2253,7 @@ function markdownServerConfigFieldsEqual(
   );
 }
 
-// The config object changes with every provider status push and snapshot. The
-// atom keeps its previous value while the fields markdown reads are equal, so
-// those pushes don't re-render every visible reply.
+// Compare only markdown config fields to avoid rerendering replies on every provider status push.
 const markdownServerConfigFieldsAtom = Atom.family((environmentId: EnvironmentId | null) =>
   Atom.make((get) => {
     const next = markdownServerConfigFields(get(serverEnvironment.configValueAtom(environmentId)));
@@ -2313,8 +2289,7 @@ function useChatMarkdownState({
     cwd,
     imageBaseDir,
   ].join("\u0000");
-  // Tagged with the scope it was opened in: a request from the previous scope can
-  // resolve before the effect cleanup below invalidates it, and must stay hidden.
+  // Hide requests from an old scope even if they resolve before effect cleanup.
   const [localMedia, setLocalMedia] = useState<{
     scope: string;
     preview: ExpandedImagePreview;
@@ -2329,8 +2304,7 @@ function useChatMarkdownState({
     setMediaScope(mediaScopeKey);
     setLocalMedia(null);
   }
-  // A layout cleanup runs in the commit that changes scope, so a request resolving
-  // before paint cannot reach a parent onImageExpand either.
+  // Layout cleanup blocks stale requests from reaching onImageExpand before paint.
   useLayoutEffect(
     () => () => {
       mediaRequestId.current += 1;
@@ -2367,8 +2341,8 @@ function useChatMarkdownState({
       resolvedFilePath,
       cwd,
       threadRef,
-      // Read at click time: a reconnect replaces the prepared connection, and
-      // subscribing would hand every rendered markdown element a new context.
+      // Read the connection on click; reconnect replaces it, and subscriptions would refresh every markdown
+      // context.
       httpBaseUrl:
         environmentId === null ? undefined : readPreparedConnection(environmentId)?.httpBaseUrl,
       createAssetUrl,
@@ -2490,9 +2464,7 @@ function useChatMarkdownState({
   };
   const openChangeRequestLink = useOpenChangeRequestLink(threadRef, pullRequestPanelRef);
   const openDeferredMarkdownLink = useOpenLink(threadRef);
-  // Subscribed rather than read at click time: the anchor has to decide
-  // synchronously whether to intercept its `_blank`, and a subscription is what
-  // makes a persisted "app" apply once settings hydrate after launch.
+  // Subscribe so hydrated settings apply before the anchor synchronously decides whether to intercept _blank.
   const linkTargetPreference = useClientSettings((settings) => settings.browserLinkTarget);
   const resolveThreadPullRequest = (
     href: string,
@@ -2592,8 +2564,7 @@ function useChatMarkdownState({
   };
   const openFileInPanel = (panelPath: string, line: number | undefined) => {
     if (!threadRef) return;
-    // Claimed on every open so a synchronous one supersedes a lookup already
-    // in flight.
+    // Every open supersedes pending lookups, including synchronous opens.
     const isLatestLookup = claimWorkspaceBasenameLookup();
     const openAt = (path: string) => useRightPanelStore.getState().openFile(threadRef, path, line);
     if (!cwd || !needsWorkspaceBasenameLookup(panelPath)) {
@@ -2720,8 +2691,7 @@ const ChatMarkdownRendererContext = React.createContext<
   ReturnType<typeof useChatMarkdownState>["componentState"]
 >(null!);
 
-// The markdown source changes on every streamed delta. Only the renderers that
-// slice it by node offset read it, so it sits apart from the renderer context.
+// Isolate streamed source text from the renderer context; only offset-based renderers need it.
 const ChatMarkdownTextContext = React.createContext("");
 
 function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
@@ -2791,8 +2761,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
   },
   li: function MarkdownListItem({ node, children, ...props }) {
     const { skills } = use(ChatMarkdownRendererContext);
-    // The checkbox finds its marker from this offset when toggled, so list items
-    // don't read the source text and re-render on every streamed token.
+    // Resolve checkbox markers by offset to avoid rerendering list items on every streamed token.
     const isTaskItem = String(props.className ?? "").includes("task-list-item");
     return (
       <li {...props} data-list-item-offset={isTaskItem ? node?.position?.start.offset : undefined}>
@@ -2959,9 +2928,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 canOpenInApp: canOpenInPreview,
               }) !== "app"
             ) {
-              // Chromium turns an Option/Alt-click into a download that never reaches the
-              // shell. On desktop, open the link here while the key is still down, so link
-              // routers such as Finicky can still read it.
+              // Open desktop Alt-clicks before Chromium downloads them so link routers can read the held key.
               if (isElectron && event.altKey) {
                 event.preventDefault();
                 event.stopPropagation();

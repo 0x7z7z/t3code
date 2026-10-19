@@ -30,18 +30,12 @@ export function fileBreadcrumbs(projectName: string, relativePath: string): File
   ];
 }
 
-/**
- * `relativePath` written the way its own crumb names it, so a link with a
- * trailing or repeated separator still finds its crumb.
- */
+/** Use the crumb's path spelling so trailing or repeated separators still match. */
 export function breadcrumbPathOf(relativePath: string): string {
   return fileBreadcrumbs("", relativePath).at(-1)?.path ?? relativePath;
 }
 
-/**
- * Whether a host folder crumb names a directory the server can list. A UNC
- * server (`\\server`) is not one; its shares (`\\server\share`) are.
- */
+/** UNC servers are not listable directories; their shares are. */
 export function isListableHostFolder(path: string): boolean {
   return isAbsolutePath(path) && !/^\\\\[^\\/]+$/.test(path);
 }
@@ -51,11 +45,7 @@ function trailCrumbIndex(trail: string, path: string): number {
   return fileBreadcrumbs("", trail).findIndex((crumb) => crumb.path === crumbPath);
 }
 
-/**
- * The deepest path the breadcrumbs keep showing after the browser moves to `path`.
- * Going up keeps the folders below visible so the way back down is one click;
- * moving anywhere else starts over at `path`.
- */
+/** Retain descendant crumbs when navigating up; other navigation resets the trail to path. */
 export function retainedBreadcrumbTrail(trail: string | undefined, path: string): string {
   return trail !== undefined && trailCrumbIndex(trail, path) >= 0 ? trail : path;
 }

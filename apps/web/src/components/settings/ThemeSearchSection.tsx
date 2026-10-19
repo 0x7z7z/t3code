@@ -96,9 +96,8 @@ export function ThemeSearchSection({
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [pendingUpdate, setPendingUpdate] = useState<OpenVsxThemeExtension | null>(null);
   const requestRef = useRef<AbortController | null>(null);
-  // Recorded only once a search succeeds, so a finished install reruns the
-  // search only when the query or sort changed while it was in flight, and the
-  // install error the user needs to see survives.
+  // Record successful searches only; rerun after install only for changed query/sort to preserve install
+  // errors.
   const [lastSearchKey, setLastSearchKey] = useState<string | null>(null);
   const [handledSearch, setHandledSearch] = useState<{
     key: string;

@@ -55,8 +55,7 @@ export const BranchToolbarEnvironmentSelector = memo(function BranchToolbarEnvir
     })),
   ];
 
-  // Match the control height even when this is the strip's only item:
-  // the glass seam assumes a fixed height, and the strip has no min-height.
+  // The glass seam needs fixed height even when this is the strip's only control.
   if (envLocked || onEnvironmentChange === undefined) {
     const lockedRow = (
       <span

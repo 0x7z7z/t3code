@@ -391,9 +391,8 @@ function SidebarRail({
       sidebarContainer.getBoundingClientRect().width,
       resolvedResizable,
     );
-    // Drag frames write width to the gap and container only. Changing the
-    // inherited --sidebar-width on the wrapper restyles the whole app, so it is
-    // written once when the drag commits.
+    // Write width only to gap/container during drag; inherited --sidebar-width restyles the whole app, so
+    // update it at commit.
     const widthTargets = [
       sidebarRoot.querySelector<HTMLElement>("[data-slot='sidebar-gap']"),
       sidebarContainer,
@@ -607,9 +606,8 @@ function SidebarContent({
         hideScrollbars
         scrollFade
         scrollFadePadding={false}
-        // Thread rows provide keyboard access to this scroll region. Keeping
-        // Base UI's viewport out of the tab order lets its presentational role
-        // flatten in WebKit instead of becoming a VoiceOver interaction group.
+        // Rows provide keyboard access; exclude the viewport from tab order to flatten VoiceOver's WebKit
+        // interaction boundary.
         viewportTabIndex={-1}
         className="h-auto min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]]:[--fade-size:0.75rem]"
       >

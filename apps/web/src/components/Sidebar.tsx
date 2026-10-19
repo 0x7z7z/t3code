@@ -292,9 +292,7 @@ import {
 } from "../composerDraftStore";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 
-// The fields thread rows show. Provider status pushes refresh `checkedAt`,
-// status and auth on every provider; leaving those out keeps each
-// environment's map, and every memoized row, stable across them.
+// Omit changing provider status/auth fields to keep environment maps and memoized rows stable.
 type SidebarProviderEntry = Pick<
   ProviderInstanceEntry,
   | "instanceId"
@@ -328,9 +326,7 @@ function sameSidebarProviderEntries(
   return true;
 }
 
-// Threads on non-primary environments (T3 Connect, hosted) resolve their
-// provider entry from their own environment's config: default instance ids
-// are driver slugs, so a flat map would collide across environments.
+// Resolve providers per environment because default instance ids collide across environments.
 const sidebarProviderEntriesAtom = Atom.make((get) => {
   const providersByEnvironment = get(environmentPresentations.providersByEnvironmentAtom);
   const derived = deriveProviderEntriesByEnvironment(
@@ -432,8 +428,7 @@ function routeThreadOnly(
   return routeThread === undefined ? EMPTY_THREADS : [routeThread];
 }
 
-// A separate hook keeps maps frozen and cached on their real inputs;
-// later Sidebar hooks would otherwise invalidate every dnd-kit input.
+// Separate hooks cache maps independently of later Sidebar hooks and preserve dnd-kit inputs.
 function useSidebarThreads(input: {
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
@@ -446,8 +441,7 @@ function useSidebarThreads(input: {
   const threads = useThreadShells();
   const workingShelfEnabled = useClientSettings((s) => s.sidebarWorkingShelfEnabled);
   const nowMinute = useNowMinute();
-  // Snooze wake times are second-precise, so classifying with the quantized
-  // minute would hold a woken thread on the shelf for up to a minute.
+  // Minute-quantized clocks would delay second-precise snooze wakes by up to a minute.
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
   const [nextSnoozeWakeAt, setNextSnoozeWakeAt] = useState<string | null>(null);
   useEffect(
@@ -628,9 +622,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
       ).push(thread);
     }
   }
-  // Server capability only gates DRAGGING — it must not influence the
-  // sort, or mixed-version fleets would render different pinned orders on
-  // web and mobile from the same data.
+  // Capability gates dragging only; mixed server versions must preserve the same pinned order across clients.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
   const sortedActive = workingShelfEnabled
     ? sortInboxThreadsByReturn(active, inboxReturns.returnedAt)
@@ -697,8 +689,7 @@ function isOptimisticDropReleased(input: {
     return true;
   }
   if (optimisticDrop.order === null) {
-    // Settle also emits unpin/unsnooze events. Wait for the entire move
-    // before releasing the projected fields and sort timestamps.
+    // Settle emits unpin/unsnooze too; hold projected fields and sort times until the whole move completes.
     if (
       canonicalSection === optimisticDrop.section &&
       thread.pinnedAt == null &&
@@ -737,8 +728,7 @@ function isOptimisticDropReleased(input: {
   return membershipChanged || foreignKeyLanded || allAssignmentsLanded;
 }
 
-// Sidebar() is large enough that the compiler cannot prove its local maps stay
-// unmutated; built inside a hook they reach it frozen and cached.
+// Build maps in a hook so the compiler can prove they are frozen and cache them.
 function useSidebarLookups() {
   const projects = useProjects();
   const environments = useEnvironmentIdentities();
@@ -781,8 +771,7 @@ function useSidebarLookups() {
 function scheduleSnoozeWake(wakeAt: string | null, onWake: () => void): (() => void) | undefined {
   const wakeAtMs = wakeAt === null ? Number.NaN : Date.parse(wakeAt);
   if (Number.isNaN(wakeAtMs)) return undefined;
-  // Delays above signed 32-bit range fire immediately, causing a tight
-  // re-arm loop for far-future snoozes.
+  // Delays beyond signed 32-bit range fire immediately and loop for far-future snoozes.
   const delayMs = Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647);
   const id = window.setTimeout(onWake, delayMs);
   return () => window.clearTimeout(id);
@@ -813,8 +802,7 @@ function compactSidebarTimeLabel(label: string): string {
   return label.endsWith(" ago") ? label.slice(0, -4) : label;
 }
 
-// Subscribes to the minute tick itself, so only the label re-renders each
-// minute. The minute is passed as the clock so it is the formatter's input.
+// Subscribe in the label and pass the minute as formatter input so only the label rerenders.
 function RelativeTimeLabel(props: { timestamp: string | null }) {
   const nowMinute = useNowMinute();
   return props.timestamp === null
@@ -845,8 +833,7 @@ function WorkingDuration(props: { startedAt: string | null }) {
   return <WorkingDurationLabel startedMs={startedMs} />;
 }
 
-// Self-ticking so only this span re-renders each second, not the whole row;
-// the shared tick lands every working row's update in the same frame.
+// Subscribe in the span; a shared tick updates all working rows in the same frame.
 function WorkingDurationLabel(props: { startedMs: number }) {
   const nowMs = useNowSecond();
   return (
@@ -1108,13 +1095,11 @@ type SortableThreadRowBag = Pick<
   "listeners" | "setNodeRef" | "transform" | "transition" | "isDragging"
 >;
 
-// useSortable memoizes on its `disabled` object, so a fresh one per render
-// re-renders every row and marker on each sidebar update.
+// useSortable memoizes by disabled object identity; fresh objects rerender every row and marker.
 const SIDEBAR_SORTABLE_DRAG_DISABLED = { draggable: true } as const;
 const SIDEBAR_SORTABLE_DRAG_ENABLED = { draggable: false } as const;
 
-// A render closure from Sidebar changes every render, rebuilding the
-// sortable bag and invalidating every memoized row.
+// Sidebar render closures invalidate the sortable bag and every memoized row.
 function SortableThreadRow(
   props: Omit<SidebarThreadRowProps, "sortable"> & {
     sortableId: string;
@@ -1135,8 +1120,7 @@ function SortableThreadRow(
         : SIDEBAR_SORTABLE_DRAG_ENABLED,
     animateLayoutChanges: animateSidebarLayoutChanges,
   });
-  // dnd-kit memoizes each field but not the bag, so the memoized row would
-  // rerender on every shell update without this.
+  // dnd-kit memoizes fields but not the bag; preserve its identity across shell updates.
   const bag = {
     listeners,
     setNodeRef,
@@ -1295,8 +1279,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
     replaceComposerContextReferences(composer.prompt, (occurrence) => occurrence.label)
       .trim()
       .split("\n", 1)[0] ?? "";
-  // images mirrors persistedAttachments once rehydration finishes; before
-  // that only the persisted list is populated, hence max not sum.
+  // images mirrors persistedAttachments after hydration; max avoids double-counting.
   const attachmentCount =
     Math.max(composer.images.length, composer.persistedAttachments.length) +
     composer.files.length +
@@ -1315,9 +1298,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
   });
   const handleActivate = () => onNavigate(draftId);
   const handleKeyDown = (event: ReactKeyboardEvent) => {
-    // Keys targeting the nested discard button belong to the button:
-    // preventDefault here would swallow Space's synthesized click and
-    // navigate instead of discarding.
+    // Let nested buttons own keys; preventDefault would swallow Space's discard click and navigate.
     if ((event.target as HTMLElement).closest("button")) return;
     if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
       event.preventDefault();
@@ -1845,8 +1826,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onSnooze(threadRef, preset);
   };
   const [snoozeMenuOpenRaw, setSnoozeMenuOpen] = useState(false);
-  // A render-time clock read stays frozen in the compiler cache, so the
-  // queued-turn gate needs a clock in state that resets with the thread.
+  // Compiler caching freezes render-time clock reads; keep the queued-turn clock in thread-scoped state.
   const [snoozeGateClock, setSnoozeGateClock] = useState(() => ({
     thread,
     now: new Date().toISOString(),
@@ -1859,8 +1839,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ? Date.parse(thread.latestUserMessageAt ?? "") + QUEUED_TURN_START_GRACE_MS
     : Number.NaN;
   useEffect(() => {
-    // A gate still closed past its expiry is held by runtime status, not time,
-    // so no clock tick can open it.
+    // Past expiry, runtime status holds the gate closed; clock ticks cannot open it.
     if (!Number.isFinite(snoozeGateExpiryMs) || snoozeGateExpiryMs <= Date.parse(snoozeGateNow)) {
       return;
     }
@@ -1912,8 +1891,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
         style: {
           transform: CSS.Translate.toString(sortable.transform),
           transition: sortable.transition,
-          // A zero-height boundary also makes dnd-kit scale the source to
-          // zero. Only projected peers use scaleY as a visibility sentinel.
+          // dnd-kit scales zero-height drag sources to zero; only peers use scaleY as a visibility sentinel.
           visibility:
             !sortable.isDragging && sortable.transform?.scaleY === 0
               ? ("hidden" as const)
@@ -2340,9 +2318,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                           ) : topStatus.icon === "done" ? (
                             <CircleCheckIcon aria-hidden className="size-4 shrink-0" />
                           ) : null}
-                          {/* The label alone is the live region: a role="status"
-                            wrapper around the ticking duration would make
-                            screen readers announce every second. */}
+                          {/* Keep ticking duration out of the live region so screen readers do not announce
+                           * every second. */}
                           <span role="status">{topStatus.label}</span>
                           {status === "working" ? (
                             <span aria-hidden>
@@ -2362,8 +2339,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
                     <span
                       className={cn(
-                        // A mouse click leaves Settle focused; focus-within would keep its
-                        // controls over the status label after the pointer leaves.
+                        // Click leaves Settle focused; focus-within would keep controls over the status after
+                        // pointer exit.
                         "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
                         snoozeMenuOpen && "pointer-events-auto static opacity-100",
                       )}
@@ -2786,13 +2763,10 @@ export default function Sidebar() {
   const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
   const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
   const headerSearchRef = useRef<HTMLDivElement | null>(null);
-  // Safari can send a click after Ctrl+click opens settings. Ignore that one
-  // selection, then clear the guard when the picker opens again.
+  // Safari may click after Ctrl+click opens settings; suppress that selection until the picker reopens.
   const suppressNextScopeChangeRef = useRef(false);
   const highlightedProjectScopeKeyRef = useRef<string | null>(null);
-  // Keep a dropped row at its destination while its server applies the
-  // lifecycle command and any order-key writes. The next pickup waits for
-  // this hold so a second drop cannot replace an unconfirmed placement.
+  // Hold dropped rows until server placement is confirmed; block another pickup from replacing the hold.
   const [optimisticDrop, setOptimisticDrop] = useState<SidebarOptimisticDrop | null>(null);
   const threadSearchInputRef = useRef<HTMLInputElement>(null);
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
@@ -3027,8 +3001,7 @@ export default function Sidebar() {
   }, [activeSearchResultKey]);
 
   const orderedThreadKeysRef = useRef(orderedThreadKeys);
-  // Read changing Map/Set values through refs so streamed shell events
-  // cannot invalidate every row's callback props.
+  // Read changing maps/sets through refs so streamed events preserve row callbacks.
   const threadByKeyRef = useRef(threadByKey);
   const settledThreadKeysRef = useRef(settledThreadKeys);
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
@@ -3180,8 +3153,7 @@ export default function Sidebar() {
     navigateToThread(threadRef);
   };
 
-  // Callers snapshot the plan BEFORE the command mutates the partition;
-  // background parks never navigate (null plan).
+  // Snapshot navigation before partition mutation; background parks use a null plan.
   const planForwardNavigation = (
     threadKey: string,
     coParkingKeys?: ReadonlySet<string>,
@@ -3350,8 +3322,7 @@ export default function Sidebar() {
     dropThreadContext(point, contextDragThreads());
     return true;
   };
-  // useSensor memoizes on the options object; a fresh one each render rebuilds
-  // the sensors, and with them DndContext and every sortable row.
+  // useSensor memoizes options identity; fresh options rebuild DndContext and every sortable row.
   const pointerSensorOptions = {
     distance: SIDEBAR_DRAG_DISTANCE,
     onAttach: attachDragSensor,
@@ -3428,8 +3399,7 @@ export default function Sidebar() {
       });
     },
   );
-  // Release the hold during render once the server state catches up, so the
-  // canonical order shows in the same frame instead of after an effect pass.
+  // Release during render when server state catches up so canonical order appears in the same frame.
   if (
     optimisticDrop !== null &&
     isOptimisticDropReleased({
@@ -3539,8 +3509,7 @@ export default function Sidebar() {
     items.push(...settledRows);
     return items;
   })();
-  // Streaming updates shells without moving rows. Retain the list until its
-  // order changes to preserve sorting strategy and row memoization.
+  // Preserve the list while streamed updates leave order unchanged to retain row memoization.
   const sidebarListItemsKey = sidebarListItemsFresh
     .map((item) => (item.kind === "thread" ? item.section + ":" + item.key : item.marker))
     .join("\n");
@@ -3550,8 +3519,7 @@ export default function Sidebar() {
   if (sidebarListItemsKeyState !== sidebarListItemsKey) {
     setSidebarListItemsKeyState(sidebarListItemsKey);
     setSidebarListItems(sidebarListItemsFresh);
-    // React applies this update after render, but threadByKey already lacks
-    // rows that moved into collapsed shelves.
+    // Update the local list too; threadByKey already omits rows moved into collapsed shelves.
     sidebarListItems = sidebarListItemsFresh;
   }
   useEffect(() => {
@@ -3562,8 +3530,7 @@ export default function Sidebar() {
       cancelThreadDrag();
     }
   }, [cancelThreadDrag, dragState, sidebarListItems]);
-  // Only order/section/draft changes need motion; ordinary shell events
-  // must not force layout reads or animate unrelated drift.
+  // Only order, section, or draft changes need layout reads and motion.
   const listMotionLayoutKey = [
     sidebarListItemsKey,
     visibleDraftSessionCount,
@@ -3571,8 +3538,7 @@ export default function Sidebar() {
   ].join("\0");
   const listMotionAnimate =
     dragState === null && sidebarListItems.length + visibleDraftSessionCount > 0;
-  // The effect reads only `animate`; the pass object is cached on both fields,
-  // so a new layout key alone also triggers it.
+  // Cache on both fields so layout-key changes trigger the effect even when animate is unchanged.
   const listMotionPass = { layoutKey: listMotionLayoutKey, animate: listMotionAnimate };
   useLayoutEffect(() => {
     listMotionRef.current?.update(listMotionPass.animate);
@@ -3588,8 +3554,7 @@ export default function Sidebar() {
     );
   };
   const sortableIds = sidebarListItems.map(sidebarListItemId);
-  // Outside a drag the orders are constants, so the strategy, and with it
-  // every sortable row, keeps its identity while thread shells stream in.
+  // Keep non-drag orders constant to preserve sorting strategy and row identity during streaming.
   const { settledOrder: draggedSettledOrder, activeOrder: draggedActiveOrder } =
     dragState === null
       ? NO_DRAGGED_ORDERS
@@ -4134,8 +4099,7 @@ export default function Sidebar() {
             if (session.branch) copyBranchToClipboard(session.branch, { branch: session.branch });
             return;
           case "discard": {
-            // The menu can stay open while the draft sends; discarding a
-            // promoting draft would strand the send.
+            // The menu may outlive draft promotion; discarding then would strand the send.
             const current = useComposerDraftStore.getState().getDraftSession(draftId);
             if (current && !current.promotedTo) discardComposerDraft(draftId);
             return;
@@ -4746,8 +4710,8 @@ export default function Sidebar() {
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
                   <ul
                     ref={attachListMotionRef}
-                    // VoiceOver lists hide rows behind an interaction boundary. Presentation
-                    // flattens the list and its items while preserving descendant controls.
+                    // Presentation flattens VoiceOver's list interaction boundary while preserving descendant
+                    // controls.
                     role="presentation"
                     className={cn(
                       "relative flex flex-col gap-px",

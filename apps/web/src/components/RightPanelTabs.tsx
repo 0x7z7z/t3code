@@ -109,11 +109,7 @@ interface RightPanelTabsProps {
   pendingSurfaceIds: ReadonlySet<string>;
   previewSessions: Readonly<Record<string, PreviewSessionSnapshot>>;
   desktopByTabId: Readonly<Record<string, DesktopPreviewOverlay>>;
-  /**
-   * Maps a server session tab id to the desktop runtime tab id the Electron
-   * preview manager is keyed by. Session ids are only unique within one server
-   * process, so desktop operations must not be addressed with them.
-   */
+  /** Maps server-local session ids to desktop runtime ids; session ids cannot address desktop operations. */
   previewRuntimeTabId?: ((tabId: string) => string) | undefined;
   terminalLabelsById: ReadonlyMap<string, string>;
   onActivate: (surface: RightPanelSurface) => void;
@@ -125,11 +121,7 @@ interface RightPanelTabsProps {
   onMoveSurface?: (surfaceId: string, toIndex: number) => void;
   onCopyFilePath: (relativePath: string) => void;
   onAddBrowser: () => void;
-  /**
-   * Separate from `onAddBrowser` on purpose: that one is passed directly as a
-   * DOM click handler, and a `(profileId?: string)` signature would silently
-   * accept the MouseEvent as a profile id.
-   */
+  /** Keep separate from the DOM click handler so a MouseEvent cannot become a profile id. */
   onAddBrowserInProfile: (profileId: string) => void;
   onAddTerminal: () => void;
   onAddDiff: () => void;
@@ -219,11 +211,8 @@ function previewTabIdOf(
   return sessions[surface.resourceId]?.tabId ?? null;
 }
 
-/**
- * Stays disabled until desktop overlay state arrives: a server session id can
- * resolve while the preview manager's createTab is still in flight, and muting
- * then fails with a PreviewTabNotFoundError nothing surfaces to the user.
- */
+/** Disable until desktop overlay state arrives; server ids can resolve before createTab, causing silent
+ * mute failures. */
 export function tabMuteMenuItem(input: {
   overlay: DesktopPreviewOverlay | null;
   canResolveRuntimeTabId: boolean;
@@ -259,11 +248,7 @@ export function surfaceShortcutActionForKey<
   );
 }
 
-/**
- * The `:not` clause lets `closest` see past non-editable islands
- * (`contenteditable="false"`) to an editable host around them, matching
- * ComposerPendingUserInputPanel's typing guard.
- */
+/** Skip contenteditable=false islands to find their editable host, matching the composer typing guard. */
 export function surfaceShortcutTargetsTypingContext(
   target: { closest(selectors: string): unknown } | null,
 ): boolean {
@@ -802,8 +787,7 @@ function handleTabMouseDown(event: ReactMouseEvent) {
   event.preventDefault();
 }
 
-// Stable handlers and per-tab values let the compiler reuse tabs while
-// the parent re-renders.
+// Stable handlers and per-tab values let the compiler reuse tabs across parent renders.
 function RightPanelTab(
   props: RightPanelTabHandlers & {
     surface: RightPanelSurface;

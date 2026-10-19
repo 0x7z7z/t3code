@@ -30,9 +30,7 @@ function originOf(url: string): string | null {
   }
 }
 
-/**
- * Webview lifetime is owned by ElectronBrowserHost.
- */
+/** ElectronBrowserHost owns webview lifetime. */
 export function usePreviewBridge(input: {
   threadRef: ScopedThreadRef;
   tabId: string;

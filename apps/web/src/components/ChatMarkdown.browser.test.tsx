@@ -827,8 +827,7 @@ describe("ChatMarkdown thread find", () => {
         ),
       );
       await frame();
-      // Lazy blocks such as Mermaid can swap their source text after the first frame,
-      // emptying a range for a moment, so wait for the highlights to settle.
+      // Lazy blocks can briefly empty highlight ranges after the first frame.
       await vi.waitFor(() => {
         const ranges = [...CSS.highlights.values()].flatMap((value) => [...value]);
         expect(ranges.map((range) => (range as Range).toString())).toEqual(

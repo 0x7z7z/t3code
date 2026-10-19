@@ -44,8 +44,7 @@ export function useFileSaveCoordinator({
   }
   const session = current.session;
 
-  // StrictMode replays effect setup. Retired file sessions stay inert, while the
-  // replay gets a fresh coordinator instead of reusing a disposed one.
+  // StrictMode replay needs a fresh coordinator; retired file sessions stay inert.
   useEffect(session.setup, [session]);
   useEffect(() => {
     if (!canWriteFiles) return;

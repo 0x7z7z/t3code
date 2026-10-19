@@ -23,10 +23,7 @@ export const deviceHubDescription =
 export const agentDeviceDescription =
   "Allow new agent sessions in this environment to start and control local and remote devices, with required tools set up automatically.";
 
-/**
- * `hostStatus` only tracks this machine. A machine without simulator tooling never
- * starts its own hub, so setup and the panel must also count remote device hosts.
- */
+/** Count remote hosts too; machines without local simulator tooling never start their own hub. */
 export function deviceHubReadiness(state: DeviceServiceState) {
   const statuses = Object.values(state.hostStatuses).map((host) => host.status);
   const ready = state.hostStatus === "ready" || statuses.includes("ready");

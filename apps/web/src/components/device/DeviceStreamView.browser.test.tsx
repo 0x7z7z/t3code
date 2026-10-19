@@ -37,8 +37,7 @@ vi.mock(import("./DevicePhoneViewport"), async (original) => ({
 }));
 import { DeviceStreamView } from "./DeviceStreamView";
 
-// MJPEG frames come from the device hub, so images keep their src without loading it and a
-// test publishes a frame by setting the natural size and firing "load".
+// Simulate hub MJPEG loads by setting image size and firing load without fetching src.
 const imageSources = new WeakMap<HTMLImageElement, string>();
 const framedImages = new WeakSet<HTMLImageElement>();
 let images: HTMLImageElement[] = [];

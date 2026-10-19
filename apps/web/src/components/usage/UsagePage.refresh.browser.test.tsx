@@ -77,8 +77,7 @@ import { UsagePage } from "./UsagePage";
 const PREFERENCES_KEY = "t3code:usage-page-preferences:v1";
 let root: Root;
 let container: HTMLDivElement;
-// Limits refreshes are throttled per environment for the whole session, so each test
-// gets fresh environment ids.
+// Use fresh environment ids because limits refresh throttling persists for the session.
 let environmentNumber = 0;
 let environmentId: EnvironmentId;
 

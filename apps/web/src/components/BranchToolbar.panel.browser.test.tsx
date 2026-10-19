@@ -92,7 +92,6 @@ it("keeps machine choices usable when the combined row's workspace is locked", a
   expect(trigger.textContent).toBe("local");
   expect(container.querySelectorAll("button")).toHaveLength(1);
 
-  // A ctrl-click is a macOS secondary click; it must not open the menu.
   await act(async () => {
     trigger.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, ctrlKey: true }));
   });

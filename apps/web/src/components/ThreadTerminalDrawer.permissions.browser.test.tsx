@@ -97,8 +97,7 @@ beforeEach(() => {
   state.listeners.clear();
   state.resize.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   state.otherCommand.mockReset().mockResolvedValue(AsyncResult.success(undefined));
-  // A surface can report its initial grid while asynchronous WASM setup is
-  // pending. Keep that unrelated setup pending while exercising its callback.
+  // Keep WASM setup pending while exercising the independently reported initial grid.
   state.createSurface.mockReset().mockReturnValue(new Promise(() => undefined));
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");

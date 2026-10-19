@@ -19,10 +19,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { useAtomQueryRunner } from "../../state/use-atom-query-runner";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-/**
- * HTML files are served by this machine's environment, so only its threads can
- * take them.
- */
+/** HTML files are served by this environment and can target only its threads. */
 function threadShowingBrowser(
   routeParams: Record<string, string | undefined>,
   fileEnvironmentId: EnvironmentId | null,

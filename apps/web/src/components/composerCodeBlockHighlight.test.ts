@@ -121,7 +121,6 @@ describe("a highlighter that fails to load", () => {
         disconnect() {}
       },
     );
-    // ProseMirror names each plugin after its key, though it does not type it.
     const plugin = editor.extensionManager.plugins.find((candidate) =>
       (candidate as unknown as { key: string }).key.startsWith("composerCodeBlockHighlight"),
     );

@@ -316,8 +316,7 @@ export function SnapShotSettings() {
     if (!settings.snapShotEnabled && captureSetupInitialStep(current, requested) !== "access") {
       current = await save({ snapShotEnabled: true });
       if (!current) {
-        // A settings write can succeed even if the following status check
-        // fails. Keep Finish later available to turn capture back off.
+        // Settings may save before status checking fails; keep Finish later available to disable capture.
         setWizard({ initialStep: "access", wasEnabled: false });
         return;
       }

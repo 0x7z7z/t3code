@@ -109,7 +109,7 @@ describe("KeybindingsSettings editor permission", () => {
     await render();
     const button = openButton();
     state.canOperate = false;
-    // The rendered button is still enabled; the click must recheck the live grant.
+    // Click before React renders the revoked grant.
     await act(async () => button.click());
 
     expect(state.openEditor).not.toHaveBeenCalled();

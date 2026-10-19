@@ -72,8 +72,7 @@ function nextFrame() {
   return new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
-// Tabbing past the popup's last control wraps through Base UI's focus guard
-// to the first tabbable descendant, which skips anything inert.
+// Tabbing past the popup wraps through Base UI's focus guard to its first non-inert tabbable descendant.
 async function enterFocusScope() {
   const toggle = document.querySelector<HTMLElement>('[aria-label="Toggle right panel"]')!;
   await act(async () => toggle.focus());

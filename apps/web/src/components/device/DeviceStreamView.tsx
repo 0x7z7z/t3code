@@ -41,8 +41,7 @@ function screenAspect(platform: DevicePlatform, screen: DeviceScreenSize | null)
   return w / h;
 }
 
-// serve-sim streams the raw framebuffer; rotate the display for a device
-// that reports landscape while its frames stay portrait.
+// serve-sim sends raw portrait framebuffers even when iOS reports landscape; rotate the display.
 function screenRotation(platform: DevicePlatform, screen: DeviceScreenSize | null): number {
   if (platform !== "ios" || !screen || screen.width > screen.height) return 0;
   switch (screen.orientation) {
@@ -219,10 +218,7 @@ export function DeviceStreamView(props: {
   }, [retainingFrame, showPhone]);
   const controlsInset = props.renderControls && !showPhone ? CONTROLS_RAIL_WIDTH : 0;
 
-  // The frame is the largest box at `aspect` that fits the container, so a
-  // narrow panel shows a shorter phone rather than a squeezed one. CSS
-  // `aspect-ratio` alone cannot do this: with the height pinned to 100% the
-  // width clamp wins and distorts the drawn frame.
+  // Fit the frame in both dimensions; pinned CSS height plus a width clamp distorts aspect-ratio.
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [host, setHost] = useState({ width: 0, height: 0 });
   useEffect(() => {
@@ -537,8 +533,7 @@ export function DeviceStreamView(props: {
                   size="sm"
                   variant="outline"
                   onClick={() => {
-                    // An expired ticket surfaces as unauthorized on restart and
-                    // refreshes access through the effect; no need to mint one here.
+                    // Restart's unauthorized response renews expired tickets through the effect.
                     clientRef.current?.stop();
                     setPhoneUnavailable(false);
                     clientRef.current?.start();

@@ -371,9 +371,7 @@ function notifyThemeSaveFailure(): void {
   );
 }
 
-// Each helper reads its own source hook so the compiler caches the derived value on that
-// source. Taking the source as an argument instead leaves the helper hook-free, and the
-// compiler then treats it as a plain function and caches nothing.
+// Read source hooks inside helpers so the compiler caches derivations; hook-free helpers get no cache.
 function useThemeCards() {
   const customThemes = useCustomThemes();
   const environmentThemes = useEnvironmentThemeDefinitions();
@@ -923,8 +921,7 @@ function OpenCommandPaletteDialog(props: {
     environments.find((environment) => environment.environmentId === browseEnvironmentId) ?? null;
   const browseEnvironmentIsDesktopLocal =
     browseEnvironment !== null && isDesktopLocalConnectionTarget(browseEnvironment.entry.target);
-  // pickFolder routes desktop-local environments by pool id (e.g. wsl:ubuntu),
-  // not by the catalog's descriptor-derived environmentId.
+  // pickFolder routes desktop-local environments by pool id, not catalog environmentId.
   const browseDesktopInstanceId = (() => {
     if (!browseEnvironmentIsDesktopLocal || browseEnvironment === null) {
       return null;
@@ -1935,8 +1932,7 @@ function OpenCommandPaletteDialog(props: {
   };
   actionItems.push(changeAppearanceItem);
 
-  // The parent pushes an intent into this mounted dialog; applying it clears the
-  // parent's intent and may navigate, so it runs after commit but before paint.
+  // Apply intents after commit but before paint because they clear parent state and may navigate.
   const projectThreadItemCount = projectThreadItems.length;
   const applyOpenIntent = useEffectEvent((intent: CommandPaletteOpenIntent) => {
     switch (intent.kind) {
@@ -2451,8 +2447,7 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    // Older servers only offer the blocking clone: the palette has to wait
-    // for git so it can add the project afterwards.
+    // Older servers lack clone tracking; wait for the blocking clone before adding the project.
     if (browseEnvironment?.serverConfig?.environment.capabilities.projectCloneTracking !== true) {
       setIsRemoteProjectCloning(true);
       const cloneResult = await cloneRepository({
@@ -2693,15 +2688,13 @@ function OpenCommandPaletteDialog(props: {
                 titleTrailingContent: (
                   <span className="ms-auto flex items-center gap-2">
                     {newProjectPublishTargets.length > 1 ? (
-                      // The row toggles on click, so the picker keeps its clicks to itself. The
-                      // row also cancels pointerdown to keep focus in the input, which drops the
-                      // mousedown Select opens on, so the picker opens on click instead.
+                      // Isolate picker clicks from row toggles. Open on click because the row cancels
+                      // pointerdown and suppresses mousedown.
                       <span
                         className="flex"
                         onClick={(event) => {
                           event.stopPropagation();
-                          // React bubbles the popup's clicks here through its portal; only the
-                          // trigger opens the picker.
+                          // Portal clicks bubble here; only trigger clicks should open the picker.
                           if (!event.currentTarget.contains(event.target as Node)) return;
                           if (!isCreatingNewProject) setNewProjectHostPickerOpen(true);
                         }}
@@ -2885,8 +2878,7 @@ function OpenCommandPaletteDialog(props: {
       void copyActiveThreadReference();
       return;
     }
-    // ChatView ignores shortcuts while the palette is open, so handle find here
-    // instead of letting the browser's own Find open.
+    // ChatView ignores shortcuts while the palette is open, so intercept find here.
     if (command === "chat.find" && activeThreadId && !event.nativeEvent.isComposing) {
       event.preventDefault();
       event.stopPropagation();
@@ -2956,8 +2948,7 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    // Base UI clicks the highlighted row on Enter, which does nothing once the
-    // virtualized list has unmounted it, so run the tracked highlight directly.
+    // Virtualization may unmount the highlighted row; handle Enter directly instead of Base UI's click.
     if (event.key === "Enter" && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       const highlightedItem = findHighlightedCommandPaletteItem(
         displayedGroups,
@@ -3014,9 +3005,8 @@ function OpenCommandPaletteDialog(props: {
         browseEnvironmentId === primaryEnvironmentId && browseEnvironmentPlatform === "Linux"
           ? ((await window.desktopBridge?.getWslState().catch(() => null)) ?? null)
           : null;
-      // WSL-only primaries have no secondary bootstrap, so use desktop settings
-      // for their pool id. Other primaries omit the target for the native picker,
-      // which converts WSL UNC selections back to Linux paths.
+      // WSL-only primaries need their pool id from desktop settings; the native picker converts WSL UNC
+      // paths.
       const pickerTargetEnvironmentId = resolveProjectPickerTarget({
         browseEnvironmentId,
         primaryEnvironmentId,

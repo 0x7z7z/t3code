@@ -30,8 +30,7 @@ export function CommandPaletteContent({
 }: CommandPaletteContentProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Reclaim focus when a direct-open flow replaces the input, after the
-  // dialog records the previous focus target for restoration.
+  // Wait until the dialog records restoration focus before focusing a replaced input.
   useEffect(() => {
     const frame = requestAnimationFrame(() => inputRef.current?.focus());
     return () => cancelAnimationFrame(frame);

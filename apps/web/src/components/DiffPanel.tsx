@@ -1023,8 +1023,7 @@ export default function DiffPanel({
                     const composedPath = event.nativeEvent.composedPath?.() ?? [];
                     for (const node of composedPath) {
                       if (!(node instanceof HTMLElement)) continue;
-                      // Header controls keep their own actions. In particular, the chevron must
-                      // not also trigger the row handler or the two toggles cancel each other.
+                      // Header buttons own their clicks; bubbling a chevron click would toggle twice.
                       if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) {
                         return;
                       }

@@ -83,8 +83,7 @@ function toProviderUpdateOutcome(input: {
   };
 }
 
-// Exceed the server's five-minute update timeout so a slow install
-// cannot leave a dead Update button.
+// Exceed the server's five-minute timeout so slow installs cannot leave a dead Update button.
 const PENDING_EXPIRY_MS = 6 * 60_000;
 
 function rowToneClass(kind: ProviderUpdateRowStatusKind): string {
@@ -164,12 +163,10 @@ export function ProviderUpdateEnvironmentRows({
 
   const [visibleAfterIso] = useState(() => new Date().toISOString());
 
-  // State updates lag and pending expiry can fire mid-request, so a
-  // synchronous guard must prevent duplicate update rounds.
+  // Guard synchronously because state lags and pending expiry can fire mid-request.
   const inFlightEnvironmentsRef = useRef<Set<EnvironmentId>>(new Set());
 
-  // Superseded attempts must not overwrite a newer attempt's result,
-  // spinner, error, or in-flight guard.
+  // Superseded requests must not overwrite newer results or guards.
   const requestVersionRef = useRef<Map<EnvironmentId, number>>(new Map());
 
   const [pendingEnvironments, setPendingEnvironments] = useState<ReadonlySet<EnvironmentId>>(
