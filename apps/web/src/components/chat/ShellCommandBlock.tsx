@@ -22,7 +22,7 @@ function PlainWords({ code }: { code: string }) {
     index % 2 === 1 || part === "" ? (
       part
     ) : (
-      // oxlint-disable-next-line react/no-array-index-key
+      // oxlint-disable-next-line react/no-array-index-key -- positions are stable for one string
       <span key={index} className={WORD_CLASS_NAME}>
         {part}
       </span>

@@ -334,7 +334,7 @@ const probeClaudeCapabilities = (
     const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
     return yield* Effect.tryPromise(async () => {
       const q = claudeQuery({
-        // oxlint-disable-next-line require-yield
+        // oxlint-disable-next-line require-yield -- never yields, so no prompt reaches the API
         prompt: (async function* (): AsyncGenerator<SDKUserMessage> {
           await waitForAbortSignal(abort.signal);
         })(),
