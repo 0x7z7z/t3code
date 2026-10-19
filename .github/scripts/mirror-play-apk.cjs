@@ -76,8 +76,7 @@ function readRelease(tag) {
   }
 }
 
-// Download to a temporary directory so a failed request cannot leave a partial
-// APK among the release assets.
+// Stage downloads so failed requests cannot leave partial release assets.
 async function downloadApk({ token, appUrl, build, apkName }) {
   const generated = await (
     await play(token, "GET", `${appUrl}/generatedApks/${build.versionCode}`)

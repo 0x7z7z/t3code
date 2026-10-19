@@ -1,7 +1,4 @@
-/**
- * CDP key/text input follows window focus, which a webview shares with the app.
- * Without guest focus, send directly to its widget so input cannot reach the app's focused field.
- */
+// CDP input follows shared window focus; send directly to unfocused guests to avoid typing into the app.
 
 const FOCUS_ROUTED_INPUT = new Set([
   "Input.insertText",

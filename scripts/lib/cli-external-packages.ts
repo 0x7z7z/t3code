@@ -1,5 +1,5 @@
 /** Keep bundler externals and staged runtime dependency roots aligned. */
-/** Filesystem-loaded externals cannot require dependencies that exist only inside the bundle. */
+// Filesystem-loaded externals need dependencies outside the bundle.
 export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   // Cursor ships computed Webpack imports and platform helper packages.
   "@cursor/sdk",
@@ -17,8 +17,7 @@ export const CLI_RUNTIME_EXTERNAL_PREFIXES = [
   "utf-8-validate",
 ] as const;
 
-// These are Cursor's disk-backed dependency closure. Match package boundaries
-// so "zod" does not also externalize unrelated packages such as zod-to-json-schema.
+// Match Cursor dependency boundaries so zod does not externalize zod-to-json-schema.
 const CURSOR_RUNTIME_DEPENDENCIES = [
   "@bufbuild/protobuf",
   "@connectrpc/connect",

@@ -172,8 +172,7 @@ function makeHarness(options: Harness = {}) {
       RelayHttpApi.layerCors,
     ),
   ).pipe(Effect.provideService(HttpRouter.RouterConfig, RELAY_HTTP_ROUTER_CONFIG));
-  // Goes through Effect's request handler, which applies pre-response handlers
-  // (such as CORS) to the response it sends, as the Workers runtime does.
+  // Use the Workers request path so pre-response handlers apply.
   const send = (request: Request) =>
     Effect.gen(function* () {
       const handler = yield* httpEffect;
@@ -461,8 +460,7 @@ describe("HookForwarder", () => {
 
   it.effect("maps an upstream timeout to 504", () =>
     Effect.gen(function* () {
-      // Advance the clock only once the request is waiting on the environment;
-      // hashing the budget key before that step is asynchronous.
+      // Wait for the environment request before advancing time; budget-key hashing is asynchronous.
       const reachedUpstream = yield* Deferred.make<void>();
       const harness = makeHarness({
         execute: () =>

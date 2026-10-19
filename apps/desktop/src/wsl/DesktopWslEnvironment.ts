@@ -170,8 +170,7 @@ const buildWslNodeEnvPreamble = (
 ensure_remote_node_path || true
 `;
 
-// wsl.exe re-escapes args before forwarding them to the Linux side, which
-// mangles quotes inside `bash -lc "<script>"`.
+// wsl.exe re-escaping mangles quotes inside bash -lc scripts.
 const runWslShell = (
   distro: string | null,
   bashScript: string,
@@ -221,8 +220,7 @@ const runWslShell = (
         } satisfies ShellResult;
       }
       const handle = spawnResult.handle;
-      // Drain stdout and stderr concurrently so neither pipe buffer can fill
-      // and stall the child (node-gyp rebuild emits large output on both).
+      // Drain both pipes concurrently to prevent node-gyp output from blocking the child.
       const [stdoutBytes, stderrBytes, exitCode] = yield* Effect.all(
         [Stream.runCollect(handle.stdout), Stream.runCollect(handle.stderr), handle.exitCode],
         { concurrency: "unbounded" },
@@ -298,8 +296,7 @@ export const buildWslRuntimeInstallScript = (
     "fi",
     // Deletion can remove a live backend's lazy imports; check cmdline before rename preserves its old path.
     "runtime_in_use() {",
-    // No /proc means no way to tell, and guessing wrong costs a live backend
-    // its runtime.
+    // Without /proc, assume the runtime may still be in use.
     "  [ -d /proc/1 ] || return 0",
     '  grep -qF -- "$1/" /proc/[0-9]*/cmdline 2>/dev/null',
     "}",
@@ -347,8 +344,7 @@ export const buildWslRuntimeInstallScript = (
   ].join("\n");
 };
 
-// A cold install extracts a few hundred MB inside the distro, so two hours is
-// far past any live install while still bounding how long an orphan survives.
+// Two hours exceeds cold-install time while bounding orphan retention.
 const ORPHANED_RUNTIME_SCRATCH_MAX_AGE_MINUTES = 120;
 
 export const buildWslRuntimePruneScript = (runtimeId: string): string => {
@@ -358,13 +354,11 @@ export const buildWslRuntimePruneScript = (runtimeId: string): string => {
     'runtime_parent="$HOME/.t3/wsl-runtime"',
     `current_runtime="$runtime_parent/${safeRuntimeId}"`,
     '[ -d "$runtime_parent" ] || exit 0',
-    // Serialize the whole retention decision so two backends cannot select
-    // different "previous" caches and delete around one another.
+    // Serialize pruning so backends cannot select and delete different previous caches.
     'prune_lock="$runtime_parent/.prune.lock"',
     'exec 8> "$prune_lock"',
     "flock -x 8",
-    // Without a way to see the distro's processes we cannot tell which caches
-    // are load-bearing, and the retention rules below are not safe on their own.
+    // Without /proc, retention cannot distinguish caches used by live backends.
     "[ -d /proc/1 ] || exit 0",
     "runtime_in_use() {",
     '  grep -qF -- "$1/" /proc/[0-9]*/cmdline 2>/dev/null',
@@ -427,8 +421,7 @@ const formatNodePtyProbeFailureReason = (exitCode: number): string | null =>
     ? "WSL support is missing from this T3 Code build: the packaged Linux node-pty binary was not included. Install a build that includes WSL support."
     : null;
 
-// Captures the login-shell PATH as `resolvedPath:` so the launch can forward the
-// user's PATH; the server spawns provider CLIs (`codex`, `claude`) by name.
+// Capture login-shell PATH because the server launches provider CLIs by name.
 const RESOLVED_PATH_LINE = `printf 'resolvedPath:%s\\n' "$PATH"`;
 
 const NODE_PTY_PROBE_SCRIPT = (
@@ -463,8 +456,7 @@ if (!candidates.some((candidate) => fs.existsSync(candidate))) process.exit(${NO
 require("node-pty");
 NODE`;
 
-// Provider CLIs may still need version-managed Node, so resolve it before
-// capturing PATH without requiring it for runtime readiness.
+// Resolve version-managed Node for providers without making runtime readiness depend on it.
 export const buildWslRuntimeProbeScript = (linuxAppRoot: string) =>
   [
     `bash -lc ${shellQuote(`${buildWslNodeEnvPreamble()}${RESOLVED_PATH_LINE}`)} 2>/dev/null || ${RESOLVED_PATH_LINE}`,
@@ -531,8 +523,7 @@ export const parseNodeVersion = (stdout: string): string | null => {
   return version ?? null;
 };
 
-// Preserve the value byte-for-byte apart from a Windows-style CR so paths
-// containing spaces or apostrophes can be forwarded as one env argv.
+// Strip only Windows CR; spaces and apostrophes must survive as one env argument.
 export const parseResolvedPath = (stdout: string): string | null => {
   const prefix = "resolvedPath:";
   const line = stdout.split("\n").find((candidate) => candidate.startsWith(prefix));
@@ -625,8 +616,7 @@ const ensureNodePtyImpl = (
   options: EnsureWslNodePtyOptions = {},
 ): Effect.Effect<EnsureWslNodePtyResult, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Effect.gen(function* () {
-    // node-pty lives in the apps/server workspace's node_modules; resolve from
-    // there rather than the monorepo root, where Bun's hoist layout omits it.
+    // Bun omits node-pty from root hoisting; resolve it from apps/server.
     const linuxServerDir = `${linuxRepoRoot}/apps/server`;
 
     const probe = yield* runWslShell(

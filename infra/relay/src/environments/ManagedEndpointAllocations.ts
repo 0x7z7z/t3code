@@ -312,8 +312,7 @@ export const make = Effect.gen(function* () {
           tunnelId: input.tunnelId,
           readyAt: sql`case when ${relayManagedEndpointAllocations.tunnelId} = ${input.tunnelId} then ${relayManagedEndpointAllocations.readyAt} else null end`,
           origin: sql`case when ${relayManagedEndpointAllocations.tunnelId} = ${input.tunnelId} then ${relayManagedEndpointAllocations.origin} else null end`,
-          // Recovery registration is per tunnel: a replacement must register
-          // again before the reaper may treat it as recoverable.
+          // Replacement tunnels must re-register recovery before becoming reapable.
           recoveryEnabledAt: sql`case when ${relayManagedEndpointAllocations.tunnelId} = ${input.tunnelId} then ${relayManagedEndpointAllocations.recoveryEnabledAt} else null end`,
           recoveryEnvironmentPublicKey: sql`case when ${relayManagedEndpointAllocations.tunnelId} = ${input.tunnelId} then ${relayManagedEndpointAllocations.recoveryEnvironmentPublicKey} else null end`,
           tunnelReleasedAt: null,

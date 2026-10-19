@@ -52,8 +52,7 @@ const posixShellRunner = (() => {
 
 const runShell = (script: string) => {
   if (posixShellRunner === null) throw new Error("no POSIX shell runner available");
-  // The install script arrives on stdin in production too, which is what lets
-  // its own /proc scan not match itself.
+  // Pass the script on stdin, as production does, to avoid matching its own /proc scan.
   const result = NodeChildProcess.spawnSync(
     posixShellRunner.file,
     [...posixShellRunner.args, "-s"],
@@ -234,8 +233,6 @@ describe("WSL runtime cache", () => {
     expect(script).toContain("  [ -d /proc/1 ] || return 0");
     expect(script).toContain('  if runtime_in_use "$runtime_root"; then');
 
-    // A process's cmdline keeps the pre-rename path, so the question is only
-    // answerable before the move.
     const inUseChecked = script.indexOf('if runtime_in_use "$runtime_root"; then');
     const moved = script.indexOf('mv -T "$runtime_root" "$runtime_stale"');
     expect(inUseChecked).toBeGreaterThan(-1);
@@ -388,8 +385,7 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
     const archivePath = `${work}/wsl-runtime.tar.gz`;
     const archiveSha = readField(result.stdout, "archiveSha");
     const runtimeId = `sha256-${archiveSha}`;
-    // The script reads $HOME, and WSL does not inherit the parent process's
-    // environment, so the home override rides in the script itself.
+    // WSL does not inherit HOME; embed the fixture's override in the script.
     const installScript = (archive = archivePath, sha = archiveSha) =>
       [
         `HOME=${sh(`${work}/home`)}`,
@@ -528,8 +524,7 @@ describe.skipIf(posixShellRunner === null)("WSL runtime install script (executed
         `cat > "$work/install.sh" <<'T3CODE_INSTALL_SCRIPT'`,
         fixture.installScript(),
         "T3CODE_INSTALL_SCRIPT",
-        // Both racers run the same file, and neither file path contains the
-        // runtime root, so the script's own /proc scan cannot see them.
+        // Keep runtime roots out of both racers' argv so their /proc scans cannot match themselves.
         'sh "$work/install.sh" > "$work/first.out" 2>&1 &',
         "first=$!",
         'sh "$work/install.sh" > "$work/second.out" 2>&1 &',

@@ -213,9 +213,7 @@ export const listen: Effect.Effect<
                 );
                 return false;
               case "install": {
-                // The download event fires before its action releases the
-                // updater reservation. Wait until the prepared install can
-                // be committed by the client in a separate RPC.
+                // Download events precede reservation release; wait until a separate client RPC can commit the install.
                 if (yield* updates.isActionActive) {
                   yield* retryLater(state);
                   return false;
@@ -424,9 +422,7 @@ export const listen: Effect.Effect<
         }
         return;
       }
-      // A successful install tears down this backend. Do not send a success
-      // marker from the old process: transport loss followed by the target
-      // version is the only proof that the handoff succeeded.
+      // Installation kills this backend; only transport loss followed by the target version proves handoff.
     }).pipe(
       Effect.ensuring(clearActiveRequest(commit.requestId)),
       Effect.catchCause((cause) =>

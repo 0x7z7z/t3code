@@ -8,7 +8,7 @@ export interface WslConfig {
   readonly distro: string | null;
 }
 
-// Literal space — \s would also match \n/\t/\r and corrupt UNC paths like \\wsl.localhost\<distro>\...
+// Literal spaces only; \s would accept controls and corrupt UNC distro paths.
 const DISTRO_NAME_PATTERN = /^\w(?:[\w \-.]*\w)?$/;
 
 export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {

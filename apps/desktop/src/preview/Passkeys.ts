@@ -84,8 +84,7 @@ const chooseAccount = async (details: Electron.SelectWebauthnAccountDetails) => 
 const NATIVE_DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const NATIVE_MAX_TIMEOUT_MS = 60 * 60 * 1000;
 
-// Mirrors the native layer's own clamp, plus a margin: it can leave a ceremony
-// unsettled, and the page must still get an answer.
+// Native ceremonies can remain unsettled; match its deadline clamp with a margin.
 const ceremonyDeadline = (timeout: unknown) =>
   (typeof timeout === "number" && timeout > 0
     ? Math.min(timeout, NATIVE_MAX_TIMEOUT_MS)
@@ -110,9 +109,7 @@ const isTrustworthyOrigin = (origin: string) => {
   );
 };
 
-/**
- * Windows needs none: Chromium already hands WebAuthn to Windows Hello there.
- */
+// Chromium already delegates to Windows Hello.
 const backendFor = (platform: NodeJS.Platform): PasskeyBackend | undefined =>
   platform === "darwin" ? macPasskeyBackend : undefined;
 

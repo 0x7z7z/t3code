@@ -24,9 +24,7 @@ const ALLOWED_PREVIEW_PERMISSIONS: ReadonlySet<string> = new Set([
   "clipboard-sanitized-write",
   "notifications",
   "geolocation",
-  // `DesktopWindow` disables HTML fullscreen window resizing for the app window
-  // and every preview guest, so a page that goes fullscreen fills its own
-  // webview instead of taking over the whole T3 window.
+  // DesktopWindow confines HTML fullscreen to the guest's webview.
   "fullscreen",
   // local-fonts exposes the user's font fingerprint and file bytes to untrusted pages.
 ]);
@@ -163,10 +161,7 @@ const encodeScopeForDigest = (scope: string): Uint8Array =>
       ),
   );
 
-/**
- * A `<webview>` guest has no window of its own, so look it up through the page
- * that embeds it.
- */
+// Webview guests have no window; use their embedding page.
 const previewHostWindow = (guest: WebContents | null): BrowserWindow | undefined => {
   if (guest === null || guest.isDestroyed()) return undefined;
   const host = guest.hostWebContents ?? guest;
@@ -174,7 +169,7 @@ const previewHostWindow = (guest: WebContents | null): BrowserWindow | undefined
   return BrowserWindow.fromWebContents(host) ?? undefined;
 };
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* BrowserSessionMake() {
   const crypto = yield* Crypto.Crypto;
   const electronDialog = yield* ElectronDialog.ElectronDialog;

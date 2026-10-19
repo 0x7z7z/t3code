@@ -38,8 +38,7 @@ const deliver = (baseUrl: string, hook: HookInboxStore.HeldHook) =>
   sendUpstream(baseUrl, hook).pipe(
     Effect.result,
     Effect.map((result) => {
-      // Unreachable or timed out: a timeout may still have run it, and the
-      // environment drops a delivery id it has already seen.
+      // Timeouts may have executed; retries reuse delivery IDs for environment deduplication.
       if (Result.isFailure(result)) {
         return { outcome: "unreachable" as const, reason: result.failure._tag };
       }
@@ -75,8 +74,7 @@ const deliver = (baseUrl: string, hook: HookInboxStore.HeldHook) =>
 export const layer = HookInboxObject.make(
   Effect.gen(function* () {
     const state = yield* Cloudflare.DurableObjectState;
-    // The init phase returns the per-instance Effect, which alchemy runs once
-    // per object; only that inner Effect may touch storage.
+    // Only the per-object inner Effect may access storage.
     // @effect-diagnostics-next-line returnEffectInGen:off
     return Effect.gen(function* () {
       const layerSql = SqliteClient.layer({ storage: state.raw.storage });
@@ -114,8 +112,7 @@ export const layer = HookInboxObject.make(
           }).pipe(withInboxSpan("relay.inbox.clear", inboxId)),
         alarm: () =>
           run(HookInboxStore.deliverDue(deliver)).pipe(
-            // A wake during this run may already have asked for an earlier
-            // run; a backoff must not push it out.
+            // Backoff must not delay an earlier run requested by a concurrent wake.
             Effect.flatMap((nextAt) => (nextAt === null ? Effect.void : scheduleBy(nextAt))),
             Effect.catchCause((cause) =>
               Effect.logWarning("Held webhook delivery run failed", { cause }).pipe(

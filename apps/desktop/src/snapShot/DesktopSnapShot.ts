@@ -265,7 +265,6 @@ export class DesktopSnapShotSetupError extends Schema.TaggedError<DesktopSnapSho
   }
 }
 
-/** Inspect command exit fields; printed output remains in cause. */
 function macCommandFailure(cause: unknown) {
   const failure = Predicate.isObject(cause) ? cause : {};
   if ("killed" in failure && failure.killed === true) return { status: "timed-out" } as const;
@@ -899,8 +898,7 @@ export const make = Effect.gen(function* () {
     const imageTempPath = path.join(captureDirectory, `${id}.tmp.png`);
 
     return yield* Effect.gen(function* () {
-      // Retire feedback before reading screen pixels, so a rapid capture cannot
-      // photograph the previous capture's overlay.
+      // Retire feedback before capture so rapid captures cannot photograph the previous overlay.
       closeLinuxFeedback();
       flash.dispose();
       transition.dispose();
@@ -1029,8 +1027,7 @@ export const make = Effect.gen(function* () {
   }).pipe(Effect.withSpan("desktop.snapShot.capture"));
 
   const captureFromShortcut = Effect.gen(function* () {
-    // Repeated shortcuts must not tear down a moving capture and start another
-    // renderer. Drop them while the flight runs, just as during pixel acquisition.
+    // Repeated shortcuts must not replace a capture during its flight.
     if (shortcutSuppressed || transition.isAnimating) return;
     shortcutVerified = true;
     const now = yield* Clock.currentTimeNanos;

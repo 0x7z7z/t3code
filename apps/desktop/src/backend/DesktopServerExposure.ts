@@ -70,10 +70,7 @@ const isUsableLanIpv4Address = (address: string): boolean =>
   !address.startsWith("169.254.") &&
   !isTailscaleIpv4Address(address);
 
-/**
- * Private bridges and VM adapters are fallback LAN addresses.
- * Keep host bridges (br0, vmbr0, vEthernet) eligible because they can carry the real LAN address.
- */
+// Private bridges and VM adapters are fallbacks; host bridges can carry the real LAN address.
 const HOST_ONLY_INTERFACE =
   /^(bridge\d|utun|ipsec|ppp|tun|tap|wg|docker|br-|veth|virbr|vmnet|vboxnet|VirtualBox|VMware)/;
 
@@ -416,7 +413,7 @@ const requiresBackendRelaunch = (previous: RuntimeState, next: RuntimeState): bo
   previous.bindHost !== next.bindHost ||
   previous.localHttpUrl !== next.localHttpUrl;
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const config = yield* DesktopConfig.DesktopConfig;
   const networkInterfaces = yield* DesktopNetworkInterfaces.DesktopNetworkInterfaces;

@@ -198,8 +198,7 @@ export const layer = Layer.effect(
       }
 
       if (Option.isSome(targetId)) {
-        // Pre-warm the WSL VM before registering so the readiness probe doesn't
-        // race wsl.exe's first-spawn cold start.
+        // Pre-warm WSL so readiness cannot race its cold start.
         yield* wslEnvironment.preWarm(settings.wslDistro);
         yield* startNew({ distro: settings.wslDistro });
       }

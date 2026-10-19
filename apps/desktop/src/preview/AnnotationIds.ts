@@ -1,7 +1,4 @@
-/**
- * A per-load nonce prevents annotation ids colliding with drafts that survive reloads.
- * Plain-HTTP previews lack randomUUID; getRandomValues works without a secure context.
- */
+/** Per-load nonces avoid draft ID collisions; getRandomValues works on plain HTTP. */
 export function createAnnotationIdSource(): (prefix: string) => string {
   const pageLoad = Array.from(crypto.getRandomValues(new Uint32Array(2)), (part) =>
     part.toString(36),

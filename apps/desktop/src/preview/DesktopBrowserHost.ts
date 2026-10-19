@@ -111,10 +111,7 @@ export const make = Effect.gen(function* () {
     return relay;
   };
 
-  /**
-   * Without a path Electron would open its Save dialog over the app for a file
-   * the agent asked for. CDP names the download just before this runs.
-   */
+  // CDP supplies the path before this runs; otherwise Electron opens a Save dialog.
   const placeDownload = (source: Electron.WebContents, item: Electron.DownloadItem) => {
     const tab = [...tabs.values()].find(
       (candidate) => candidate.debuggee.webContents === source && candidate.downloadDirectory,

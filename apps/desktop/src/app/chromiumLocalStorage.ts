@@ -413,9 +413,7 @@ export const readChromiumLocalStorage = Effect.fn("desktop.chromiumLocalStorage.
     }).pipe(wrap);
   }
 
-  // A flush while another process has the database open can move entries
-  // from a log we read into a table our MANIFEST copy predates. Fail so the
-  // caller retries rather than import a snapshot missing those entries.
+  // Concurrent flushes can move entries beyond this MANIFEST snapshot; detect changes so the caller retries.
   const currentAfter = textDecoderUtf8.decode(yield* readFile("CURRENT").pipe(wrap)).trim();
   const manifestAfter = yield* fs.stat(path.join(directory, current)).pipe(wrap);
   if (currentAfter !== current || Number(manifestAfter.size) !== manifest.length) {

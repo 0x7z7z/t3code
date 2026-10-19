@@ -122,13 +122,10 @@ const hookNotFound = () => errorResponse(404, "hook_not_found");
 /** Longer than the inbox holds a request, so a held delivery's proof still verifies. */
 const DELIVERY_PROOF_LIFETIME_SECONDS = 25 * 60 * 60;
 
-/** Methods a webhook can arrive with; HEAD reaches the GET route and is refused. */
+// HEAD reaches GET routing but must be refused.
 const FORWARDED_METHODS = new Set(["GET", "POST", "PUT", "PATCH"]);
 
-/**
- * Whatever the environment answers is served from the relay's own origin, so
- * a body must never render or run there.
- */
+// Environment responses use the relay origin; never let their bodies render or run there.
 const SANDBOXED_RESPONSE_HEADERS = {
   "x-content-type-options": "nosniff",
   "content-security-policy": "sandbox; default-src 'none'",
@@ -317,8 +314,7 @@ const make = Effect.gen(function* () {
       return errorResponse(400, "invalid_body");
     }
 
-    // One id per request, so a request that reached the environment before a
-    // timeout and is later delivered from the inbox runs only once.
+    // Reuse one delivery ID so inbox retries cannot rerun requests that reached the environment before timeout.
     yield* Effect.annotateCurrentSpan({ "relay.hook.body_bytes": body.success.byteLength });
     const deliveryId = yield* crypto.randomUUIDv4().pipe(Effect.orDie);
     // Sign once before storing held requests so the inbox needs no signing key.

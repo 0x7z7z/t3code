@@ -95,8 +95,7 @@ const StageWorkspaceConfig = Schema.Struct({
 });
 type StageWorkspaceConfig = typeof StageWorkspaceConfig.Type;
 
-// electron-webauthn declares TypeScript as a peer only for its typings. pnpm
-// auto-installs missing peers, which would ship a compiler inside the app.
+// TypeScript is a typings-only peer; pnpm auto-installation would ship a compiler.
 const STAGE_PACKAGE_EXTENSIONS = {
   "electron-webauthn": { peerDependenciesMeta: { typescript: { optional: true } } },
   "@electron-webauthn/macos": { peerDependenciesMeta: { typescript: { optional: true } } },
@@ -958,8 +957,7 @@ interface StagePackageJson {
 export const STAGE_INSTALL_ARGS = ["install", "--prod"] as const;
 export const DESKTOP_ELECTRON_LANGUAGES = ["en-US"] as const;
 export const DESKTOP_FILE_EXCLUSIONS = [
-  // Cursor finds platform assets by walking up from argv[1]. Keep them outside
-  // asar so spawning helpers and loading native addons both use real paths.
+  // Cursor walks from argv[1] to platform assets; helpers and native addons need real paths outside ASAR.
   "!**/node_modules/@cursor/sdk-*/**/*",
   "!apps/desktop/prod-resources/cursor-sdk",
   "!apps/desktop/prod-resources/cursor-sdk/**/*",
@@ -971,7 +969,6 @@ export const DESKTOP_FILE_EXCLUSIONS = [
   "!apps/desktop/resources/browser-secret/**/*",
   "!apps/desktop/prod-resources/browser-secret",
   "!apps/desktop/prod-resources/browser-secret/**/*",
-  // Stage Windows sidecars outside app.asar so extraResources emits them only once.
   "!apps/desktop/prod-resources/windows-server",
   "!apps/desktop/prod-resources/windows-server/**/*",
   "!apps/desktop/prod-resources/wsl-runtime.tar.gz",
@@ -984,15 +981,13 @@ export const MAC_FILE_EXCLUSIONS = [
   "!**/node_modules/node-pty/prebuilds/win32-*/**/*",
   "!**/node_modules/node-pty/third_party/conpty/**/*",
 ] as const;
-// Linux builds node-pty from source, so every prebuild in the package is for
-// another platform (58 MB of it Windows debug symbols).
+// Linux builds node-pty from source; its prebuilds target other platforms.
 export const LINUX_FILE_EXCLUSIONS = [
   ...MAC_FILE_EXCLUSIONS,
   "!**/node_modules/node-pty/prebuilds/darwin-*/**/*",
 ] as const;
 
-// node-pty publishes both Darwin prebuilds in one package. Single-architecture
-// apps only need the native target; universal apps need both.
+// node-pty bundles both Darwin architectures; only universal apps need both.
 export function resolveMacFileExclusions(arch?: typeof BuildArch.Type) {
   if (arch === undefined || arch === "universal") {
     return [...MAC_FILE_EXCLUSIONS];
@@ -1397,8 +1392,7 @@ export function resolveFffNativeDependencies(
   );
 }
 
-// macOS and Linux run both processes from one app.asar, so the stage installs
-// the union of what each bundle leaves external and nothing else.
+// macOS and Linux share one app.asar; stage the union of both bundles' external dependencies.
 export function resolveMergedStageDependencies(input: {
   readonly platform: "mac" | "linux";
   readonly serverDependencies: Record<string, string>;
@@ -1638,8 +1632,7 @@ function invalidMockUpdateServerPortReason(
   if (!Number.isFinite(parsed)) return "not-numeric";
   if (!Number.isInteger(parsed)) return "not-integer";
   if (parsed < 1 || parsed > 65535) return "out-of-range";
-  // This mapper is only called after schema decoding failed. An otherwise
-  // valid integer therefore used a representation the decoder did not accept.
+  // Decoding already failed; valid integers here used unsupported representations.
   return "not-numeric";
 }
 
@@ -2159,8 +2152,7 @@ export const stageLinuxCaptureHelper = Effect.fn("stageLinuxCaptureHelper")(func
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const [rustTarget] = resolveResourceMonitorRustTargets("linux", input.arch);
-  // Release CI restores these binaries from a cache keyed on the crate sources and
-  // skips the Rust toolchain on a hit, so the build must be skippable too.
+  // CI skips Rust on helper-cache hits; allow reuse without rebuilding.
   const reuseHelpers = yield* Config.Boolean("T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS").pipe(
     Config.withDefault(false),
   );
@@ -2700,8 +2692,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           "T3 Code connects to devices on your local network for remote environments and commands run by terminals and coding agents.",
         NSScreenCaptureUsageDescription:
           "T3 Code captures the active window when you use the window capture shortcut.",
-        // macOS lists an app under Default web browser only when it opens web
-        // pages as documents as well as http and https links (see protocols).
+        // macOS browser eligibility requires web-document handling as well as http/https protocols.
         CFBundleDocumentTypes: [
           {
             CFBundleTypeName: "Web page",
@@ -2739,8 +2730,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       background: `dmg/dmg-background-${updateChannel}.png`,
       window: {
         width: 640,
-        // The DMG backend derives bounds from the image, including Finder's
-        // 32px title bar. Keep the last 32px of the artwork free of content.
+        // DMG bounds include Finder's 32px title bar; keep that artwork strip clear.
         height: 432,
       },
       contents: [
@@ -2782,8 +2772,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
         `${path.join(repoRoot, "apps/desktop/resources/linux/com.t3tools.t3code.metainfo.xml")}=/usr/share/metainfo/com.t3tools.t3code.metainfo.xml`,
         `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/t3code/copyright`,
       ],
-      // Debian 13 and Ubuntu 24.04 renamed some for 64-bit time; the old name
-      // is the fallback for older releases.
+      // Debian 13 and Ubuntu 24.04 use 64-bit-time names; retain old-name fallbacks.
       depends: [
         "libasound2t64 | libasound2",
         "libatspi2.0-0t64 | libatspi2.0-0",
@@ -2868,9 +2857,7 @@ export const stageWslRuntimeArchive = Effect.fn("stageWslRuntimeArchive")(functi
   );
 });
 
-// Mirrors cliArchiveStem in scripts/build-cli-archive.ts (which imports from
-// this module, so it cannot be imported here). WSL runs the same CPU arch as
-// the Windows host.
+// Match cliArchiveStem without its circular import. WSL uses the Windows host's architecture.
 export const wslRuntimeArchiveStem = (version: string, arch: typeof BuildArch.Type): string =>
   `t3-${version}-linux-${arch}`;
 
@@ -2910,8 +2897,7 @@ export const packWindowsServerAsar = Effect.fn("packWindowsServerAsar")(function
       createPackageWithOptions(input.sourceDir, input.asarPath, {
         dot: true,
         unpack: `{${unpackGlobs.join(",")}}`,
-        // glob 13 (via @electron/asar 4) matches `ignore` relative to `cwd`,
-        // not against the absolute paths it crawls, so anchor it at the source.
+        // glob 13 (@electron/asar 4) resolves ignores against cwd; anchor them at the source.
         globOptions: {
           cwd: input.sourceDir,
           ignore: resolveWindowsServerAsarIgnoreGlobs(input.arch),
@@ -2977,8 +2963,7 @@ export const stageWindowsServerSidecar = Effect.fn("stageWindowsServerSidecar")(
       patchedDependencies: sidecarPatchedDependencies,
       overrides: input.overrides,
     }),
-    // The tree gets packed into server.asar, which cannot carry pnpm's
-    // symlink/junction layout, so install a physical, hoisted node_modules.
+    // server.asar cannot carry pnpm symlinks or junctions; install physical hoisted dependencies.
     nodeLinker: "hoisted" as const,
   };
   const sidecarWorkspaceConfigString = yield* encodeStageWorkspaceConfig(sidecarWorkspaceConfig);
@@ -3299,8 +3284,7 @@ export const validateWindowsPackagedPayload = Effect.fn(
       );
     }
     const members = parseWslRuntimeArchiveMembers(listing.stdout);
-    // A release archive unpacks to one directory named after its stem; the
-    // desktop app's WSL install script relies on that layout to find `t3`.
+    // The WSL installer finds t3 under the archive's single stem-named directory.
     const stem = wslRuntimeArchiveStem(input.appVersion, input.targetArch);
     const topLevel = new Set(members.map((member) => member.split("/")[0]));
     if (topLevel.size !== 1 || !topLevel.has(stem)) {
@@ -3503,8 +3487,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
         packages: [...inlined].sort(),
       });
     }
-    // No regions at all means the scan went blind (marker format changed), not
-    // that the bundle is clean.
+    // Zero regions means the marker scan failed, not that the bundle is clean.
     if (totalRegions === 0) {
       return yield* new InlinedExternalPackageError({
         packages: ["<no module regions found; the bundle scan needs updating>"],
@@ -3779,8 +3762,7 @@ const buildDesktopArtifact = Effect.fn("buildDesktopArtifact")(function* (
     }
   }
   if (options.platform === "linux") {
-    // fpm compresses the .deb with the system xz through tar. Threaded mode
-    // takes seconds on a many-core runner instead of about two minutes.
+    // fpm uses system xz through tar; threading cuts compression time on many-core runners.
     buildEnv.XZ_DEFAULTS = "-T0";
   }
   if (!options.signed) {

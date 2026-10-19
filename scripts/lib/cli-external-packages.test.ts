@@ -98,8 +98,7 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
       "../../node_modules/.pnpm",
     );
 
-    // The store holds regular files too (lock.yaml), so a path built under one
-    // raises ENOTDIR rather than reporting absence.
+    // Paths under store files such as lock.yaml raise ENOTDIR, not absence.
     const isPresent = (candidate: string) =>
       fileSystem.exists(candidate).pipe(Effect.orElseSucceed(() => false));
 
@@ -130,8 +129,7 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
 
   const isRuntimeExternal = isRuntimeExternalCliDependency;
 
-  // A cold walk of the pnpm store can exceed the root timeout when the Windows
-  // lane runs four filesystem-heavy workspace suites at once.
+  // Concurrent Windows workspace suites can push a cold store walk past the root timeout.
   it.effect(
     "finds the runtime-external packages on disk",
     () =>

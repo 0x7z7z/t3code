@@ -17,8 +17,7 @@ export { ApnsJwtEncodingError, ApnsJwtSigningError } from "./apnsJwt.ts";
 const LIVE_ACTIVITY_NAME = "AgentActivity";
 // Bound sending and reading separately so neither stage can hold a batch open.
 const APNS_HTTP_STAGE_TIMEOUT = "10 seconds";
-// Updates only flow on domain events, so a healthy agent can be silent for
-// minutes (long tool calls, pending approvals).
+// Event-only updates can leave healthy agents silent for minutes.
 const STALE_AFTER_SECONDS = 10 * 60;
 const DISMISS_AFTER_SECONDS = 5 * 60;
 // Without final content, the card freezes at stale state; dismiss it promptly.

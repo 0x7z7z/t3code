@@ -76,8 +76,7 @@ export default defineConfig({
   fmt: {
     ignorePatterns: [
       ".repos/**",
-      // Macroscope's glob-per-line ignore grammar, not Markdown: formatting
-      // it rewrites `*` as `_` and joins lines.
+      // Macroscope requires one glob per line; Markdown formatting corrupts it.
       ".macroscope/ignore.md",
       ".alchemy",
       "dist",
@@ -257,8 +256,7 @@ export default defineConfig({
         rules: { "t3code/no-mobile-pull-request-glyph-literals": "error" },
       },
       {
-        // React commits state set in a raw ResizeObserver callback after the paint, so derived
-        // layout lands a frame late. observeResize flushes every observed resize in one render.
+        // Raw ResizeObserver state commits miss the paint; observeResize flushes derived layout together.
         files: ["apps/web/src/**"],
         excludeFiles: [
           "apps/web/src/lib/observeResize.ts",
@@ -279,8 +277,7 @@ export default defineConfig({
         rules: { "shadcn/no-raw-colors": "error" },
       },
       {
-        // Third-party marks (brand logos, the macOS permission panes, Codex's Computer Use
-        // mark) must keep their exact colors, so the files that hold them are exempt.
+        // Third-party marks must retain their exact colors.
         files: ["apps/web/src/components/Icons.tsx", "apps/web/src/components/JetBrainsIcons.tsx"],
         rules: { "shadcn/no-raw-colors": "off" },
       },
@@ -370,8 +367,7 @@ export default defineConfig({
         rules: { "t3code/no-manual-memo": ["error", { allowMemoHooks: true }] },
       },
       {
-        // The compiler only compiles a use* function that calls a hook; one that calls none is
-        // silently left as a plain function, so whatever it returns loses its caching.
+        // React Compiler caches use* functions only if they call a hook.
         files: ["apps/web/src/**/*.{ts,tsx}", "apps/mobile/src/**/*.{ts,tsx}"],
         excludeFiles: ["**/*.test.ts", "**/*.test.tsx"],
         rules: { "t3code/no-hookless-use-function": "error" },

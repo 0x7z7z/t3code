@@ -74,8 +74,7 @@ export const sendUpstream = (baseUrl: string, hook: UpstreamHook) =>
   Effect.gen(function* () {
     const httpClient = yield* HttpClient.HttpClient;
     const base = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-    // The environment's span joins this trace. Set by hand: the client span
-    // that would propagate it is off, because it records the token in url.full.
+    // Propagate the trace manually; automatic client spans expose the token in url.full.
     const parent = yield* Effect.currentSpan.pipe(Effect.option);
     const headers: Record<string, string> = {
       ...hook.headers,

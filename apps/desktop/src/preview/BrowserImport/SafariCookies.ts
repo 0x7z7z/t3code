@@ -8,7 +8,6 @@ import { cookieScope, type ImportedCookie } from "./CookieDatabase.ts";
 /** Safari's timestamps count seconds from 2001-01-01, not the UNIX epoch. */
 const APPLE_EPOCH_OFFSET_SECONDS = 978_307_200;
 
-/** `u32 0x00000100`, `u32le cookieCount`, then one `u32le` offset per cookie. */
 const COOKIE_PAGE_HEADER_SIZE = 12;
 const COOKIE_RECORD_HEADER_SIZE = 56;
 
@@ -128,8 +127,7 @@ export function parseBinaryCookies(buffer: Buffer): ReadonlyArray<ImportedCookie
     }
   }
 
-  // Safari writes an 8-byte checksum after the pages, then an optional
-  // length-prefixed property list.
+  // Pages end with an 8-byte checksum and an optional length-prefixed plist.
   const trailer = buffer.length - pageStart;
   const validTrailer =
     trailer === 0 ||

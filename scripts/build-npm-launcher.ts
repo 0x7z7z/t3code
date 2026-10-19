@@ -1,8 +1,5 @@
 #!/usr/bin/env node
-/**
- * Download executables from GitHub Releases: npm scanning can delay platform packages after the launcher publishes.
- * Output is the launcher tree at <output-dir>/t3/ and its publishable t3.tgz.
- */
+// GitHub archives avoid npm scanning delays; output <output-dir>/t3/ and publishable t3.tgz.
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
@@ -33,7 +30,7 @@ export class NpmLauncherCommandFailedError extends Schema.TaggedError<NpmLaunche
   }
 }
 
-/** package.json for the launcher. `engines` asks for `import.meta.dirname` and `fetch`. */
+/** engines requires import.meta.dirname and fetch. */
 export function npmLauncherPackageManifest(version: string) {
   return {
     name: NPM_LAUNCHER_PACKAGE_NAME,

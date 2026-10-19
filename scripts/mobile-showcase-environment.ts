@@ -571,8 +571,7 @@ export async function seedShowcaseEnvironment(input: {
         });
       }),
   );
-  // The environment server begins listening before it finishes migrating the
-  // database, so wait for the schema before deleting from and reseeding it.
+  // Listening precedes migration completion; wait for the schema before reseeding.
   await waitForSeedableSchema(dbPath);
   seedDatabase(dbPath, workspaceRoots, projects, threads, now);
 

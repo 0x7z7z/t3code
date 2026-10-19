@@ -87,8 +87,7 @@ export function cliArchiveStem(version: string, platform: BuildPlatform, arch: B
 }
 
 export function cliArchiveFileName(version: string, platform: BuildPlatform, arch: BuildArch) {
-  // gzip rather than xz: GNU tar needs an external xz binary for -J, which
-  // minimal hosts lack, while every tar (and Node's zlib) handles gzip alone.
+  // Minimal hosts may lack xz, but tar and Node zlib handle gzip without it.
   return `${cliArchiveStem(version, platform, arch)}.${platform === "win" ? "zip" : "tar.gz"}`;
 }
 
@@ -309,8 +308,7 @@ const signMacArchiveContents = Effect.fn("signMacArchiveContents")(function* (in
     );
     return;
   }
-  // notarytool only accepts archives, and a bare executable cannot be stapled,
-  // so notarize a zip of the binary and rely on the online ticket lookup.
+  // notarytool requires an archive; bare executables rely on online tickets because they cannot be stapled.
   const notarizeZip = path.join(path.dirname(input.executablePath), ".notarize-t3.zip");
   yield* runCommand(
     ChildProcess.make("ditto", ["-c", "-k", "--keepParent", input.executablePath, notarizeZip]),
@@ -358,15 +356,13 @@ const stripStaleAuthenticodeEntry = Effect.fn("stripStaleAuthenticodeEntry")(fun
   }
   const optionalHeader = peOffset + 24;
   const magic = view.getUint16(optionalHeader, true);
-  // Data directories start at +112 (PE32+) or +96 (PE32); the certificate
-  // table is directory index 4, eight bytes (file offset, size).
+  // PE data directories start at +112 (PE32+) or +96 (PE32); index 4 holds the certificate offset and size.
   const securityEntry = optionalHeader + (magic === 0x20b ? 112 : 96) + 4 * 8;
   const offset = view.getUint32(securityEntry, true);
   const size = view.getUint32(securityEntry + 4, true);
   if (offset === 0 && size === 0) return;
   if (offset + size === bytes.byteLength) {
-    // A certificate table that still ends at EOF is intact; leave it for
-    // signtool to replace rather than second-guessing it here.
+    // Let signtool replace intact certificate tables ending at EOF.
     return;
   }
   view.setUint32(securityEntry, 0, true);
@@ -420,16 +416,14 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
   const repoRoot = yield* RepoRoot;
   const serverDir = path.join(repoRoot, "apps/server");
   const executableName = input.platform === "win" ? "t3.exe" : "t3";
-  // tsdown suffixes cross-built executables with their target (t3-darwin-x64);
-  // a host build is plain t3. Prefer the exact target when both exist.
+  // tsdown suffixes cross-built executables; prefer the exact target over the plain host build.
   const targetKey = `${input.platform === "mac" ? "darwin" : input.platform}-${input.arch}`;
   const targetExecutable = path.join(
     serverDir,
     "dist-exe",
     `t3-${targetKey}${input.platform === "win" ? ".exe" : ""}`,
   );
-  // The unsuffixed host build is only a valid stand-in when it was built for
-  // this platform and architecture; otherwise a missing target must fail.
+  // The unsuffixed executable is valid only for the host platform and architecture.
   const hostPlatform = yield* HostProcess.Platform;
   const hostKey = `${hostPlatform === "win32" ? "win" : hostPlatform}-${yield* HostProcess.Architecture}`;
   const builtExecutable = (yield* fs.exists(targetExecutable))
@@ -492,8 +486,7 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
       "tar (zip)",
     );
   } else {
-    // Linux pnpm/node-gyp hardlinks become tar link entries rejected by npm; archive regular files.
-    // macOS bsdtar lacks this flag and pnpm clones there.
+    // npm rejects Linux hardlink entries; macOS pnpm clones and bsdtar lacks this flag.
     yield* runCommand(
       ChildProcess.make("tar", [
         ...(input.platform === "linux" ? ["--hard-dereference"] : []),

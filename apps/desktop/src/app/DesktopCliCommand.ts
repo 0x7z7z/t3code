@@ -28,11 +28,8 @@ const pathEntries = (value: string | undefined, separator: string) =>
 const sameWindowsPath = (left: string, right: string) =>
   left.replace(/[\\/]+$/, "").toLowerCase() === right.replace(/[\\/]+$/, "").toLowerCase();
 
-/**
- * Keep REG_EXPAND_SZ and unexpanded `%VAR%` entries; REG_SZ breaks PATH expansion.
- * Broadcast WM_SETTINGCHANGE so Explorer's future terminals see writes.
- * Failed reads must exit nonzero so a subsequent write cannot replace PATH wholesale.
- */
+// Preserve REG_EXPAND_SZ and %VAR% expansion; notify Explorer with WM_SETTINGCHANGE.
+// Failed reads must exit nonzero to prevent replacing PATH wholesale.
 const WINDOWS_USER_PATH_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 if ($env:T3_SET -eq '1') {
@@ -61,7 +58,7 @@ export class DesktopCliCommand extends Context.Service<
   }
 >()("@t3tools/desktop/app/DesktopCliCommand") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fs = yield* FileSystem.FileSystem;

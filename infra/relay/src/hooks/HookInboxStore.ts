@@ -13,10 +13,7 @@ const HOOK_INBOX_TTL_MS = 24 * 60 * 60 * 1000;
 const HOOK_INBOX_MAX_REQUESTS = 1_000;
 
 export const HOOK_INBOX_MAX_BYTES = 50 * 1_048_576;
-/**
- * The relay cannot check tokens, so this keeps junk sent to one hook id from
- * crowding out the others.
- */
+// The relay cannot check tokens; isolate each hook's junk with its own cap.
 export const HOOK_INBOX_MAX_PER_HOOK = 100;
 
 const DELIVERIES_PER_RUN = 20;
@@ -152,10 +149,7 @@ const resetFailures = Effect.gen(function* () {
   yield* sql`UPDATE held_hooks_target SET failures = 0 WHERE id = 1`;
 });
 
-/**
- * Incremented in place, so a wake that reset the count while this run's request
- * was in flight is not overwritten.
- */
+// Increment in place to preserve wake resets made during an in-flight request.
 const countFailure = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql<{ readonly failures: number }>`
@@ -171,13 +165,10 @@ const hasPending = Effect.gen(function* () {
   return rows.length > 0;
 });
 
-/**
- * Returns the time the first attempt is due, or null when the inbox is full and
- * nothing was stored.
- */
+/** First attempt's due time, or null if the full inbox stored nothing. */
 export const hold = Effect.fn("HookInboxStore.hold")(function* (hook: HeldHook, baseUrl: string) {
   const sql = yield* SqlClient.SqlClient;
-  // One statement, so the caps hold however many requests arrive at once.
+  // One statement enforces caps across concurrent requests.
   const inserted = yield* sql<{ readonly id: string }>`
     INSERT INTO held_hooks
       (id, received_at, method, raw_hook_id, raw_token, hook_key, query, headers, body)
@@ -292,8 +283,7 @@ export const deliverDue = Effect.fn("HookInboxStore.deliverDue")(function* <R>(
     sql<{ readonly seq: number }>`SELECT seq FROM held_hooks WHERE seq = ${seq}`.pipe(
       Effect.map((rows) => rows.length > 0),
     );
-  // Pages run out only once every non-busy request has been tried, so a
-  // backlog behind busy hooks never hides another hook's requests.
+  // Exhaust non-busy requests before stopping so busy hooks cannot hide others' backlog.
   pages: while (batch.length > 0) {
     for (const row of batch) {
       if (sent === DELIVERIES_PER_RUN) break pages;
@@ -306,7 +296,6 @@ export const deliverDue = Effect.fn("HookInboxStore.deliverDue")(function* <R>(
       }
       const headers = decodeHeaders(row.headers);
       if (Option.isNone(headers)) {
-        // Unreadable: it can never be delivered, and must not block the rest.
         yield* sql`DELETE FROM held_hooks WHERE id = ${row.id}`;
         unreadable += 1;
         continue;

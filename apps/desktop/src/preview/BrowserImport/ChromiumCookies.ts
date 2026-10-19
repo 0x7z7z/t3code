@@ -88,10 +88,7 @@ const toUnixSeconds = (webkitSeconds: number): number | undefined => {
   return webkitSeconds - WEBKIT_EPOCH_OFFSET_SECONDS;
 };
 
-/**
- * Chromium >= 127 prefixes the plaintext with SHA-256 of the host key, binding
- * a cookie to its domain.
- */
+// Chromium 127+ prefixes plaintext with the host-key SHA-256 to bind its domain.
 const stripDomainBinding = (
   plaintext: Buffer,
   domain: string,
@@ -152,17 +149,14 @@ export function decryptChromiumValue(
   const prefix = buffer.subarray(0, 3).toString("latin1");
   const payload = buffer.subarray(3);
 
-  // Windows' legacy v10 format is AES-256-GCM. App-bound records use v20 and
-  // intentionally have no key here, so they fall through as undecryptable.
+  // Windows v10 uses AES-256-GCM; app-bound v20 records have no key here.
   if (platform === "win32") {
     return prefix === "v10" && keys.gcmV10
       ? decryptGcm(payload, keys.gcmV10, domain, schemaVersion)
       : null;
   }
 
-  // Chromium retries a failed record with a key derived from an empty
-  // passphrase, because some Linux clients wrote data that way
-  // (crbug.com/1195256).
+  // Retry the empty-passphrase key used by some Linux clients (crbug.com/1195256).
   if (prefix === "v10") {
     if (!keys.cbcV10) return null;
     return (

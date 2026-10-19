@@ -81,8 +81,7 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "T3CODE_TAILSCALE_SERVE_PORT",
 ] as const;
 
-// Env vars that the WSL backend needs but Windows process.env won't forward
-// across the wsl.exe boundary without WSLENV.
+// Windows forwards these variables into WSL only through WSLENV.
 const WSL_FORWARDED_ENV_NAMES = [
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
@@ -92,9 +91,7 @@ const WSL_FORWARDED_ENV_NAMES = [
   "OTEL_SDK_DISABLED",
   "T3CODE_OTLP_HEADERS",
   "T3CODE_OTLP_PROTOCOL",
-  // Forwarded without a WSLENV flag, so the values arrive untranslated. The
-  // server prefers an OTEL endpoint over the bootstrap envelope, so the T3 URLs
-  // travel as variables to keep winning inside the distro as they do on Windows.
+  // Untranslated T3 URLs must override bootstrap endpoints inside WSL, as they do on Windows.
   "T3CODE_OTLP_TRACES_URL",
   "T3CODE_OTLP_METRICS_URL",
   "T3CODE_OTLP_LOGS_URL",
@@ -391,8 +388,7 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
   if (input.runtimeArchive !== null) {
     const runtime = yield* wslEnv.prepareRuntime(runningDistro, input.runtimeArchive);
     if (runtime.ok) {
-      // The staged runtime supplies its own Node and node-pty. Provider PATH
-      // discovery must not require either dependency for runtime readiness.
+      // Staged runtimes bundle Node and node-pty; provider PATH discovery must not require them.
       const stagedProbe = yield* wslEnv.probeRuntime(runningDistro, runtime.linuxAppRoot);
       if (stagedProbe.ok) {
         yield* wslServerTree.cleanupLegacy;
@@ -454,14 +450,12 @@ const runWslPreflight = Effect.fn("desktop.backendConfiguration.wslPreflight")(f
   } as const;
 });
 
-// In WSL2 mirrored mode the distro's eth0 IP equals the host's, which is the
-// signature we use to detect that mode and switch the renderer URL to loopback.
+// In WSL2 mirrored mode, eth0 matches a host IP; use loopback for the renderer.
 const isLocalHostIpv4 = (ip: string): boolean => {
   const interfaces = NodeOS.networkInterfaces();
   for (const list of Object.values(interfaces)) {
     if (!list) continue;
     for (const entry of list) {
-      // Node builds can report IPv4 family as either "IPv4" or 4.
       const family = String(entry.family);
       if ((family === "IPv4" || family === "4") && entry.address === ip) return true;
     }
@@ -572,14 +566,11 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     mode: "desktop" as const,
     noBrowser: true,
     port: input.port,
-    // Omit t3Home so the Linux backend uses its own home dir instead of
-    // the Windows-side baseDir (which would be a /mnt/c path and share
-    // the SQLite file with the primary).
+    // Omit t3Home to keep the Linux backend from sharing the primary's Windows SQLite file.
     host: wslBindHost,
     desktopBootstrapToken: input.bootstrapToken,
     desktopBootstrapSecret: input.bootstrapSecret,
-    // PortSchema rejects 0, so when tailscale serve is disabled we still need a
-    // valid number in this slot.
+    // PortSchema rejects 0 even when Tailscale Serve is disabled.
     tailscaleServeEnabled: false,
     tailscaleServePort: 443,
     ...buildObservabilityFragment(input.observabilitySettings),
@@ -620,9 +611,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     allowBuild: !environment.isPackaged,
   });
 
-  // Every operation after preflight uses the same concrete distro. In
-  // default-tracking mode this closes the race where the system default
-  // changes between probing and spawning the backend.
+  // Pin the preflight distro so a default change cannot race backend startup.
   const runningDistro = preflight._tag === "Ready" ? preflight.runningDistro : null;
   const distroForConfig = runningDistro ?? input.distro;
 
@@ -665,8 +654,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       ...forwardedEnv,
       ...(wslEnv !== undefined ? { WSLENV: wslEnv } : {}),
     },
-    // env is already a complete process.env minus T3CODE_HOME; pass it
-    // verbatim instead of letting the spawner re-merge process.env on top.
+    // env already excludes T3CODE_HOME; merging process.env would restore it.
     extendEnv: false,
     bootstrap,
     bootstrapDelivery: "stdin" as const,
@@ -675,8 +663,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     ...(runningDistro !== null ? { runningDistro } : {}),
   };
 
-  // Forward the dev-server URL as an explicit CLI flag so the WSL backend's
-  // config resolution lands in dev/ instead of userdata/.
+  // Explicit --dev-url keeps WSL state in dev/ rather than userdata/.
   const devUrlArgs = Option.match(environment.devServerUrl, {
     onNone: () => [] as ReadonlyArray<string>,
     onSome: (url) => ["--dev-url", url.href],
@@ -724,7 +711,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   } satisfies DesktopBackendManager.DesktopBackendStartConfig;
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const shellEnvironment = yield* DesktopShellEnvironment.DesktopShellEnvironment;

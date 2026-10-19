@@ -73,9 +73,7 @@ const chromiumSource = (input: {
 });
 
 export const BROWSER_IMPORT_SOURCES: ReadonlyArray<BrowserImportSourceDefinition> = [
-  // No Chromium fork is importable on Windows: since Chrome 127 their cookies
-  // are encrypted to the browser's own identity (App-Bound Encryption), so no
-  // other process can read them.
+  // Chrome 127+ App-Bound Encryption prevents other processes from reading Windows Chromium cookies.
   chromiumSource({
     id: "chrome",
     name: "Chrome",
@@ -190,8 +188,7 @@ export const cookieDatabaseCandidatePaths = (
   if (definition.engine === "safari") {
     return [context.path.join(profilePath, "Cookies.binarycookies")];
   }
-  // Chromium: pre-96 uses `Cookies`, 96+ use `Network/Cookies`. An upgrade
-  // leaves the legacy file behind, so prefer the current one and fall back.
+  // Prefer Chromium 96+'s Network/Cookies; upgrades leave the pre-96 Cookies file behind.
   return [
     context.path.join(profilePath, "Network", "Cookies"),
     context.path.join(profilePath, "Cookies"),
@@ -238,8 +235,7 @@ export function parseFirefoxProfiles(
           if (!escapesRoot) directory = path.normalize(candidate);
         }
       } else if (path.isAbsolute(candidate)) {
-        // Firefox supports profiles on arbitrary custom roots when
-        // IsRelative=0. Do not constrain them to the standard Firefox root.
+        // IsRelative=0 permits custom roots outside Firefox's standard directory.
         directory = path.normalize(candidate);
       }
 
@@ -304,10 +300,7 @@ const isSafeProfileDirectory = (directory: string): boolean =>
 const CookieCountRow = Schema.Struct({ count: Schema.Number });
 const decodeCookieCount = Schema.decodeUnknownEffect(Schema.Array(CookieCountRow));
 
-/**
- * Firefox containers use identities Electron cannot represent, so its count
- * uses the same default-container predicate as the reader.
- */
+// Count only default-container cookies because Electron cannot represent Firefox containers.
 const countProfileCookies = Effect.fnUntraced(function* (
   definition: BrowserImportSourceDefinition,
   context: BrowserImportPathContext,
@@ -551,8 +544,7 @@ export const chromiumSingletonLockIsHeld = Effect.fnUntraced(function* (
   if (!/^\d+$/.test(pidText)) return true;
   const pid = Number(pidText);
   if (!Number.isSafeInteger(pid) || pid <= 0) return true;
-  // A PID is meaningful only on this host. A foreign hostname can come from a
-  // shared home directory, and cannot safely be declared stale from here.
+  // Foreign-host PIDs may come from a shared home; never declare them stale here.
   if (host !== currentHost) return true;
   return yield* isProcessAlive(pid);
 });
@@ -563,8 +555,7 @@ export const isWindowsLockHeldError = (error: PlatformError.PlatformError): bool
 
 /** Windows leaves parent.lock after exit; only opening it for write reveals a live holder as Busy. */
 const windowsLockIsHeld = Effect.fnUntraced(function* (lockPath: string) {
-  // Permission failures are distinct: they do not prove a browser owns the
-  // lock, so they must not hide the source as running.
+  // Permission failures do not prove a running browser owns the lock.
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* fileSystem.open(lockPath, { flag: "r+" }).pipe(
     Effect.as(false),
@@ -689,8 +680,7 @@ export const isSourceRunning = Effect.fn("BrowserImportSources.isSourceRunning")
   const fileSystem = yield* FileSystem.FileSystem;
   const root = definition.userDataDirectory(context);
   if (root === undefined) return false;
-  // Safari keeps no lock and writes its jar atomically, so a running instance
-  // is not a hazard there.
+  // Safari writes its jar atomically and needs no lock, even while running.
   if (definition.engine === "safari") return false;
   if (definition.engine !== "firefox") {
     if (context.platform === "win32") {
@@ -716,10 +706,7 @@ export const isSourceRunning = Effect.fn("BrowserImportSources.isSourceRunning")
   return found.some(Boolean);
 });
 
-/**
- * Native messaging installers create empty browser directories; require a cookie database.
- * stat sees Safari's jar without Full Disk Access, allowing the later read to request a grant.
- */
+/** Require a cookie database; installers create empty directories. Safari stat needs no Full Disk Access. */
 export const isSourceInstalled = Effect.fn("BrowserImportSources.isSourceInstalled")(function* (
   definition: BrowserImportSourceDefinition,
   context: BrowserImportPathContext,

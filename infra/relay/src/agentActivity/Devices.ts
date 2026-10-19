@@ -143,8 +143,7 @@ export const make = Effect.gen(function* () {
             iosMajorVersion: registration.iosMajorVersion ?? null,
             androidApiLevel: registration.androidApiLevel ?? null,
             appVersion: registration.appVersion ?? null,
-            // Preserve routing from newer app builds when an older build
-            // re-registers without these fields.
+            // Older builds must preserve newer routing fields on re-registration.
             bundleId: sql`coalesce(excluded.bundle_id, ${relayMobileDevices.bundleId})`,
             apsEnvironment: sql`coalesce(
                 excluded.aps_environment,

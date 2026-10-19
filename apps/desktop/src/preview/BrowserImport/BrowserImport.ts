@@ -41,8 +41,7 @@ export class BrowserImportFailedError extends Schema.TaggedError<BrowserImportFa
     cause: Schema.optional(Schema.Defect()),
   },
 ) {
-  // The reason token is part of the message on purpose: IPC flattens the error
-  // to its message, and the renderer maps that token back to user-facing copy.
+  // IPC preserves only the message; the renderer needs its reason token for user-facing copy.
   override get message(): string {
     return `Importing cookies from ${this.sourceId} failed: ${this.reason}.`;
   }
@@ -85,8 +84,7 @@ const unavailableReason = Effect.fn("BrowserImport.unavailableReason")(function*
   if (!definition.platforms.includes(context.platform)) return "unsupportedPlatform";
   if (!(yield* isSourceInstalled(definition, context))) return "notInstalled";
   if (yield* isSourceRunning(definition, context)) return "browserRunning";
-  // Safari's jar is found by `stat`, which TCC permits without Full Disk Access
-  // — so a Safari that lists as ready may still refuse the read.
+  // TCC permits stat without Full Disk Access, so a listed Safari jar may still be unreadable.
   if (definition.engine === "safari") {
     const jar = yield* resolveCookieDatabase(definition, context, ".");
     if (jar !== undefined && (yield* safariAccessDenied(jar))) return "needsFullDiskAccess";
@@ -116,8 +114,7 @@ export const writeCookies = Effect.fn("BrowserImport.writeCookies")(function* (
           url: cookie.url,
           name: cookie.name,
           value: cookie.value,
-          // Omitted for host-only cookies: Electron reads any `domain` as a
-          // domain cookie and re-adds the leading dot, widening its scope.
+          // Electron widens any supplied domain; omit it for host-only cookies.
           ...(cookie.domain === undefined ? {} : { domain: cookie.domain }),
           path: cookie.path,
           secure: cookie.secure,
@@ -150,7 +147,7 @@ export const writeCookies = Effect.fn("BrowserImport.writeCookies")(function* (
   return { imported, skipped, skippedDomains: [...skippedDomains].slice(0, 20) };
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* BrowserImportMake() {
   const browserSession = yield* BrowserSession.BrowserSession;
   const platform = yield* HostProcess.Platform;
@@ -219,8 +216,7 @@ export const make = Effect.gen(function* BrowserImportMake() {
       });
     }
 
-    // The profile was listed against a database moments ago; resolve it again
-    // rather than assume a path, since a Chromium jar may sit under `Network/`.
+    // Re-resolve listed paths because Chromium jars may be under Network/.
     const databasePath = yield* resolveCookieDatabase(
       definition,
       pathContext,
@@ -289,8 +285,7 @@ export const make = Effect.gen(function* BrowserImportMake() {
         ),
       );
 
-    // Written one at a time rather than in parallel: Chromium's cookie store
-    // serialises writes anyway, and a rejected cookie should only cost itself.
+    // Chromium serializes writes; a rejected cookie should not prevent the others.
     return yield* writeCookies(session, result);
   });
 

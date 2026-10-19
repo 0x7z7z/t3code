@@ -102,8 +102,7 @@ export const makeApnsJwt = Effect.fn("relay.apns.make_jwt")(function* (input: Ap
 
   return yield* Effect.try({
     try: () => {
-      // Deterministic ES256 (RFC 6979) yields identical JWTs for every isolate at the same iat.
-      // Node crypto only converts PEM to the raw scalar for noble.
+      // RFC 6979 ES256 gives isolates identical JWTs at the same iat; Node crypto only extracts the scalar.
       const scalar = apnsSigningScalar(privateKey);
       const signature = p256
         .sign(sha256(new TextEncoder().encode(signingInput)), scalar, { prehash: false })

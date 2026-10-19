@@ -193,8 +193,7 @@ function shouldUpdateLiveActivity(input: {
   );
 }
 
-// Completions replayed long after the fact (server restarts republish every
-// recently-finished thread) must not ring the device again.
+// Restart replays of old completions must not ring again.
 
 function notificationForAggregate(input: {
   readonly target: LiveActivities.TargetRow;
@@ -528,8 +527,7 @@ export const make = Effect.gen(function* () {
   const apns = yield* Apns.ApnsClient;
   const activityRows = yield* AgentActivityRows.AgentActivityRows;
 
-  // Recheck at delivery: a newer terminal publish can supersede a queued start and orphan a stale activity.
-  // Fail open on database errors so a transient failure cannot drop a legitimate start.
+  // Recheck queued starts against newer terminal publishes. Fail open on database errors.
   const userStillHasLiveWork = Effect.fnUntraced(function* (userId: string) {
     const now = yield* DateTime.now;
     return yield* activityRows.listForUser({ userId }).pipe(

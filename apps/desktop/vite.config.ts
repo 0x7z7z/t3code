@@ -137,8 +137,7 @@ export default defineConfig({
     },
   ],
   test: {
-    // The Windows lane runs workspace suites concurrently; filesystem-heavy
-    // desktop integration tests can exceed Vitest's 5 second default there.
+    // Concurrent Windows suites can push filesystem-heavy tests past Vitest's 5-second default.
     testTimeout: 15_000,
     setupFiles: ["../../packages/shared/src/testing/longTempDir.ts"],
   },

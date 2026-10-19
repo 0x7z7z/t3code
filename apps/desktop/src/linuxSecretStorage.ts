@@ -8,8 +8,7 @@ export type LinuxPasswordStoreSwitch = Exclude<LinuxPasswordStorePreference, "au
 
 export const DEFAULT_LINUX_PASSWORD_STORE: LinuxPasswordStorePreference = "auto";
 
-// Chromium matches XDG_CURRENT_DESKTOP values case-sensitively and returns on the first value it
-// recognizes, so these stay exact literals and are scanned in order.
+// Chromium matches desktop names case-sensitively and stops at the first recognized value.
 const ELECTRON_LIBSECRET_DESKTOPS = new Set([
   "Deepin",
   "GNOME",
@@ -35,8 +34,6 @@ export function normalizeLinuxPasswordStorePreference(
     : DEFAULT_LINUX_PASSWORD_STORE;
 }
 
-// Otherwise force gnome-libsecret, because the alternative is basic text, which is barely
-// encryption at all.
 export function resolveLinuxPasswordStoreSwitch(input: {
   readonly preference: LinuxPasswordStorePreference;
   readonly env: NodeJS.ProcessEnv;

@@ -38,14 +38,10 @@ const FETCH_BAD_PORTS = new Set([
   995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
   6669, 6679, 6697, 10080,
 ]);
-// Dev servers bind loopback, so loopback is the only interface whose
-// availability decides whether we can use a port.
+// Dev binds loopback; other interfaces cannot establish port availability.
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "::1"] as const;
 
-/**
- * Loopback and the wildcards qualify; a specific interface (e.g. a LAN IP) does
- * not — the OS binds only that address and the proxy target goes dark.
- */
+/** Only loopback and wildcard binds keep the loopback proxy target reachable. */
 export function isProxiableBindHost(host: string): boolean {
   const normalized = host.trim();
   return (
@@ -79,10 +75,7 @@ const MODE_ARGS = {
 } as const satisfies Record<string, ReadonlyArray<string>>;
 
 type DevMode = keyof typeof MODE_ARGS;
-/**
- * `role` matters because only the backend honours `--host`/`T3CODE_HOST`; the
- * web port is always loopback.
- */
+// Only backend ports honor --host/T3CODE_HOST; web ports stay loopback.
 type PortAvailabilityCheck<R = never> = (
   port: number,
   role?: "server" | "web",
@@ -337,8 +330,7 @@ export function createDevRunnerEnv({
       output.T3CODE_PORT = String(serverPort);
       output.VITE_HTTP_URL = `http://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
       output.VITE_WS_URL = `ws://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
-      // Desktop pins the renderer to loopback on purpose; an ambient marker
-      // must not make Vite drop those URLs.
+      // Desktop deliberately pins renderer URLs to loopback; inherited markers must not discard them.
       delete output.T3CODE_SINGLE_ORIGIN_DEV;
       delete output.T3CODE_MODE;
       delete output.T3CODE_NO_BROWSER;

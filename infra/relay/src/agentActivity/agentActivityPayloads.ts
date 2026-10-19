@@ -44,8 +44,7 @@ export function isExpiredAgentActivityState(
 const MAX_SUMMARY_TEXT_LENGTH = 120;
 const MAX_STATUS_TEXT_LENGTH = 40;
 const MAX_DEEP_LINK_LENGTH = 512;
-// The Live Activity banner (lock screen / Notification Center) renders up to
-// five rows; the expanded Dynamic Island shows the top three of these.
+// Banners render five rows; the expanded Dynamic Island shows the top three.
 export const MAX_ACTIVITY_ROWS = 5;
 
 function truncateText(value: string, maxLength: number): string {

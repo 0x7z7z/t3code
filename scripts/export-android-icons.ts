@@ -37,8 +37,7 @@ const wordmarkTransform = (size: number) => {
 const canvasSvg = (size: number, inner: string) =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" fill="none">${inner}</svg>`;
 
-// The layer sources clip to a 10pt rounded rectangle for the iOS silhouette. Android
-// applies its own mask, so the layer must bleed to the canvas edge.
+// Remove the iOS 10pt corner clip; Android's own mask needs full bleed.
 const fullBleed = (svg: string) =>
   svg.replace(/<rect width="128" height="128" rx="10"\/>/, '<rect width="128" height="128"/>');
 
@@ -117,8 +116,7 @@ const renderNightlyBackground = Effect.fn("androidIcons.renderNightlyBackground"
   repositoryRoot: string,
   size: number,
 ) {
-  // Positions mirror assets/nightly/app-icon.icon/icon.json. The SVG blur filter is
-  // dropped because Icon Composer ignores it and it smears at this raster size.
+  // Match assets/nightly/app-icon.icon/icon.json; omit blur, which Icon Composer ignores and rasterization smears.
   const clouds = [
     { file: "cloud-lower-left.svg", scale: 25, translation: [-309.6375, 268.66077693836917] },
     {

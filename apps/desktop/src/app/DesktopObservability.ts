@@ -434,8 +434,7 @@ const backendLogFilePathForInstance = (
   return environment.path.join(environment.logDir, `server-child-${sanitized}.log`);
 };
 
-// Cacheable by resolved file path so two ids that sanitize to the same filename
-// share a single RotatingLogFileWriter (no race on currentSize tracking).
+// IDs sharing a sanitized filename must share a writer to avoid currentSize races.
 const makeBackendOutputSinkForInstance = (
   environment: DesktopEnvironment.DesktopEnvironment["Service"],
   id: string,
@@ -605,8 +604,7 @@ const layerTelemetry = Layer.unwrap(
       },
     };
 
-    // Logger.layer replaces the logger set, so include every logger in this call.
-    // tracerLogger would duplicate in-span messages already exported by the OTLP logger.
+    // Logger.layer replaces the logger set. tracerLogger would duplicate OTLP in-span messages.
     const layerLogger = Logger.layer(
       endpoints.logs === undefined
         ? [Logger.consolePretty(), Logger.tracerLogger]

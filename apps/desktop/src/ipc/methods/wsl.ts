@@ -22,8 +22,7 @@ const readWslState: Effect.Effect<
   const wslBackend = yield* DesktopWslBackend.DesktopWslBackend;
   const settings = yield* appSettings.get;
   const available = settings.localEnvironmentEnabled && (yield* wslEnvironment.isAvailable);
-  // Only enumerate distros when WSL is actually available — listDistros on a
-  // non-WSL host would spawn wsl.exe and hit the timeout for nothing.
+  // Listing distros on non-WSL hosts spawns wsl.exe only to time out.
   const distros = available ? yield* wslEnvironment.listDistros : [];
   const preflightError = yield* wslBackend.lastPreflightError;
   return {
@@ -67,8 +66,7 @@ export const setWslBackendEnabled = makeIpcMethod({
       yield* lifecycle.relaunch(`wslBackendEnabled=${enabled}`);
       return state;
     }
-    // Reconcile is idempotent and never fails; no need for a swap-style
-    // rollback when the WSL side has trouble coming up.
+    // Reconcile never fails, so no rollback is needed.
     yield* wslBackend.reconcile;
     return yield* readWslState;
   }),
@@ -84,8 +82,7 @@ export const setWslDistro = makeIpcMethod({
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
     const change = yield* appSettings.setWslDistro(distro);
     const settings = yield* appSettings.get;
-    // In active wsl-only mode the pool's primary IS the WSL backend, and its
-    // distro is captured when that backend starts, so relaunch to replace it.
+    // WSL-only primary backends capture their distro at startup; relaunch to change it.
     if (settings.wslBackendEnabled && settings.wslOnly && change.changed) {
       const state = yield* readWslState;
       yield* lifecycle.relaunch(`wslDistro=${distro ?? "default"}`);

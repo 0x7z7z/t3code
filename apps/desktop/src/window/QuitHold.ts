@@ -7,8 +7,7 @@ export const QUIT_DOUBLE_PRESS_MS = 500;
 // macOS can suppress Q keyUp while Cmd is held; only auto-repeat proves a hold.
 // After a hold, wait for keyUp or a quiet grace period so repeats cannot reach the next app.
 export const QUIT_HOLD_RELEASE_GRACE_MS = 600;
-// A slow repeat rate can exceed the fixed grace. Waiting for two observed
-// cadences keeps the timer behind the next repeat without slowing normal rates.
+// Two observed repeat cadences accommodate rates slower than the fixed grace.
 const QUIT_HOLD_REPEAT_CADENCE_MULTIPLIER = 2;
 
 export interface QuitHoldKeyInput {
@@ -120,8 +119,7 @@ export function makeQuitShortcutHandler(
     if (!modifierDown || input.alt || input.shift || key !== "q") {
       if (key === modifierKey && !input.alt && !input.shift) return;
 
-      // Keep this separate from release(), which also runs when a fresh Q
-      // keydown follows a keyUp that macOS did not deliver.
+      // release() also runs on fresh keydown after a missing macOS keyUp.
       if (!input.isAutoRepeat) {
         lastPressAt = 0;
         release();

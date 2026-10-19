@@ -34,8 +34,7 @@ const REPO_ROOT = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import
 const MOBILE_ROOT = NodePath.join(REPO_ROOT, "apps/mobile");
 const ANDROID_PACKAGE = "com.t3tools.t3code";
 const APP_SCHEME = "t3code";
-// expo-dev-launcher reads these off the manifest URL and updates the dev menu
-// preferences before the app loads, keeping captures free of dev chrome.
+// Manifest flags update expo-dev-launcher preferences before loading, hiding dev chrome in captures.
 const DEV_CLIENT_LAUNCH_FLAGS = "disableOnboarding=1&disableFab=1&disableAutoLaunch=1";
 const IOS_READY_FILENAME = "T3ShowcaseReadyScene";
 const SERVER_HOST = "0.0.0.0";
@@ -65,8 +64,7 @@ const MOBILE_BUILD_ENV = {
   ANDROID_HOME: ANDROID_SDK_ROOT,
   APP_VARIANT: "production",
   EXPO_NO_GIT_STATUS: "1",
-  // Lets the capture build require full screen on iPad so the app can rotate
-  // itself to landscape (see app.config.ts).
+  // iPad self-rotation needs the capture build's fullscreen mode (app.config.ts).
   T3_SHOWCASE_CAPTURE_BUILD: "1",
   JAVA_HOME:
     NodeProcess.env.JAVA_HOME ??
@@ -338,8 +336,7 @@ export function parseShowcaseCliArgs(args: ReadonlyArray<string>): CliOptions {
       } else if (SHOWCASE_THEMES.some((theme) => theme === value)) {
         themes.add(value as ShowcaseTheme);
       } else {
-        // The app silently falls back to its default palette for an unknown id,
-        // so reject it here rather than shipping a mislabeled screenshot.
+        // Unknown themes silently use the default palette; reject mislabeled captures.
         throw new Error(`Unsupported theme '${value}'. Use ${SHOWCASE_THEMES.join(", ")}, or all.`);
       }
       index += 1;
@@ -864,9 +861,7 @@ async function normalizeIosSimulator(appearance: ShowcaseAppearance, udid: strin
   ]);
 }
 
-// iPadOS 26 windowing ("Chamois") runs UIRequiresFullScreen apps in a fixed
-// portrait compatibility window, which defeats the in-app landscape rotation
-// the capture build relies on.
+// iPadOS 26 windowing forces fullscreen apps into portrait, defeating capture-build rotation.
 async function ensureIosFullScreenAppsMode(udid: string): Promise<void> {
   const current = await commandOutput("xcrun", [
     "simctl",
@@ -878,8 +873,7 @@ async function ensureIosFullScreenAppsMode(udid: string): Promise<void> {
     "SBChamoisWindowingEnabled",
   ]).catch(() => "");
   if (current.trim() === "0") return;
-  // The Settings toggle writes all three keys; SBChamoisWindowingEnabled
-  // alone is not honored on a freshly created device.
+  // Fresh devices honor the Settings toggle only when all three keys are written.
   for (const key of [
     "SBChamoisWindowingEnabled",
     "SBMedusaMultitaskingEnabled",
@@ -970,10 +964,7 @@ async function iosSimulatorLocked(udid: string): Promise<boolean> {
   return state.trim().endsWith(" 1");
 }
 
-/**
- * The staging app asks for notification permission; simctl has no privacy
- * service for it, so answer the prompt until the scene reports ready.
- */
+// simctl has no notification privacy service; answer the staging app's prompt until ready.
 async function allowIosNotificationsUntilReady(udid: string, ready: Promise<void>): Promise<void> {
   const state = { settled: false };
   const tapping = (async () => {
@@ -1111,8 +1102,7 @@ async function captureIos(
       firstScene,
       "--showcaseTheme",
       capture.theme,
-      // The app rotates itself; Simulator menu UI scripting needs macOS
-      // Accessibility permission that CI runners do not grant to osascript.
+      // Simulator rotation UI scripting needs Accessibility permission unavailable on CI.
       "--showcaseOrientation",
       capture.device.orientation ?? "portrait",
     ]);
@@ -1511,8 +1501,7 @@ async function main(): Promise<void> {
       showcaseServers.push(server);
       await waitForPort(port, `${environment.label} server`);
       await seedShowcaseEnvironment({ baseDir, projectIds: environment.projectIds });
-      // The server begins listening before the ServerEnvironment layer
-      // persists the environment id, so poll rather than read once.
+      // Listening precedes environment-ID persistence; wait for the file.
       const environmentId = await waitForFileContent(
         NodePath.join(baseDir, "userdata", "environment-id"),
         `${environment.label} environment id`,

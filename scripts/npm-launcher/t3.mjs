@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// The `t3` npm package. Downloads this version's CLI archive from the GitHub
-// Release into <T3 home>/runtime/versions/<version> (the folder the install
-// scripts and `t3 update` use), verifies it against the release's SHA256SUMS,
-// then runs it. `dist/bin.mjs` re-enters here for background services
-// installed before 0.0.41, which start the npm package with Node and talk to
-// it over an IPC channel.
+// Share the installer's runtime cache; pre-0.0.41 services re-enter here over IPC.
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -79,8 +74,7 @@ async function install(dir, key) {
     .find((m) => m && m[2] === archive);
   if (!line) throw new Error(`${archive} is not listed in the release's SHA256SUMS`);
 
-  // Extract beside the final folder and rename it into place, so an
-  // interrupted download never leaves a half-installed version behind.
+  // Stage beside the destination and rename atomically to avoid half-installed versions.
   fs.mkdirSync(path.dirname(dir), { recursive: true });
   const staging = fs.mkdtempSync(`${dir}.staging-`);
   try {

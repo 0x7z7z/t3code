@@ -104,8 +104,7 @@ export const PublishClientConfig = Alchemy.Action(
       const url = input.url;
       if (url === undefined) return yield* new RelayUrlUnavailableError();
       const entries = relayClientConfigEnv({ ...input, url });
-      // Provider responses are copied in verbatim; a line break in one would
-      // become an extra assignment.
+      // Reject line breaks in provider values to prevent injected assignments.
       for (const [name, value] of Object.entries(entries)) {
         if (/[\r\n]/u.test(value)) return yield* new EnvValueNotSingleLineError({ name });
       }

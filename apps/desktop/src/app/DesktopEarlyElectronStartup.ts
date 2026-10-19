@@ -86,8 +86,7 @@ const WAYLAND_COLOR_MANAGER_FEATURE = "WaylandWpColorManagerV1";
 const featureListNames = (value: string | null): ReadonlyArray<string> =>
   (value ?? "").split(",").flatMap((entry) => entry.trim().match(/^\*?([^<:]+)/)?.[1] ?? []);
 
-// A stale HYPRLAND_INSTANCE_SIGNATURE is often inherited into other desktops, so only
-// trust the session's desktop names.
+// HYPRLAND_INSTANCE_SIGNATURE can be stale; trust only the session's desktop names.
 const isHyprlandSession = (env: NodeJS.ProcessEnv): boolean =>
   (trimNonEmpty(env.XDG_CURRENT_DESKTOP) ?? trimNonEmpty(env.XDG_SESSION_DESKTOP) ?? "")
     .split(":")
@@ -103,9 +102,8 @@ const HyprctlVersionJson = fromLenientJson(
 );
 const decodeHyprctlVersionJson = Schema.decodeSync(HyprctlVersionJson);
 
-// Hyprland 0.48.0 advertises FEATURE_SET_PRIMARIES but rejects set_primaries outside debug mode
-// (hyprwm/Hyprland#9444); 0.51.0 accepts it (hyprwm/Hyprland#11499).
-// Check commits too: development builds and Nix can retain a release's VERSION and tag.
+// Hyprland 0.48.0 rejects advertised set_primaries (hyprwm/Hyprland#9444); 0.51.0 accepts it (hyprwm/Hyprland#11499).
+// Check commits because dev and Nix builds can retain release versions and tags.
 const AFFECTED_HYPRLAND_RELEASE_COMMITS: ReadonlyMap<string, string> = new Map([
   ["0.48.0", "5ee35f914f921e5696030698e74fb5566a804768"],
   ["0.48.1", "29e2e59fdbab8ed2cc23a20e3c6043d5decb5cdc"],

@@ -367,7 +367,6 @@ const installWindowsEnvironment = Effect.fn("desktop.shellEnvironment.installWin
   function* (
     config: ShellEnvironmentConfig,
   ): Effect.fn.Return<boolean, never, ChildProcessSpawner.ChildProcessSpawner> {
-    // Each probe starts PowerShell; run independent probes concurrently to avoid serial startup delays.
     const [noProfile, profile] = yield* Effect.all(
       [
         readWindowsEnvironment(["PATH"], { loadProfile: false }),
@@ -464,8 +463,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       }
     }
 
-    // Locale variables form one precedence group: LC_ALL can override an inherited
-    // LANG or LC_CTYPE, so only hydrate the group when the process has none of them.
+    // Hydrate locale variables together; inherited LC_ALL can override LANG or LC_CTYPE.
     if (
       config.platform === "darwin" &&
       LOCALE_ENV_NAMES.every((name) => Option.isNone(trimNonEmpty(config.env[name])))
@@ -477,8 +475,7 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
         }
       }
 
-      // launchd has no locale; pbcopy reads C-locale UTF-8 as MacRoman.
-      // Set only LC_CTYPE to a supported UTF-8 locale, keeping C-stable formatting and collation.
+      // launchd lacks locale; UTF-8 LC_CTYPE fixes pbcopy's MacRoman decoding without changing C formatting or collation.
       if (LOCALE_ENV_NAMES.every((name) => Option.isNone(trimNonEmpty(config.env[name])))) {
         config.env.LC_CTYPE = FALLBACK_LC_CTYPE;
       }
@@ -518,7 +515,7 @@ const installShellEnvironment = (
   return Effect.succeed(false);
 };
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const environment = yield* DesktopEnvironment.DesktopEnvironment;
   const fileSystem = yield* FileSystem.FileSystem;
