@@ -86,10 +86,7 @@ export function existingThreadIdsForCommand(
   switch (command.type) {
     case "thread.create":
       return [];
-    // Read-state commands only rewrite the thread payload's visited/unread
-    // watermark; they never touch messages, so they do not need the imported
-    // v1 transcript hydrated first. Visits fire on every thread-activity bump
-    // while a thread is open, so keeping them off the import path matters.
+    // Read-state commands touch no messages; skip V1 hydration on frequent visits.
     case "thread.visit":
     case "thread.mark-unread":
       return [];
@@ -385,21 +382,13 @@ export interface ThreadManagementServiceShape {
     readonly projectId: ProjectId;
     readonly instanceId: ProviderInstanceId;
   }) => Effect.Effect<boolean>;
-  /**
-   * Receipt replays start no new work. Callers may skip project-enablement
-   * filtering under the same command id so changed settings cannot refuse
-   * an accepted retry.
-   */
+  /** Receipt replays start no work; skip enablement checks with the same command id so settings cannot reject accepted retries. */
   readonly hasReceipt: (commandId: CommandId) => Effect.Effect<boolean>;
   readonly waitForThread: (
     input: ThreadManagementWaitInput,
   ) => Effect.Effect<ThreadManagementWaitResult, ThreadManagementError>;
-  /**
-   * Settling stops the provider session, so an agent that settles its own
-   * thread uses this to wait for its turn to end. A run that ends any other
-   * way leaves the thread active, as does anything `thread.settle` refuses
-   * then, such as a queued message.
-   */
+  /** Waits for the agent's run to end before settling its thread and stopping the session.
+   * Other endings or settle refusals leave the thread active. */
   readonly settleAfterRun: (input: {
     readonly projectId: ProjectId;
     readonly threadId: ThreadId;
@@ -838,8 +827,7 @@ const make = Effect.gen(function* () {
           threadId: input.threadId,
           cause,
         });
-      // Taken before the first read, so a run update between that read and
-      // the subscription below still replays.
+      // Read the cursor first so updates between the read and subscription replay.
       const afterSequence = yield* orchestrator
         .getThreadEventSequence(input.threadId)
         .pipe(Effect.mapError(loadError));
@@ -857,8 +845,7 @@ const make = Effect.gen(function* () {
       if (selectedRun === undefined) {
         return { threadId: input.threadId, run: null, timedOut: false };
       }
-      // A restart cuts a run and continues it as a new run. Follow that chain,
-      // so a cut run is not the answer while its continuation is pending.
+      // Follow restart continuation chains; cut source runs are not final outcomes.
       const outcome = (runs: ReadonlyArray<OrchestrationV2Run>) =>
         Effect.gen(function* () {
           const current = runs.find((candidate) => candidate.id === selectedRun.id);
@@ -879,8 +866,7 @@ const make = Effect.gen(function* () {
         return { threadId: input.threadId, run: initial.run, timedOut: false };
       }
 
-      // A declined continuation records no event, so its effect settling wakes
-      // the wait too.
+      // Declined continuations emit no event; wake on their effect settling too.
       const wait = Stream.merge(
         Stream.merge(
           orchestrator.streamStoredEventsFrom({
@@ -919,9 +905,7 @@ const make = Effect.gen(function* () {
       if (Option.isSome(waited)) {
         return { threadId: input.threadId, run: waited.value.run, timedOut: false };
       }
-      // The run may have reached a terminal status while the timeout was
-      // winning the race; the final projection read decides what actually
-      // happened, so only a still-active run counts as timed out.
+      // Recheck final projection after timeout; count only still-active runs as timed out.
       const final = yield* outcome((yield* getProjectThreadRecords(input, ["runs"])).runs);
       return { threadId: input.threadId, run: final.run, timedOut: !final.settled };
     });
@@ -1018,9 +1002,7 @@ const make = Effect.gen(function* () {
       if (records.thread.deletedAt !== null) {
         return yield* new OrchestrationV2StopWorkflowError({ ...input, reason: "unavailable" });
       }
-      // A limited caller (an agent over MCP) may not stop work on a thread
-      // running above its own modes. Checked under the thread lock, where the
-      // thread's user cannot raise the modes between this read and the stop.
+      // Check mode limits under the lock so users cannot raise modes between validation and Stop.
       const limit = yield* DispatchModeLimit;
       const exceeded =
         limit === undefined ? undefined : exceededDispatchModeLimit(limit, records.thread);

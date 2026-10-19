@@ -21,8 +21,7 @@ function frameField(frame: unknown, key: string): unknown {
   return typeof frame === "object" && frame !== null ? Reflect.get(frame, key) : undefined;
 }
 
-// The CLI can run a wake turn between a prompt's offer and its own turn.
-// Only the prompt's turn echoes its uuid.
+// A CLI wake can precede the offered prompt's turn; only the latter echoes its uuid.
 function assertRecordedWakeBeforePrompt(transcript: ProviderReplayTranscript) {
   const resumeOfferIndex = transcript.entries.findIndex(
     (entry) => entry.type === "expect_outbound" && entry.label === "prompt.offer:3",

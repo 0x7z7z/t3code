@@ -53,8 +53,7 @@ import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 
 export interface ProviderEventRoutingState {
   readonly ownedThreadIds: ReadonlySet<ThreadId>;
-  // A child created after the root turn ends belongs to the live run, except
-  // workflow members whose coordinator still keeps this run open.
+  // After root settlement, new children belong to the live run unless their coordinator still holds this run open.
   readonly rootTurnEnded: boolean;
   readonly workflowMemberParents: ReadonlyMap<ThreadId, ThreadId>;
   readonly ownedProviderThreadIds: ReadonlySet<ProviderThreadId>;
@@ -107,10 +106,7 @@ function isSettledRunEligibleForInheritedBackground(status: OrchestrationV2Run["
   return status === "interrupted" || status === "failed" || status === "cancelled";
 }
 
-/**
- * Provider sessions are runtime containers and can host multiple provider threads, so the durable
- * provider-thread lineage is the discriminator.
- */
+/** Use durable provider-thread lineage; sessions can host multiple threads. */
 export function selectInheritedBackgroundTurnItems(input: {
   readonly threadId: ThreadId;
   readonly currentProviderThreadId: ProviderThreadId;
@@ -169,10 +165,7 @@ function childTurnsContinue(terminal: ProviderTerminalEvent): boolean {
   return terminal.status === "failed" && terminal.childTurnsContinue === true;
 }
 
-/**
- * A running subagent stays with the run that launched it, which keeps ingesting until it ends;
- * taking it over too would store its events twice.
- */
+/** Launching runs still ingest running subagents; taking them over would duplicate events. */
 export function canRouteRelatedSubagent(status: OrchestrationV2Subagent["status"]): boolean {
   return status === "completed";
 }
@@ -211,8 +204,7 @@ export function cascadeTerminalizeRunOwnedSubagents(input: {
 > {
   return Effect.gen(function* () {
     const events: Array<OrchestrationV2DomainEvent> = [];
-    // Prefer lifetime linkage over currently-open rows: subagent/turn-item
-    // snapshots may terminalize before the linked child-thread node settles.
+    // Retain lifetime linkage; child nodes can remain open after subagent and item settlement.
     const childThreadIds = new Set(input.open.linkedChildThreadIds);
     for (const item of [...input.open.subagents.values(), ...input.open.turnItems.values()]) {
       if (item.childThreadId !== null) {
@@ -417,10 +409,7 @@ export function routeProviderEvent(
     case "subagent.updated": {
       const belongs = ownsRun(event.subagent.runId) || ownsChildThread(event.subagent.threadId);
       const coordinator = event.subagent;
-      // A provider-native subagent's child thread follows the live run it is
-      // attributed to. A resume reattributes it to the resuming run, which
-      // never saw the child thread created when the subagent was not
-      // completed at its start (e.g. cancelled by a server restart).
+      // Resumes reattribute child threads to the live run, which may not have observed their creation.
       const adopted =
         ownsRun(coordinator.runId) &&
         !state.rootTurnEnded &&
@@ -660,9 +649,7 @@ export const layer: Layer.Layer<
             : [];
         const persistedStatus =
           input.terminal.status === "completed" ? "waiting" : input.terminal.status;
-        // Completion cohorts are advanced by Orchestrator while a provider
-        // turn is in flight. Do not replay the run snapshot captured at start
-        // over a newer acknowledgement, successor, or Stop barrier.
+        // Omit delegatedCompletion; the startup snapshot must not overwrite newer acknowledgements, successors, or Stop barriers.
         const { delegatedCompletion: _delegatedCompletion, ...runWithoutDelegatedCompletion } =
           input.run;
         const finalizedRun: OrchestrationV2Run = {
@@ -687,9 +674,7 @@ export const layer: Layer.Layer<
         const checkpointCaptureCommandId = CommandId.make(
           `command:effect:checkpoint.capture:${input.run.id}`,
         );
-        // Stopped runs capture too: their checkpoint is the rollback point for
-        // the next message. The capture is enqueued with these terminal events,
-        // ahead of any later run's start on this thread's effect lane.
+        // Stopped runs capture rollback points for the next message; enqueue before later starts on this effect lane.
         const finalization = {
           effects:
             input.terminal.status === "completed" ||
@@ -994,8 +979,7 @@ export const layer: Layer.Layer<
                   ? {}
                   : {
                       shouldFinalizeRun: input.shouldFinalizeRun,
-                      // Stop may commit between the ownership read and this
-                      // terminal write. Gate the events and checkpoint together.
+                      // Gate terminal events and checkpoint together; Stop can commit after the ownership read.
                       writeIfRunCurrent: {
                         activeAttemptId: input.attempt.id,
                         expectedStatus: "running" as const,
@@ -1061,10 +1045,7 @@ export const layer: Layer.Layer<
                     return next;
                   });
                 }
-                // Preserve childThreadId linkage for the root-run lifetime even after the subagent
-                // row terminalizes, so open child-thread nodes can still be proven linked on a
-                // later root interrupt. A provider records nested native subagents on the child
-                // thread, runless; they die with this run too.
+                // Retain childThreadId linkage for root interrupts after subagent settlement; runless nested children die with this run too.
                 if (
                   belongsToRootRun ||
                   (belongsToOwnedChildThread &&
@@ -1183,10 +1164,8 @@ export const layer: Layer.Layer<
             if (childSubagents.size > 0) {
               return false;
             }
-            // Newly owned items depend on adapters emitting a non-terminal event before the root
-            // terminal. Owner loss (a newer run claimed lastRunOrdinal) must not close this stream
-            // while these sets are non-empty: turn_item.updated writes are not ownership-gated, so
-            // late completions still land.
+            // Adapters must announce owned items before root settlement. Keep ingestion open after owner loss
+            // while they remain; turn_item.updated is not ownership-gated.
             const backgroundItems = yield* Ref.get(activeBackgroundTurnItems);
             if (backgroundItems.size > 0) {
               return false;
@@ -1194,9 +1173,7 @@ export const layer: Layer.Layer<
             if (yield* Ref.get(providerThreadOwnerLost)) {
               return true;
             }
-            // Claude background Bash has no turn-item projection. Use only the
-            // thread-scoped probe: session-wide pending work (siblings, wake
-            // buffers, session subagents) must not pin this root subscription.
+            // Claude background Bash has no turn item; probe only this thread so sibling work cannot pin the subscription.
             const latestProviderThreadSnapshot = yield* Ref.get(latestProviderThread);
             if (input.session.hasPendingBackgroundWorkForThread !== undefined) {
               const hasPendingWork = yield* input.session
@@ -1209,8 +1186,7 @@ export const layer: Layer.Layer<
             return true;
           });
           const filterAssistantEvent = makeAssistantStreamingFilter(responseStreamingMode);
-          // Held text writes nothing, so its item would take a position only
-          // when finally written, behind every item that began after it.
+          // Reserve held text positions now so a delayed flush cannot place it after later items.
           const reservedHeldTurnItemIds = new Set<TurnItemId>();
           const providerEventFiber = yield* eventSubscription.events.pipe(
             Stream.filterEffect((event) =>
@@ -1310,8 +1286,7 @@ export const layer: Layer.Layer<
               Effect.gen(function* () {
                 const terminal = yield* Ref.get(terminalEvent);
                 if (terminal === null) {
-                  // A session release interrupts or fails the stream; a clean
-                  // end without a terminal means the run would never settle.
+                  // Clean stream ends without terminals would leave runs unsettled; session releases interrupt or fail instead.
                   return yield* new RunExecutionIngestError({
                     runId: input.run.id,
                     cause: new ProviderAdapter.ProviderAdapterEventStreamError({
@@ -1324,8 +1299,7 @@ export const layer: Layer.Layer<
                 yield* finalizeRootRun(terminal);
               }),
             ),
-            // Server shutdown interrupts the subscription and leaves the run to
-            // restart recovery; every other failure fails the run.
+            // Shutdown interrupts defer settlement to recovery; other failures fail the run.
             Effect.catchCauseIf(
               (cause) => !Cause.hasInterruptsOnly(cause),
               (cause) =>
@@ -1387,9 +1361,7 @@ export const layer: Layer.Layer<
             Effect.forkDetach,
           );
 
-          // A provider turn is a sign that the session is still alive. Keep
-          // its already-issued MCP credential valid even when the agent goes
-          // a long time between browser-tool calls.
+          // Active provider turns keep issued MCP credentials valid between infrequent browser calls.
           yield* McpSessionRegistry.touchActiveMcpThread(input.run.threadId);
           const appContext = (yield* mcpAppModelContext
             .forThread(input.run.threadId)
@@ -1400,9 +1372,7 @@ export const layer: Layer.Layer<
                 ),
               ),
             )).map((entry) => ({
-            // The item id alone is unique and needs no escaping; server and
-            // tool names are free text that would break the tag Codex wraps
-            // the context in.
+            // Use item ids for context tags; free-text server and tool names can break them.
             key: `mcp_app_${entry.itemId.replace(/[^\w.-]/g, "_")}`,
             text: entry.text,
           }));
@@ -1428,8 +1398,7 @@ export const layer: Layer.Layer<
             runtimePolicy: input.runtimePolicy,
             ...(appContext.length === 0 ? {} : { appContext }),
           };
-          // Check after the context read: ingestion can settle the run while
-          // it awaits. A failed ownership read fails the start below.
+          // Recheck ownership after the yielding context read; ingestion may have settled the run.
           const shouldStart =
             input.shouldStartProviderTurn === undefined
               ? Exit.succeed(true)

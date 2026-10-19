@@ -135,15 +135,12 @@ export class PullRequestSyncReactor extends Context.Service<
   {
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
     readonly drain: Effect.Effect<void>;
-    /**
-     * Force the next sweep to re-read this pull request, even when its snapshot is terminal.
-     * While its host is rate limited, the read waits for the first sweep after the pause.
-     */
+    /** Forces reread on the next sweep, including terminal snapshots; rate-limited hosts wait until the pause ends. */
     readonly requestSync: (key: ThreadPullRequestKey) => Effect.Effect<void>;
   }
 >()("t3/orchestration-v2/PullRequestSyncReactor") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const engine = yield* Orchestrator.OrchestratorV2;
   const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -154,21 +151,17 @@ export const make = Effect.gen(function* () {
   const lastSyncedAt = new Map<string, number>();
   const requested = new Map<string, number>();
   let requestGeneration = 0;
-  // Requested keys wait in `requested` for one queued sweep, so a burst of links (an agent
-  // linking dozens of pull requests) is read together and shares the summary batches.
+  // Queue requested keys for one sweep so link bursts share summary batches.
   let requestedSweepQueued = false;
   const retryStacks = new Set<string>();
-  // Rate limit pauses by project and host, since each project reads with its own credential.
-  // A paused host refuses every read without asking it, so the sweep leaves its pull requests
-  // due until the pause ends rather than failing each of them every minute.
+  // Pause per project and host because credentials are project-specific; leave paused PRs due until reset.
   const pausedUntil = new Map<string, number>();
 
   const isDue = (key: string, entries: ReadonlyArray<LinkEntry>, nowMs: number): boolean => {
     if (requested.has(key) || retryStacks.has(key)) return true;
     if (entries.some((entry) => entry.link.snapshot === null)) return true;
     const active = entries.filter((entry) => isUnsettled(entry.thread));
-    // A merged snapshot without its merge time cannot settle the thread, so it keeps the slow
-    // cadence until the host supplies one (Bitbucket snapshots saved before it was read).
+    // Merged snapshots without mergedAt cannot settle threads; reread slowly until supplied.
     if (
       active.every(
         (entry) => entry.link.snapshot?.state === "merged" && entry.link.snapshot.mergedAt != null,
@@ -220,9 +213,7 @@ export const make = Effect.gen(function* () {
         link.snapshot === null ||
         !snapshotFieldsEqual(link.snapshot, fields) ||
         !stacksEqual(link.stack, nextStack);
-      // Persist discovered siblings before a terminal snapshot can trigger settlement. A settled
-      // thread that shares this pull request with an active one takes the fresh snapshot, but
-      // gains no links.
+      // Persist siblings before terminal snapshots trigger settlement; settled threads get snapshots without new links.
       for (const layer of isUnsettled(thread) ? (fetchedStack?.stack?.layers ?? []) : []) {
         const layerKey = {
           host: normalizeThreadPullRequestKey(link).host,
@@ -279,8 +270,7 @@ export const make = Effect.gen(function* () {
         number: first.link.number,
       };
       const generation = requested.get(key);
-      // A held merged summary is served without asking the host, so a snapshot still missing its
-      // merge time has to drop it or the slow-cadence re-read would hand back the same gap.
+      // Drop cached merged summaries missing mergedAt so rereads can fill it.
       const missingMergedAt = entries.some(
         (entry) => entry.link.snapshot?.state === "merged" && entry.link.snapshot.mergedAt == null,
       );
@@ -372,8 +362,7 @@ export const make = Effect.gen(function* () {
         }
         const first = entries[0]!;
         const pauseKey = `${first.thread.projectId}\0${normalizeThreadPullRequestKey(first.link).host}`;
-        // Checked against the clock as each read starts, so a pause found earlier in this sweep
-        // holds the rest, and one that ends during the sweep lets the rest through.
+        // Check pauses at each read so changes during the sweep apply immediately.
         return Clock.currentTimeMillis.pipe(
           Effect.flatMap((startedAtMs) =>
             (pausedUntil.get(pauseKey) ?? 0) > startedAtMs
@@ -382,8 +371,7 @@ export const make = Effect.gen(function* () {
           ),
         );
       },
-      // As wide as one batched summary read, so the sweep's reads on a host arrive together and
-      // GitHub answers them in one request rather than one `gh pr view` apiece.
+      // Match summary batch width so GitHub reads coalesce into one request.
       { concurrency: 25, discard: true },
     );
     for (const [reason, { count, key }] of skips) {
@@ -441,10 +429,7 @@ export const make = Effect.gen(function* () {
               requestSync,
               { discard: true },
             );
-          // An agent can merge or close its pull request from a shell (`gh pr merge`), which
-          // sends no merge notification. When a run that ran such a command ends, read the
-          // thread's open links fresh, so settlement does not wait for the next sweep and the
-          // cached summary. Other runs add no host reads.
+          // Shell merges and closes send no notification; refresh open links when those runs end, bypassing cached summaries.
           case "turn-item.updated":
             if (
               event.payload.type === "command_execution" &&

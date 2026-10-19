@@ -5,10 +5,7 @@ const PI_COMPACTION_INSTRUCTED = `/compact keep the opaque marker ${PI_COMPACTIO
 const PI_COMPACTION_RECALL_PROMPT =
   "Return the opaque marker I asked you to remember. Respond with only the marker.";
 
-/**
- * The recording workspace uses a tiny keepRecentTokens so a short
- * conversation is compactable.
- */
+/** Tiny keepRecentTokens makes the short recording compactable. */
 export function piCompactionInput(): OrchestratorFixtureInput {
   return {
     steps: [

@@ -1,8 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off
-/**
- * Workflow members are absent from provider events, so their transcript
- * is the only conversation record.
- */
+/** Workflow members appear only in transcripts, not provider events. */
 import * as NodePath from "node:path";
 
 import { OrchestrationWorkflowFileError } from "@t3tools/contracts";
@@ -41,11 +38,7 @@ export const WorkflowAgentTranscriptReadObserver = Context.Reference<
   defaultValue: () => () => Effect.void,
 });
 
-/**
- * Conversation lines only: `attachment` lines and `isMeta` user lines are
- * harness bookkeeping (hook output, skill listings, injected context), and a
- * line without a uuid cannot be projected idempotently.
- */
+/** Skip harness bookkeeping (attachment and isMeta user lines) and lines without uuids needed for idempotent projection. */
 function parseWorkflowAgentTranscriptLines(contents: string): ReadonlyArray<unknown> {
   return contents.split("\n").flatMap((line) => {
     if (line.trim().length === 0) return [];

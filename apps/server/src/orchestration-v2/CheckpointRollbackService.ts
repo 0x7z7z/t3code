@@ -268,8 +268,7 @@ export const layer: Layer.Layer<
             run.status === "failed" ||
             run.status === "cancelled"),
       );
-      // Rolled-back turns stay in the audit history, but no longer exist in
-      // the provider conversation and must not be counted by a later rewind.
+      // Rolled-back turns remain in audit history but must not count toward later native rewinds.
       const rolledBackRunIds = new Set(
         projection.runs.filter((run) => run.status === "rolled_back").map((run) => run.id),
       );
@@ -304,9 +303,7 @@ export const layer: Layer.Layer<
         yield* checkpoints.deleteStaleRefs({ scope, checkpoints: staleCheckpoints });
       }
 
-      // Thread commands write full provider thread rows under this lock. Without
-      // it, a message sent during the rollback can plan against the old native
-      // session and commit after this, undoing the provider's fork.
+      // Lock against full-row thread writes that could restore the old native session after rollback.
       yield* threadCommands.withLock(
         input.threadId,
         Effect.gen(function* () {

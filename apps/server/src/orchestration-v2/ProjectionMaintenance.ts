@@ -195,9 +195,7 @@ export const layer: Layer.Layer<
           Effect.mapError((cause) => new ProjectionMaintenanceError({ operation, cause })),
         );
 
-    // thread.created stays out — verify derives the expected thread set from
-    // it, and it anchors replay ordering. thread.deleted stays out too: clients
-    // and waitForThread switch on the event type, not just the payload.
+    // Keep thread.created as the verification and replay anchor; clients recognize deletion by thread.deleted event type.
     const SUPERSEDABLE_THREAD_EVENT_TYPES = [
       "thread.archived",
       "thread.unarchived",
@@ -217,29 +215,17 @@ export const layer: Layer.Layer<
       "thread.model-selection-updated",
       "thread.provider-switched",
     ];
-    // Read-state events carry the whole thread too, but client reducers apply
-    // them without bumping updatedAt. They supersede only each other: a newer
-    // visit must not delete the rename that carries the activity timestamp,
-    // while any newer activity-bearing event supersedes both groups.
+    // Read-state events preserve updatedAt and supersede only each other. Activity events supersede both groups.
     const READ_STATE_THREAD_EVENT_TYPES = ["thread.visited", "thread.marked-unread"];
 
     const supersedableThreadEventTypes = new Set(SUPERSEDABLE_THREAD_EVENT_TYPES);
     const readStateThreadEventTypes = new Set(READ_STATE_THREAD_EVENT_TYPES);
-    // Keep subagent.updated and turn-item.updated: slimmed payloads reference their prompts.
-    // Discovery shares the synchronous connection; json_extract over large
-    // payloads can block the event loop for ~90 ms on a 500-row page.
+    // Keep subagent.updated and turn-item.updated because slim payloads reference their prompts.
+    // Small pages bound synchronous json_extract work on large payloads.
     const COMPACTION_PAGE_SIZE = 50;
 
-    /**
-     * Scan newest first to retain the newest state for each entity. Keyed
-     * entities (messages, nodes, PR links) also keep their oldest event: client
-     * reducers append an entity where they first see it, so a replay from any
-     * cursor must either carry that first event or find the entity already
-     * present. Only the events in between are deleted.
-     * Page every event, including non-candidates: filtering before LIMIT could
-     * still scan the entire history when superseded events are sparse.
-     * turn-item.updated stays intact because replay assigns positions on first write.
-     */
+    /** Retain newest and oldest keyed events to preserve client insertion order; page all events to bound sparse scans.
+     * Keep turn-item.updated because replay assigns positions on first write. */
     const compactEventStore = Effect.gen(function* () {
       const bounds = yield* sql<{
         readonly event_sequence: number;
@@ -253,8 +239,7 @@ export const layer: Layer.Layer<
       let throughReceiptRowId = bounds[0]?.receipt_row_id ?? 0;
       const retainedThreadIds = new Set<string>();
       const retainedReadStateThreadIds = new Set<string>();
-      // Per key: the lowest sequence seen so far after the newest. It is
-      // deleted once an even older event turns up and kept otherwise.
+      // Retain each key's oldest candidate, deleting it only when an older event appears.
       const oldestCandidateByEntityKey = new Map<string, number | null>();
       let deletedEventCount = 0;
       let deletedReceiptCount = 0;
@@ -342,8 +327,7 @@ export const layer: Layer.Layer<
             }
           }
         }
-        // Both discovery and deletion use the synchronous connection. Yield even
-        // when this page has nothing to delete so startup and requests can progress.
+        // Yield even without deletions; synchronous discovery must not block startup and requests.
         yield* Effect.yieldNow;
         if (obsolete.length > 0) {
           yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`;

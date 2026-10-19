@@ -138,8 +138,7 @@ export const makeThreadLiveEventCoalescer = <E = never>(options?: {
         Effect.catchTags({ LiveStreamBufferError: () => Effect.void }),
       );
 
-    // Keep each source batch together so a synchronization marker cannot pass
-    // events already pulled from PubSub but still being coalesced.
+    // Keep source batches together so synchronization markers cannot pass coalesced events.
     const offerAll = Effect.fn("ThreadLiveEventCoalescer.offerAll")(function* (
       inputs: ReadonlyArray<ThreadLiveInput>,
     ) {

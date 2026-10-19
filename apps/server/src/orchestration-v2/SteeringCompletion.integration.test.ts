@@ -702,9 +702,7 @@ it.effect("starts a steer that missed the turn on the saved next-turn selection"
   ),
 );
 
-// A draft that never reaches a paragraph boundary is held back while it
-// streams. Codex only flushes it at turn end, after the final answer is written,
-// so the draft must already own its place from before the steer.
+// Codex flushes held drafts after the final answer; reserve their pre-steer position before turn end.
 it.effect("keeps a held commentary draft before the steer when turn end flushes it", () =>
   Effect.scoped(
     Effect.gen(function* () {

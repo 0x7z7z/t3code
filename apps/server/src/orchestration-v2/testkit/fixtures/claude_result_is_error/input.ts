@@ -4,11 +4,7 @@ import {
   type OrchestratorFixtureInput,
 } from "../shared.ts";
 
-/**
- * The SDK reports API-level failures (401 auth, 529 overloaded, ...) with
- * subtype "success" and is_error: true, alongside a synthetic-model
- * assistant message carrying the error text.
- */
+/** SDK API failures use subtype "success", is_error true, and synthetic assistant error text. */
 export function claudeResultIsErrorInput(): OrchestratorFixtureInput {
   return {
     steps: [

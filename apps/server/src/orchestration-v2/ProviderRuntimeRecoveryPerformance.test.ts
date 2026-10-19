@@ -35,8 +35,7 @@ import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderRuntimeRecovery from "./ProviderRuntimeRecoveryService.ts";
 
-// `it.live` keeps a real clock: each reconcile gets a fresh command id, so the
-// second recover cannot hide behind command receipt dedup.
+// it.live gives reconciles distinct clock-derived command ids so receipt dedup cannot hide the second recovery.
 
 const layerStores = Layer.mergeAll(
   EventStore.layer,

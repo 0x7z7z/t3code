@@ -288,8 +288,7 @@ describe.runIf(process.env.T3_CURSOR_LIVE_ORCHESTRATOR === "1")(
             return yield* waitForIdle(threadId);
           });
 
-          // The SDK decides once per process whether local sandboxing works.
-          // The unsandboxed thread must run first to catch a wrong verdict.
+          // The SDK caches its sandbox verdict per process; run unsandboxed first to expose incorrect detection.
           const fullAccess = yield* runThread({ name: "full-access", runtimeMode: "full-access" });
           const supervised = yield* runThread({
             name: "supervised",

@@ -149,9 +149,7 @@ describe("GrokAdapterV2 capabilities", () => {
     );
 
     assert.isFalse(flavor.interruptPromptOnCancel);
-    // User Stop (requestRuntimeRestart) keeps the hard process-group kill and
-    // respawn: Grok cancel is detach-and-continue, so only a process kill
-    // stops the work.
+    // Grok cancel detaches and continues; Stop must kill the process group and respawn.
     assert.isTrue(flavor.restartRuntimeAfterInterrupt);
     assert.isTrue(flavor.terminateRuntimeProcessGroupOnInterrupt);
     assert.isUndefined(flavor.restartRuntimeOnEveryInterrupt);

@@ -3939,8 +3939,7 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       assert.isTrue((yield* maintenance.rebuild).valid);
       yield* assertCancelled;
 
-      // Preparation may finish after archive. Even reopening must not let its
-      // late callbacks revive the cancelled run or its background activity.
+      // Late preparation callbacks must not revive archived runs, even after reopen.
       yield* orchestrator.dispatch({
         type: "thread.unarchive",
         commandId: CommandId.make("archive-preparing-unarchive"),
@@ -5186,8 +5185,7 @@ it.layer(layerSharedApplicationDataPlaneTest)("snooze projection", (it) => {
       const firstSnoozedAt = firstProjection.thread.snoozedAt;
       assert.isNotNull(firstSnoozedAt);
 
-      // Repeating a calendar preset sends the same wake time. It must still
-      // restamp snoozedAt, or a failure that woke the thread keeps it awake.
+      // Restamp snoozedAt for identical wake times so previously waking failures do not keep the thread awake.
       yield* TestClock.adjust("1 second");
       yield* orchestrator.dispatch({
         type: "thread.snooze",
@@ -5462,9 +5460,7 @@ it.layer(Layer.fresh(layerSharedApplicationDataPlaneTest))("compact PR events", 
         latest?.pullRequests,
       );
 
-      // A later visit is read state only: clients keep updatedAt from the
-      // rename, so compaction must keep the rename. Two visits supersede each
-      // other, and a later rename supersedes a visit.
+      // Visits preserve updatedAt, so compaction must retain earlier renames; later renames supersede visits.
       const threadEvents = () => sql<{ event_type: string }>`
         SELECT event_type FROM orchestration_events
         WHERE stream_id = ${threadId}
@@ -5641,9 +5637,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           OrchestrationV2Run,
           OrchestrationV2Run,
         ];
-        // A user stop holds the queue as the run ends (thread.turn.interrupt with
-        // holdQueue). Without the hold, the terminal-run worker may start the
-        // queued run before the resume below, depending on fiber scheduling.
+        // Hold the queue like user Stop so the terminal worker cannot start it before explicit resume.
         yield* events.write({
           events: [
             {

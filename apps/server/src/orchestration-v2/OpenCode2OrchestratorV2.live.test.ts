@@ -309,8 +309,7 @@ describe.runIf(binaryPath !== undefined && ROOT !== "")("OpenCode 2 live orchest
         yield* fs.writeFileString(path.join(ROOT, "work", "hello.txt"), "hello from t3 live\n");
         yield* EffectWorker.runDaemonWithOptions({ concurrency: 2 }).pipe(Effect.forkScoped);
 
-        // A status check starts a fresh server, which lists no models for its
-        // first few hundred milliseconds; the picker must still get them.
+        // Fresh servers list no models for a few hundred milliseconds.
         const instance =
           yield* (yield* ProviderInstanceRegistry.ProviderInstanceRegistry).getInstance(INSTANCE);
         assert.isDefined(instance);
@@ -1055,8 +1054,7 @@ describe.runIf(binaryPath !== undefined && ROOT !== "")("OpenCode 2 live orchest
     360_000,
   );
 
-  // Needs an external server behind a proxy that cuts its event streams on
-  // `GET <proxy>/__drop`, so only the stream drops while the server stays up.
+  // Requires an external server behind a proxy that drops only event streams on GET <proxy>/__drop.
   it.live.runIf(process.env.OPENCODE2_DROP_URL !== undefined)(
     "picks a turn back up after an external server's event stream drops mid-turn",
     () =>

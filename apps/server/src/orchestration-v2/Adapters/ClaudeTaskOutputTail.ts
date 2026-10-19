@@ -4,18 +4,13 @@ import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-/**
- * The Agent SDK sends no stdout until the tool result. Claude Code writes
- * running command output to
- * <tmp>/claude-<uid>/<project>/<session_id>/tasks/<task_id>.output, naming
- * the task in task_started. This private layout can change, so failures
- * degrade to no live output; the tool result still supplies the full output.
- */
+/** The SDK withholds stdout until tool results; tail task_started files for live output.
+ * The private Claude layout can change; failures omit live output and retain the final result. */
 
 const CLAUDE_TASK_OUTPUT_POLL_MS = 250;
-/** Give up looking for a file Claude Code never wrote (a newer layout, or Windows). */
+/** Bound discovery when Claude never writes the file. */
 const MAX_LOCATE_ATTEMPTS = 40;
-/** A faster writer skips ahead: only the tail is shown anyway. */
+/** Skip ahead of fast writers; only the tail is displayed. */
 const MAX_READ_BYTES = 256 * 1024;
 
 /** Claude Code's per-user temp root, or none where it has no uid (Windows). */
@@ -52,12 +47,7 @@ const locate = Effect.fn("ClaudeTaskOutputTail.locate")(function* (input: {
   return Option.none<string>();
 });
 
-/**
- * Reads appended output until `stop` completes, then reads once more so the
- * last bytes written before the command exited still reach live viewers. The
- * caller completes `stop` when the tool result arrives or the turn ends, and
- * awaits the returned effect.
- */
+/** Complete stop on tool result or turn end, then await the effect; it performs a final read before returning. */
 export const tailClaudeTaskOutput = Effect.fn("ClaudeTaskOutputTail.tail")(function* (input: {
   readonly root: string;
   readonly sessionId: string;
@@ -98,7 +88,7 @@ export const tailClaudeTaskOutput = Effect.fn("ClaudeTaskOutputTail.tail")(funct
       if (Option.isSome(bytes)) {
         // Skipped output must not splice two unrelated lines together.
         const skipped = start > offset;
-        // Bytes held from before the gap belong to a character we never finished reading.
+        // Reset partial UTF-8 bytes when skipping output.
         if (skipped) decoder = new TextDecoder("utf-8", { fatal: false });
         offset = start + bytes.value.byteLength;
         const text = (skipped ? "\n" : "") + decoder.decode(bytes.value, { stream: true });

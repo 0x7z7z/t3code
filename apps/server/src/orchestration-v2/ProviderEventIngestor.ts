@@ -389,12 +389,7 @@ export const layer: Layer.Layer<
       },
     );
 
-    /**
-     * A native subagent's thread starts on the parent's model when the provider
-     * names the real one later (a Claude agent file's model arrives with the
-     * subagent's first reply). Thread commands rewrite the whole thread row
-     * under the thread's lock, so this read and write take it too.
-     */
+    /** Providers may reveal native subagent models late; lock full-row updates against concurrent thread commands. */
     const syncSubagentThreadModel = Effect.fn("ProviderEventIngestor.syncSubagentThreadModel")(
       function* (input: ProviderEventIngestInput, subagent: OrchestrationV2Subagent) {
         const { childThreadId, model } = subagent;
@@ -439,12 +434,7 @@ export const layer: Layer.Layer<
       },
     );
 
-    /**
-     * Retire the runs that fell off its active branch with the same run,
-     * root-node, and checkpoint updates CheckpointRollbackService writes for a
-     * T3 revert. The run reporting the rewind performed it and stays, so it
-     * keeps lastRunOrdinal.
-     */
+    /** Retire rewound runs like CheckpointRollbackService; retain the reporting run and its lastRunOrdinal. */
     const rollBackRewoundRuns = Effect.fn("ProviderEventIngestor.rollBackRewoundRuns")(function* (
       input: ProviderEventIngestInput,
       rewind: {
@@ -595,8 +585,7 @@ export const layer: Layer.Layer<
               }),
             ];
           case "node.updated":
-            // Adapters send an unchanged node again with each text delta. Compare with the
-            // stored node, not the last one sent, because the server also writes nodes.
+            // Compare repeated adapter nodes with storage; server writes can change them too.
             if (yield* projections.isNodeStored(input.event.node)) return [];
             return [
               yield* makeDomainEvent(input, {
@@ -777,8 +766,7 @@ export const layer: Layer.Layer<
                 !isTemporaryWorktreeBranch(child.branch)
               )
                 return storedEvents;
-              // Git renames before scanning committed threads. If that scan missed this
-              // creation, HEAD already has the new name, even if the parent moved away.
+              // Git renames before scanning threads; resolve HEAD to catch child creations missed by that scan.
               const branch = yield* git.resolveBranchName(child.worktreePath, "HEAD");
               if (branch === null || branch === child.branch) return storedEvents;
               const now = yield* DateTime.now;

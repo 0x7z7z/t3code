@@ -1073,8 +1073,7 @@ describe("AcpAdapterV2", () => {
       );
       type Runtime = AcpSessionRuntime.AcpSessionRuntime["Service"];
       let handler: Parameters<Runtime["handleSessionUpdate"]>[0] | undefined;
-      // Devin streams a file write as it generates it: each update resends the
-      // whole file so far, a few characters longer, with no status.
+      // Devin resends the growing file without status on each update.
       const file = `${"x = 1\n".repeat(800)}END_OF_FILE\n`;
       const chunks = 200;
       const streamedWrite = (
@@ -6617,8 +6616,7 @@ describe("AcpAdapterV2", () => {
       assert.isTrue(yield* hasPendingBackgroundWork);
       assert.isDefined(sessionUpdateHandler, "session update handler must be wired");
 
-      // A production Grok spawn ACK has raw tool status completed but extracts
-      // as a running subagent with its original non-empty prompt.
+      // Grok reports spawn ACKs as completed tools with running subagents and non-empty prompts.
       yield* sessionUpdateHandler!({
         sessionId: "mock-session-1",
         update: {
@@ -7388,8 +7386,7 @@ describe("AcpAdapterV2", () => {
           },
         },
       });
-      // Do not use Effect.timeout under TestClock; poll after yielding so a
-      // missed projection fails the assertion instead of hanging the suite.
+      // Avoid Effect.timeout under TestClock; yield and assert so a missing projection cannot hang.
       yield* Effect.yieldNow;
       yield* Effect.yieldNow;
 
@@ -8590,9 +8587,7 @@ describe("AcpAdapterV2", () => {
       }
       assert.equal(terminalStatus, "interrupted");
 
-      // Effect 4 Queue.takeAll waits for at least one element when empty. After
-      // the session/prompt stream drain the protocol queue is often empty, so
-      // takeAll would hang forever.
+      // Queue.takeAll waits on an empty queue in Effect 4.
       yield* Queue.clear(protocolEvents);
       yield* runtime.startTurn(
         makeTurnInput({ threadId, providerThread, instanceId, runtimePolicy, now, ordinal: 2 }),
@@ -8616,9 +8611,7 @@ describe("AcpAdapterV2", () => {
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
-  // it.live: ownDetachedProcessGroup teardown uses wall-clock sleeps; under
-  // it.effect the interrupt timeout on context.completed still needs real time
-  // after the soft steer clears the turn.
+  // it.live is required: detached process teardown and the interrupt timeout use wall-clock time.
   it.live(
     "Stop after settled soft steer contains the orphan runtime and respawns without subagent carryover",
     () =>
@@ -12240,8 +12233,7 @@ describe("AcpAdapterV2", () => {
       });
       assert.equal(taskkillCommands.length, 1);
       yield* Scope.close(runtimeScope, Exit.void);
-      // The scope finalizer picks its kill path from the host, not processGroupPlatform,
-      // so only a Windows host sends it through taskkill a second time.
+      // The finalizer chooses taskkill from the host platform, ignoring processGroupPlatform.
       const finalizerTaskkills = (yield* HostProcess.Platform) === "win32" ? 1 : 0;
       assert.equal(taskkillCommands.length, 1 + finalizerTaskkills);
       assert.deepEqual(taskkillCommands.at(-1), taskkillCommands[0]);

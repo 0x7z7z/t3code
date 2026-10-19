@@ -119,8 +119,7 @@ const openFakeCli = (cli: string) =>
   });
 
 describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("Claude CLI process", () => {
-  // The CLI stops its MCP servers but leaves their children running. The
-  // child holds a FIFO open, so its death reads as EOF without polling.
+  // The leftover child holds a FIFO open; its death produces EOF without polling.
   it.effect("stops what the CLI left running when the session closes", () =>
     Effect.gen(function* () {
       const cli = fakeClaudeCli(

@@ -33,11 +33,7 @@ export function buildActiveShellSnapshot(input: {
   };
 }
 
-/**
- * One transaction covers the reads so they agree; the threads are decoded after it commits,
- * because the server shares one SQLite connection and decoding a large shell takes longer than
- * reading it.
- */
+/** Read one snapshot transaction, then decode after commit so large shells release the shared SQLite connection promptly. */
 export const loadShellSnapshotParts = <E1, E2, E3, E4>(input: {
   readonly sql: SqlClient.SqlClient;
   readonly readThreads: Effect.Effect<Effect.Effect<OrchestrationV2ThreadShellSnapshot, E2>, E1>;
@@ -99,10 +95,7 @@ export function coalesceShellApplicationEvents<A extends ShellApplicationEvent>(
   );
 }
 
-/**
- * Prevents a newer marked enrichment from landing before the unmarked authoritative initial
- * snapshot.
- */
+/** Emit the authoritative initial snapshot before marked enrichment. */
 export function composeShellStreamWithEnrichment<A, E, R, A2, E2, R2, A3, E3, R3>(input: {
   readonly initial: Stream.Stream<A, E, R>;
   readonly tail: Stream.Stream<A2, E2, R2>;
@@ -216,11 +209,7 @@ const sameThreadShell = Schema.toEquivalence(ThreadShellSchema);
 
 const UNCHANGED_THREAD_SHELL_RESEND_MS = 5_000;
 
-/**
- * A skipped delta leaves the client cursor behind, and a resume replays the events after that
- * cursor. So an unchanged shell is still sent once its last send is
- * `UNCHANGED_THREAD_SHELL_RESEND_MS` old.
- */
+/** Resend unchanged shells after UNCHANGED_THREAD_SHELL_RESEND_MS so skipped deltas cannot leave resume cursors behind. */
 export function skipUnchangedThreadShells<A extends OrchestrationV2ShellStreamItem, E, R>(
   stream: Stream.Stream<A, E, R>,
 ): Stream.Stream<A, E, R> {

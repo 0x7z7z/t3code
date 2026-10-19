@@ -26,19 +26,15 @@ import * as Stream from "effect/Stream";
 import * as EventSink from "./EventSink.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
-/**
- * Output never becomes an orchestration event. Subscribers receive the current
- * tail, coalesced appends, then persisted final output. Only expanded rows
- * subscribe; memory is bounded per command and in count.
- */
+/** Output bypasses orchestration events; expanded rows receive tails, coalesced appends, then persisted output. */
 
 export const COMMAND_OUTPUT_FRAME_INTERVAL_MS = 100;
-/** After a subscriber falls behind and is sent the whole tail, it waits this long. */
+/** Milliseconds between replacements after a subscriber falls behind. */
 export const COMMAND_OUTPUT_REPLACE_INTERVAL_MS = 500;
 const COMMAND_OUTPUT_MAX_APPEND_CHARS = 16 * 1024;
-/** Running commands tracked at once; the least recently written is dropped beyond this. */
+/** Evict the least recently written command beyond this limit. */
 const MAX_LIVE_COMMANDS = 64;
-/** Finished tails kept for a settle that reports no output of its own (an interrupt). */
+/** Retain finished tails for settlements that omit output. */
 const MAX_FINISHED_COMMANDS = 16;
 const MAX_FINAL_SOURCE_CHARS = TERMINAL_OUTPUT_TAIL_CHARS * 4;
 
@@ -54,12 +50,8 @@ export type CommandOutputTarget = OrchestrationV2SubscribeCommandOutputInput;
 
 export interface CommandOutputHubShape {
   readonly append: (input: CommandOutputTarget & { readonly chunk: string }) => Effect.Effect<void>;
-  /**
-   * The command settled. Its tail is kept briefly for a settle that carries no
-   * output (an interrupt); otherwise the persisted output is what rows show.
-   */
+  /** Retains the tail briefly for settlements without output; otherwise rows use persisted output. */
   readonly finish: (input: CommandOutputTarget) => Effect.Effect<void>;
-  /** Frames for one row until its command settles; see `OrchestrationV2CommandOutputFrame`. */
   readonly subscribe: (
     input: CommandOutputTarget,
   ) => Stream.Stream<OrchestrationV2CommandOutputFrame, OrchestrationV2CommandOutputError>;
@@ -97,7 +89,7 @@ function persistedCommandOutput(output: string | undefined): {
   if (output === undefined) return { text: "", truncated: false };
   let source = output;
   if (output.length > MAX_FINAL_SOURCE_CHARS) {
-    // Start on a fresh line, so the cut can't land inside an escape sequence.
+    // Cut at a newline to avoid splitting escape sequences.
     source = output.slice(output.length - MAX_FINAL_SOURCE_CHARS);
     const newline = source.indexOf("\n");
     if (newline !== -1 && newline + 1 < source.length) source = source.slice(newline + 1);
@@ -154,7 +146,7 @@ export const make = Effect.gen(function* () {
       const key = commandKey(target);
       const tail = appendTerminalOutput(tails.get(key) ?? EMPTY_TERMINAL_OUTPUT, chunk);
       setBounded(tails, key, tail, MAX_LIVE_COMMANDS, (oldest) => {
-        // Its viewers no longer share the hub's state; resync them on the next frame.
+        // Eviction invalidates viewers' state; resync on their next frame.
         for (const subscriber of subscribers.get(oldest) ?? []) {
           subscriber.needsReplace = true;
           subscriber.pendingAppend = "";
@@ -183,7 +175,7 @@ export const make = Effect.gen(function* () {
           overflowed: false,
           wake,
         };
-        // Attach before reading anything, so no chunk falls between a read and the attach.
+        // Subscribe before reading to avoid losing intervening chunks.
         const keySubscribers = subscribers.get(key) ?? new Set<Subscriber>();
         keySubscribers.add(subscriber);
         subscribers.set(key, keySubscribers);
@@ -196,8 +188,7 @@ export const make = Effect.gen(function* () {
           }),
         );
 
-        // The persisted item says when the command is done and what it finally printed.
-        // Providers that report output only in item snapshots (ACP, Pi) stream through here too.
+        // Persisted items provide settlement and final output; snapshot-only providers (ACP, Pi) also stream here.
         let snapshotOutput: string | undefined;
         let lost: Cause.Cause<unknown> | undefined;
         let settled: Extract<OrchestrationV2TurnItem, { type: "command_execution" }> | undefined;
@@ -227,8 +218,7 @@ export const make = Effect.gen(function* () {
                 ? observe(stored.event.payload)
                 : Effect.void,
             ),
-            // Without its event stream the row can never settle: end with an error
-            // instead of waiting forever.
+            // A lost event stream cannot settle the row; end with an error.
             Effect.catchCause((cause) =>
               Effect.sync(() => {
                 lost = cause;
@@ -237,7 +227,7 @@ export const make = Effect.gen(function* () {
             Effect.forkScoped,
           );
         const item = yield* projections.getTurnItem(target);
-        // Only command rows have output; anything else would hold a subscription open forever.
+        // Non-command rows would hold output subscriptions open forever.
         if (item === null || item.type !== "command_execution") {
           return yield* new OrchestrationV2CommandOutputError({
             threadId: target.threadId,
@@ -288,8 +278,7 @@ export const make = Effect.gen(function* () {
             if (tail === undefined) {
               return { kind: "replace", ...persistedCommandOutput(snapshotOutput), running: true };
             }
-            // The cursor, style and any unfinished escape ride along so the client
-            // applies later appends exactly as the hub does.
+            // Include terminal state so clients interpret later appends identically.
             return {
               kind: "replace",
               text: terminalOutputResumeText(tail),
