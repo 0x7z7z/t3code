@@ -20,7 +20,6 @@ vi.mock(import("@tanstack/react-router"), async (original) => ({
   useNavigate: (() => vi.fn()) as never,
   useCanGoBack: () => false,
 }));
-// Real presentations come from live connections; these tests drive them directly.
 vi.mock(import("../../state/presentation"), async (original) => {
   const actual = await original();
   const { Atom } = await import("effect/reactivity");

@@ -37,7 +37,6 @@ const defaultProps = {
   onPendingChange,
 };
 let root: Root | null;
-// The editor's change callback from the latest commit, as an editor would hold it.
 let latestChange: (contents: string) => void;
 
 function FileSurface(props: Parameters<typeof useFileSaveCoordinator>[0]) {

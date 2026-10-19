@@ -84,10 +84,8 @@ export function AcpRegistryAgentIcon({
     readonly status: "loading" | "loaded" | "failed";
   } | null>(null);
   const currentImage = image?.iconUrl === iconUrl ? image : null;
-  // Render only after the load pipeline resolves: the validated blob when the
-  // fetch succeeds, or the raw allowlisted CDN URL when it fails (the official
-  // CDN serves no CORS headers, so the validating fetch is often blocked in
-  // cross-origin browser contexts while native <img> loading still works).
+  // The official CDN omits CORS headers, so a validating fetch can fail
+  // while native <img> loading still works. Fall back to its allowlisted URL.
   const source = currentImage?.source ?? null;
   const status = currentImage?.status ?? "loading";
 

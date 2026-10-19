@@ -667,11 +667,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     );
     if (!confirmed) return;
 
-    // Only touch the theme keys that are actually dirty, so a theme-storage
-    // failure cannot block restoring unrelated settings. Preferences are
-    // re-read after the confirmation dialog: they may have changed (another
-    // tab, an OS flip) while it was open, and rollback must restore the live
-    // values rather than the ones captured at render time.
+    // Reset only dirty theme keys so storage failures cannot block unrelated
+    // settings. Re-read after confirmation to preserve changes from other tabs
+    // or the OS if rollback is needed.
     let previousTheme = theme;
     try {
       previousTheme = readThemePreference();
@@ -1766,8 +1764,6 @@ function FontFamilySettingsRow({
   const trimmed = value.trim();
   const [draft, setDraft] = useState(value);
   const [draftSettled, setDraftSettled] = useState(true);
-  // Each pending commit remembers the value it was typed against, so one that outlives
-  // an external change (hydration, reset, picker selection) drops its stale draft.
   const commitTimerRef = useRef<{ readonly id: number; readonly value: string } | null>(null);
   const cancelPendingCommit = () => {
     if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current.id);

@@ -18,7 +18,6 @@ vi.mock(import("../../hooks/useTheme"), async (original) => ({
   useTheme: () =>
     ({ theme: "system", themeHalves: null, setTheme: vi.fn(), refreshTheme: vi.fn() }) as never,
 }));
-// The real panel is a large lazy editor; this stand-in shows which theme the host hands it.
 vi.mock(import("./ThemeEditorPanel"), async (original) => ({
   ...(await original()),
   ThemeEditorPanel: (({

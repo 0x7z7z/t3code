@@ -124,14 +124,12 @@ function OpenContentSearchDialog(props: {
   });
   const canOpenMatches = search.canReadFiles && !search.isPending && search.error === null;
   const matches = search.matches;
-  // New results restart the selection and the rendered window.
   const [resultsFor, setResultsFor] = useState(matches);
   if (resultsFor !== matches) {
     setResultsFor(matches);
     setSelectedIndex(0);
     setVisibleCount(VISIBLE_MATCH_WINDOW);
   }
-  // Keyboard selection past the window grows it before the row has to scroll into view.
   if (selectedIndex >= visibleCount) {
     setVisibleCount(selectedIndex + VISIBLE_MATCH_WINDOW);
   }

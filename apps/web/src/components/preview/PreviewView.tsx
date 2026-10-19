@@ -239,7 +239,6 @@ export function PreviewView({
   const navUrl = navStatus._tag === "Success" ? navStatus.url : null;
   const navTitle = navStatus._tag === "Success" ? navStatus.title : null;
   const latestHistoryUrl = recentHistoryEntries[0]?.url;
-  // Keyed on the ids rather than threadRef, which is recreated on every update.
   const { environmentId: threadEnvironmentId, threadId } = threadRef;
   useEffect(() => {
     if (!navUrl || !navTitle || !latestHistoryUrl) return;
@@ -789,7 +788,6 @@ export function PreviewView({
         } catch {}
       }
     };
-    // A failed pick is dropped silently; finishPick still releases the picker.
     const bridge = previewBridge;
     void settlePromise(async () => {
       await bridge.setAnnotationSendEnabled?.(

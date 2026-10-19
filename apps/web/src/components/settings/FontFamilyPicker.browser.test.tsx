@@ -69,7 +69,6 @@ describe("FontFamilyPicker", () => {
     expect(input).not.toBeNull();
     const press = (key: string) => act(() => userEvent.keyboard(`{${key}}`));
 
-    // Both matches were already rendered further down the unfiltered list.
     await act(() => userEvent.type(input!, "co"));
     await expect.poll(highlightedOptions).toEqual(["Courier New"]);
 

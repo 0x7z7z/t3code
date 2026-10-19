@@ -352,8 +352,6 @@ export function SnapShotCoordinator() {
     return operation;
   };
 
-  // Subscriptions read the latest handlers through effect events, so they attach once
-  // instead of restarting (and re-draining) whenever a handler's inputs change.
   const drainPending = useEffectEvent(() => drain());
   const handleSnapShotEvent = useEffectEvent(
     (bridge: DesktopSnapShotBridge, event: DesktopSnapShotEvent) => {

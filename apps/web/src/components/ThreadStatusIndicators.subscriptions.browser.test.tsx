@@ -158,14 +158,12 @@ it("leases only visible palette results while retaining observed and cached PR b
     expect(state.queries).toEqual([]);
     expect(badgeCount()).toBe(1);
 
-    // Band [1000, 1340]: rows 0..7.
     await scrollTo(SPACER + 160);
     expect(state.queries).toHaveLength(8);
     expect(state.queries.filter((key) => key.startsWith("vcs:"))).toHaveLength(4);
     expect(state.queries.filter((key) => key.startsWith("pr:"))).toHaveLength(4);
     expect(badgeCount()).toBe(9);
 
-    // Band [1370, 1710]: rows 8..15.
     await scrollTo(SPACER + 8 * ROW_HEIGHT + 10 + 160);
     expect(state.queries).toHaveLength(16);
     expect(badgeCount()).toBe(17);

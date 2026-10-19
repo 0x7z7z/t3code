@@ -712,8 +712,6 @@ export function ProviderInstanceCard({
   const driverKind: ProviderDriverKind | null = isProviderDriverKind(instance.driver)
     ? instance.driver
     : null;
-  // Keyed on the stored list, not the whole instance, so writing another field
-  // leaves the models list (often ~50 rows) with the same props.
   const storedCustomModels =
     instance.config !== null && typeof instance.config === "object"
       ? (instance.config as Record<string, unknown>).customModels

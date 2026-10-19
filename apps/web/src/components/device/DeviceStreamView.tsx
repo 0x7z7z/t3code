@@ -98,8 +98,6 @@ export function DeviceStreamView(props: {
   const [presentation, setPresentation] = useState<"phone" | "flat">("phone");
   const [keyboardAttached, setKeyboardAttached] = useState(false);
   const [phoneUnavailable, setPhoneUnavailable] = useState(false);
-  // The stream effect and the viewports' scene setup depend on these; a new
-  // identity per render would restart the stream and rebuild the 3D scene.
   const onPhoneUnavailable = useStableCallback(() => setPhoneUnavailable(true));
   const cancelPhoneInputRef = useRef<(() => void) | null>(null);
   const cancelPhoneInput = useStableCallback(() => cancelPhoneInputRef.current?.());
@@ -125,7 +123,6 @@ export function DeviceStreamView(props: {
   const [foldAngle, setFoldAngle] = useState<number | null>(null);
   const [mjpegUrl, setMjpegUrl] = useState<string | null>(null);
   const [mjpegGeneration, setMjpegGeneration] = useState(0);
-  // A new ref callback per render would detach and reattach the MJPEG image.
   const attachMjpegImage = useStableCallback((image: HTMLImageElement | null) => {
     clientRef.current?.setMjpegImage(image);
   });

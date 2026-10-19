@@ -662,8 +662,6 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
       });
     },
     onError: (error, { value, kind }) => {
-      // Captured per attempt so concurrent copies cannot make the dialog
-      // reveal a different value than the one that failed.
       setFailedCopyValue(value);
       setIsRevealDialogOpen(true);
       toastManager.add(
@@ -3058,10 +3056,8 @@ export function ConnectionsSettings() {
     const defaultDistroName =
       desktopWslState.distros.find((distro) => distro.isDefault)?.name ?? null;
     if (value === BACKEND_VALUE_WSL_OFF) {
-      // Match the recovery row's visibility (`enabled || wslOnly`): when WSL
-      // went unavailable while wsl-only was persisted, `enabled` can be false
-      // while `wslOnly` is true, and the "Switch to Windows" button must
-      // still clear that state instead of silently no-op'ing.
+      // Unavailable WSL can leave enabled=false with wslOnly=true. Switching
+      // to Windows must clear that persisted mode too.
       if (!desktopWslState.enabled && !desktopWslState.wslOnly) return;
       const wasWslOnly = desktopWslState.wslOnly;
       if (hasWslRegistrationToLose || wasWslOnly) {

@@ -28,8 +28,6 @@ export function useFileSaveCoordinator({
 }: FileSaveOptions): Pick<FileSaveCoordinator, "change"> {
   const canWriteFiles = useEnvironmentScope(environmentId, AuthFilesystemWriteScope);
   const writeFile = useProjectFileWriter();
-  // A session owns the pending debounce, so it must outlive rerenders and be
-  // replaced only when what it writes to changes.
   const inputs = { environmentId, cwd, relativePath, onPendingChange, writeFile };
   const [current, setCurrent] = useState(() => ({
     inputs,

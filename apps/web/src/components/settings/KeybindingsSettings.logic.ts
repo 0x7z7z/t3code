@@ -281,8 +281,6 @@ export function buildKeybindingRows(
   return rowsWithConflicts;
 }
 
-// Filtering keeps the row objects so rows that stay visible while the query
-// changes receive the same props and skip rendering.
 export function filterKeybindingRows(
   rows: ReadonlyArray<KeybindingRow>,
   query: string,

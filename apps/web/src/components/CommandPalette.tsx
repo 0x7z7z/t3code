@@ -923,10 +923,8 @@ function OpenCommandPaletteDialog(props: {
     environments.find((environment) => environment.environmentId === browseEnvironmentId) ?? null;
   const browseEnvironmentIsDesktopLocal =
     browseEnvironment !== null && isDesktopLocalConnectionTarget(browseEnvironment.entry.target);
-  // Map the browsed desktop-local env to its desktop pool instance id (e.g.
-  // "wsl:ubuntu"). The catalog environmentId is descriptor-derived and won't
-  // route on the desktop side; pickFolder only recognizes the pool id, which
-  // the bootstrap list exposes.
+  // pickFolder routes desktop-local environments by pool id (e.g. wsl:ubuntu),
+  // not by the catalog's descriptor-derived environmentId.
   const browseDesktopInstanceId = (() => {
     if (!browseEnvironmentIsDesktopLocal || browseEnvironment === null) {
       return null;
@@ -1276,8 +1274,6 @@ function OpenCommandPaletteDialog(props: {
   });
   const recentThreadItems = allThreadItems.slice(0, RECENT_THREAD_LIMIT);
 
-  // Stable so the item builders that capture it during render never see the
-  // highlight ref it writes.
   const pushPaletteView = useStableCallback((view: CommandPaletteView): void => {
     browseNavigation.invalidate();
     setViewStack((previousViews) => [
@@ -1988,7 +1984,6 @@ function OpenCommandPaletteDialog(props: {
   });
   useLayoutEffect(() => {
     if (openIntent === null) return;
-    // A new-thread-in intent waits until the project items exist.
     if (openIntent.kind === "new-thread-in" && projectThreadItemCount === 0) return;
     // oxlint-disable-next-line react/set-state-in-effect -- applying the intent dispatches to the parent reducer and can navigate, neither of which may run during render.
     applyOpenIntent(openIntent);
@@ -2319,7 +2314,6 @@ function OpenCommandPaletteDialog(props: {
     );
     newProjectSubmittingRef.current = false;
     setIsCreatingNewProject(false);
-    // Same outcome as the old try/finally: the rejection still surfaces to the caller.
     if (created._tag === "Failure") throw squashAtomCommandFailure(created);
     if (created.value) setOpen(false);
   }
@@ -3020,10 +3014,9 @@ function OpenCommandPaletteDialog(props: {
         browseEnvironmentId === primaryEnvironmentId && browseEnvironmentPlatform === "Linux"
           ? ((await window.desktopBridge?.getWslState().catch(() => null)) ?? null)
           : null;
-      // A WSL-only primary has no secondary bootstrap, so resolve its instance
-      // id from desktop settings. Windows and combo-mode primaries still omit
-      // the target to preserve the native primary picker. The desktop converts
-      // a WSL UNC selection back to a Linux path before returning.
+      // WSL-only primaries have no secondary bootstrap, so use desktop settings
+      // for their pool id. Other primaries omit the target for the native picker,
+      // which converts WSL UNC selections back to Linux paths.
       const pickerTargetEnvironmentId = resolveProjectPickerTarget({
         browseEnvironmentId,
         primaryEnvironmentId,

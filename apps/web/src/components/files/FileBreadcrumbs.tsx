@@ -215,11 +215,9 @@ function BreadcrumbMenuContent(props: {
   );
 }
 
-/** The chevron after a folder crumb lists that folder's entries. */
 function FolderContentsMenu(props: FileBreadcrumbsProps & { readonly crumb: FileBreadcrumb }) {
   const [open, setOpen] = useState(false);
   const [directoryPath, setDirectoryPath] = useState(props.crumb.path);
-  // Opening another file or moving the crumb closes the menu and returns it to the crumb's folder.
   const [shownFor, setShownFor] = useState({
     crumbPath: props.crumb.path,
     relativePath: props.relativePath,

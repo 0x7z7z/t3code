@@ -344,7 +344,6 @@ function ProviderSettingsPanelContent(target: ProviderSettingsTarget) {
         hasServerConfig: true,
       }),
   )?.environmentId;
-  // A search jump to a setting the selected device cannot show switches to one that can.
   let searchRedirectEnvironmentId: EnvironmentId | undefined;
   {
     if (
@@ -608,8 +607,6 @@ export function EnvironmentProviderSettings({
   const refreshingRef = useRef(false);
   const updatingInstanceIdsRef = useRef<Set<ProviderInstanceId>>(new Set());
 
-  // Rows call these at event time and receive the same functions every render,
-  // so a settings write or provider push only redraws the row it changed.
   const acceptUrlAuthentication = useStableCallback(
     (instanceId: ProviderInstanceId, action: AcpRegistryUrlAuthAction) => {
       void acceptAcpRegistryUrlAuth({
@@ -878,9 +875,8 @@ export function EnvironmentProviderSettings({
       const agentId = providerConfigString(instance.config, "agentId");
       if (agentId === null) return;
 
-      // The server decides from its latest settings whether this was the last
-      // instance using the managed agent. A client-side snapshot check can race
-      // two removals and make both callers skip cleanup.
+      // Concurrent removals can both skip cleanup from client snapshots; the
+      // server must decide from its latest settings whether the agent is unused.
       const uninstallResult = await uninstallAcpRegistryManagedBinary({
         environmentId,
         input: { agentId },

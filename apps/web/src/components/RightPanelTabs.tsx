@@ -757,8 +757,6 @@ function PullRequestSurfaceIcon({
   return <presentation.Icon className={cn("size-3 shrink-0", presentation.toneClassName)} />;
 }
 
-// Module-level so React only runs this callback ref on mount and unmount;
-// a fresh function would re-attach and re-focus on every render.
 function focusOnMount(node: HTMLDivElement | null) {
   node?.focus();
 }
@@ -804,9 +802,8 @@ function handleTabMouseDown(event: ReactMouseEvent) {
   event.preventDefault();
 }
 
-// One tab owns its sortable state and receives only its own values, so the
-// compiled subtree is reused unless this tab's surface, title or state changed.
-// The handlers must be stable: the tab list re-renders on every parent render.
+// Stable handlers and per-tab values let the compiler reuse tabs while
+// the parent re-renders.
 function RightPanelTab(
   props: RightPanelTabHandlers & {
     surface: RightPanelSurface;
@@ -1181,8 +1178,6 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
     event.stopPropagation();
     props.onCloseSurface(surface);
   };
-  // Every tab receives these. Parents pass fresh closures on each render, so
-  // stable forwarders keep a tab's props equal unless its own surface changed.
   const onActivateTab = useStableCallback(props.onActivate);
   const onCloseTab = useStableCallback(props.onCloseSurface);
   const onTabAuxClick = useStableCallback(handleTabAuxClick);

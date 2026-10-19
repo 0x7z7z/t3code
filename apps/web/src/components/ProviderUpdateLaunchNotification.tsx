@@ -73,7 +73,6 @@ function ProviderUpdateEnvironmentsNotification() {
   );
 
   const [settleGraceElapsed, setSettleGraceElapsed] = useState(false);
-  // The grace period restarts with the next settling phase.
   if (!isAnySettling && settleGraceElapsed) {
     setSettleGraceElapsed(false);
   }
@@ -93,8 +92,6 @@ function ProviderUpdateEnvironmentsNotification() {
     void navigate({ to: "/settings/providers" });
   };
 
-  // The toast closes long after the effect that opened it, so it dismisses the key
-  // the updates have moved to by then.
   const dismissPrompt = useStableCallback(() => {
     if (notificationKey) {
       dismissNotificationKey(notificationKey);

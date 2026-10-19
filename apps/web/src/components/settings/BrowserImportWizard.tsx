@@ -75,10 +75,8 @@ export function BrowserImportWizard({
   );
   const [targetError, setTargetError] = useState<string>();
   const newProfileId = useRef(`profile-${randomUUID()}`);
-  // A second Import click before React has left the configure screen would
-  // start a second run; the parent refuses it, and applying that refusal here
-  // would drop the wizard out of the importing step while the first write is
-  // still going. The ref settles synchronously where state does not.
+  // A second click's refusal could exit the importing step during the first
+  // write. Guard synchronously before React leaves the configure screen.
   const importInFlight = useRef(false);
 
   const runImport = () => {

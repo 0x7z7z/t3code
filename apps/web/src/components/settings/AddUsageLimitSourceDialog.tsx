@@ -16,10 +16,6 @@ import { Input } from "../ui/input";
 import { SecretInput } from "./SecretInput";
 import { Label } from "../ui/label";
 
-/**
- * Dots and dashes in the host are kept so `foo-bar.com` and `foo.bar.com` do
- * not collide; anything else (a port's colon, a path) is folded to a dash.
- */
 function sourceIdFromUrl(url: string): UsageLimitSourceId {
   let host = url;
   try {

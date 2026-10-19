@@ -96,7 +96,6 @@ export function useLinkedThreadPullRequest(
 ): LinkedThreadPullRequestStatus | null {
   const supportsLinks = useSupportsMultiplePullRequests(environmentId);
   const current = supportsLinks ? resolveThreadCurrentPullRequestLink(pullRequests ?? []) : null;
-  // Callers key on the returned status, so it stays cached across the query hooks.
   const currentStatus = current === null ? null : linkedPullRequestSnapshotStatus(current);
   const fallback =
     current === null ? ((!supportsLinks ? linkedPullRequest : null) ?? branchPullRequest) : null;

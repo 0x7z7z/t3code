@@ -52,7 +52,6 @@ function image() {
   return img!;
 }
 
-// Stands in for the browser failing to decode the current source.
 async function failDecode() {
   const img = image();
   await act(() => {

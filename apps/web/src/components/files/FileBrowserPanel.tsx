@@ -106,8 +106,6 @@ function FileSearchField(props: {
   );
 }
 
-// The tree diffs `treePaths` by identity, so the panel must keep this result cached
-// across the hooks that read it.
 function buildTreeEntries(
   directoryEntries: readonly ProjectEntry[],
   searchEntries: readonly ProjectEntry[],
@@ -262,7 +260,6 @@ export default function FileBrowserPanel({
         }
       }).then((result) => {
         context.close();
-        // Keep surfacing unexpected failures as unhandled rejections.
         if (!AsyncResult.isSuccess(result)) throw Cause.squash(result.cause);
       });
     },

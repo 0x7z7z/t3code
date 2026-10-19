@@ -13,10 +13,8 @@ export function ProjectMonogram({
   readonly color: ProjectIconColor;
   readonly className?: string | undefined;
 }) {
-  // Wrapped like the emoji and Lucide branches so the monogram sits where an
-  // <img> favicon would. Menu items, buttons and the like pull every bare svg
-  // in with [&_svg]:-mx-0.5 to trim the padding stroke icons carry, and this
-  // tile has no such padding.
+  // Menu/button rules trim bare SVG margins for padded stroke icons.
+  // Wrap this unpadded tile so those rules cannot shift it.
   return (
     <span
       aria-hidden="true"

@@ -37,7 +37,6 @@ vi.mock(import("../../hooks/useTheme"), async (original) => ({
   useTheme: (() => ({ resolvedTheme: "dark" })) as never,
 }));
 
-// Wraps Pierre's real worker so the suite can count workers, read requests and hold startup.
 // Vite's `?worker` export is a factory that returns a plain Worker, so this patches the instance.
 vi.mock("@pierre/diffs/worker/worker.js?worker", async (original) => {
   const actual = await original<{ default: new () => Worker }>();
@@ -177,7 +176,6 @@ describe("code-view worker lifecycle", () => {
     testState.heldResponses = [];
     testState.onInitializationHeld = undefined;
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    // Pins the pool at two workers whatever machine runs the suite.
     Object.defineProperty(navigator, "hardwareConcurrency", { configurable: true, value: 2 });
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const initialize = WorkerPoolManager.prototype.initialize;
@@ -451,7 +449,6 @@ describe("code-view file reveals", () => {
     ]);
 
     revealCalls.length = 0;
-    // A click that lands in the same update that hides the viewer waits for it to return.
     await act(async () => {
       document.querySelector("button")!.click();
       view.root.render(<RevealViews scope="diff" visible={false} selectedFile="external" />);

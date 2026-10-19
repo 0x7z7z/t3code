@@ -6,7 +6,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   readScope: vi.fn(),
-  // The real query hands back the same result array until the search changes.
   matches: [
     {
       resultIndex: 0,
@@ -21,7 +20,6 @@ const state = vi.hoisted(() => ({
   listeners: new Set<() => void>(),
 }));
 
-// The real query is subscription-backed, so access changes reach the dialog without a parent render.
 function setAccess(access: { canReadFiles: boolean; isCheckingAccess: boolean }) {
   state.access = access;
   for (const listener of state.listeners) listener();

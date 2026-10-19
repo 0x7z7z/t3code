@@ -1105,9 +1105,8 @@ function resolveProjectThreadStatus(
   });
 }
 
-// Thread derivations for one project row. Built in their own hooks so they reach
-// SidebarProjectItem frozen: inline, its later calls made the compiler fuse the
-// ordered keys with the route-dependent panel, handing every row a new array.
+// Separate hooks keep these arrays frozen for the compiler instead of
+// joining their cache scope to the route-dependent panel.
 function useProjectThreads(project: SidebarProjectSnapshot) {
   const threadSortOrder = useClientSettings<SidebarThreadSortOrder>(
     (settings) => settings.sidebarThreadSortOrder,
@@ -1338,8 +1337,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     orderedProjectThreadKeys,
     lastVisitedAtByThreadKey,
   } = useProjectThreads(project);
-  // The "Delete anyway" toast action runs after the toast delay, so it must see
-  // the thread list as of the click, not as of the first prompt.
   const readSidebarThreadByKey = useStableCallback(() => sidebarThreadByKey);
   const projectPreferenceKeys = projectExpansionPreferenceKeys(project);
   const projectExpanded = useUiStateStore((state) =>
@@ -2129,8 +2126,6 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     closeProjectGroupingDialog();
   };
 
-  // Every thread row receives this, so it keeps one identity while the thread
-  // list changes instead of re-rendering all of them.
   const handleThreadContextMenu = useStableCallback(
     async (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {
       const api = readLocalApi();
@@ -3022,9 +3017,8 @@ function openAddProjectCommandPalette() {
   openCommandPalette({ open: "add-project" });
 }
 
-// Project and thread derivations live in their own hooks so they reach
-// LegacySidebar frozen and cached on their real inputs; inline, its later hook
-// calls made the compiler recompute them, and the props of every row with them.
+// Separate hooks keep derivations frozen and cached on their real inputs;
+// later hooks in LegacySidebar would invalidate every row's props.
 function useLegacySidebarProjects() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
@@ -3328,8 +3322,6 @@ export default function LegacySidebar() {
 
   const projectDnDSensors = useSensors(useSensor(PointerSensor, PROJECT_POINTER_SENSOR_OPTIONS));
 
-  // DndContext keeps these across a drag, so they keep one identity and read the
-  // latest projects when called.
   const handleProjectDragEnd = useStableCallback((event: DragEndEvent) => {
     if (sidebarProjectSortOrder !== "manual") {
       dragInProgressRef.current = false;

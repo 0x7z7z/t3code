@@ -247,11 +247,8 @@ export function StyledDiffCodeView<LAnnotation = undefined>({
             // reintroduce the library's default 8px gap above its header.
             spacing: 0,
             paddingTop: 0,
-            // Unlike the gap above, the 8px under a file's last line is painted
-            // unconditionally by Pierre's stylesheet (`--diffs-gap-fallback`), so the metric has
-            // to count it: at zero every expanded file's virtual height ran 8px short of its
-            // rendered height, and the end of the list sat past the reachable scroll range —
-            // one clipped file row per expanded file above it.
+            // Pierre always paints this 8px gap via --diffs-gap-fallback. Omitting
+            // it from the metric clips one row per expanded file from the scroll range.
             paddingBottom: 8,
           },
           layout: { paddingTop: 0, paddingBottom: 0, gap: 0 },

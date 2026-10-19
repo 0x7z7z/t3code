@@ -102,8 +102,6 @@ export function SnapShotSettings() {
     status: "idle",
     availability: null,
   });
-  // A check answers for one shortcut; once the candidate moves on (an edit, or hydration
-  // resetting it) a late answer for the old one no longer shows.
   const shortcutCheck: ShortcutCheck =
     latestShortcutCheck.status === "idle" ||
     sameSnapShotShortcut(latestShortcutCheck.shortcut, candidate)
@@ -127,7 +125,6 @@ export function SnapShotSettings() {
   const soundLabel =
     soundSelection === "off" ? "Off" : soundSelection === "soft-pop" ? "Whoosh (Default)" : "Click";
 
-  // Registered as a window focus listener, so it keeps one identity.
   const refreshState = useStableCallback(async () => {
     const requestId = ++stateRequestIdRef.current;
     try {
@@ -171,8 +168,6 @@ export function SnapShotSettings() {
     setSetupBusy(false);
   };
 
-  // Outside the wizard there is nowhere to show an error inline, so it goes to a toast,
-  // once. The error stays in state until the next action clears it.
   const toastedErrorRef = useRef<typeof setupError>(null);
   useEffect(() => {
     if (!setupError || wizard || toastedErrorRef.current === setupError) return;
@@ -214,7 +209,6 @@ export function SnapShotSettings() {
     setCandidate(savedShortcut);
     setShortcutCheck({ status: "idle", availability: null });
   }
-  // A check still in flight was for the shortcut being replaced.
   const checkedForSavedShortcutRef = useRef(savedShortcut);
   useEffect(() => {
     if (sameSnapShotShortcut(checkedForSavedShortcutRef.current, savedShortcut)) return;

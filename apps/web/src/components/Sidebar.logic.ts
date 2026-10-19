@@ -58,10 +58,8 @@ export function resolveSidebarRowAccessibility(input: {
   };
 }
 
-// Each prewarmed thread holds a live, fully hydrated detail subscription (all
-// messages and activities, growing as agents work) for as long as the row stays
-// visible, so this limit is a direct renderer-heap and server-load multiplier —
-// keep it small; cold opens still render instantly from the cached snapshot.
+// Each prewarm retains full, growing thread detail and a live subscription,
+// so this limit multiplies renderer heap and server load.
 const SIDEBAR_THREAD_PREWARM_LIMIT = 3;
 const SIDEBAR_ROW_SUBSCRIPTION_OVERSCAN_PX = 160;
 
@@ -71,7 +69,6 @@ export function useSidebarRowSubscriptionLease(isActive: boolean): {
 } {
   const [row, setRow] = React.useState<HTMLElement | null>(null);
   const [isNearViewport, setIsNearViewport] = React.useState(isActive);
-  // The active row stays leased after it deactivates until the observer reports.
   if (isActive && !isNearViewport) setIsNearViewport(true);
   const canObserve = typeof IntersectionObserver !== "undefined";
 
@@ -741,11 +738,8 @@ export function shouldClearThreadSelectionOnMouseDown(target: HTMLElement | null
   return !target.closest(THREAD_SELECTION_SAFE_SELECTOR);
 }
 
-// A double-click dispatches two `click` events before `dblclick`: the first has
-// `detail === 1`, the second `detail === 2`. The second click must not run the
-// row's single-click navigation, otherwise double-click-to-rename would also
-// navigate. `MouseEvent.detail` is 0 for synthetic/keyboard activations, which
-// still count as a normal single activation.
+// Suppress the second click before double-click rename navigates the row;
+// synthetic/keyboard clicks have detail 0 and must still activate.
 export function isTrailingDoubleClick(detail: number): boolean {
   return detail > 1;
 }

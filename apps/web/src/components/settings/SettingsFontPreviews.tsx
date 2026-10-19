@@ -75,11 +75,8 @@ function loadDiffPreviewHtml(theme: DiffThemeName): Promise<readonly string[]> {
   return promise;
 }
 
-// Pierre's prerendered stylesheet bakes its own light/dark surface colors
-// into the shadow root's @layer rules. These unlayered rules win the cascade
-// without !important and re-point the surfaces at the app's code tokens
-// (custom properties inherit across the shadow boundary), so the preview
-// follows the active theme exactly like the real diff panel does.
+// Unlayered rules override Pierre's light/dark surfaces in the shadow root
+// with inherited app code tokens so this preview matches the diff panel.
 const DIFF_PREVIEW_THEME_BRIDGE = `
   :host {
     color: var(--code-foreground);

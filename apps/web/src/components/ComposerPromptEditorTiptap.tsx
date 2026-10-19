@@ -805,18 +805,15 @@ function createComposerExtensions(richText: boolean) {
           ComposerCodeBlockExtension.extend({
             addNodeView() {
               return ReactNodeViewRenderer(ComposerCodeBlockNodeView, {
-                // The header holds the language picker. Tiptap only shields
-                // events aimed at the button element itself, so a click on
-                // its icon or label would reach ProseMirror and move the
-                // selection; keep every header event away from the editor.
+                // Tiptap only shields the button itself; header icon/label clicks would
+                // otherwise reach ProseMirror and move the selection.
                 stopEvent: ({ event }) =>
                   event.target instanceof Element &&
                   event.target.closest(".chat-markdown-codeblock-header") !== null,
               });
             },
-            // Tiptap's own ``` + space rule would open a fence inside a
-            // list item or quote, where the serializer has no line for
-            // it. Enter on a fence line covers the gesture at top level.
+            // Tiptap's fence rule also runs in lists/quotes, which cannot serialize
+            // fences. Enter on a top-level fence line covers the gesture instead.
             addInputRules() {
               return [];
             },
@@ -1435,12 +1432,9 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
     editorHolder.current = editor;
   }, [editor]);
 
-  // Tiptap forwards option changes to the view from a passive effect, so a
-  // class change here would reach the ProseMirror element one tick after
-  // React commits. The chat composer measures its resting and expanded
-  // geometry in layout effects that run first, and it clamps the prompt
-  // through `className`, so the attributes are pushed to the view here for
-  // those measurements to see the layout they are about to reserve for.
+  // Tiptap updates view options in a passive effect, after the composer's
+  // layout measurements. Push attributes here so those measurements see
+  // the geometry they reserve.
   useLayoutEffect(() => {
     if (!editor?.isInitialized) return;
     editor.view.setProps({ attributes: editorAttributes });
@@ -1581,10 +1575,8 @@ function ComposerPromptEditorTiptapInner(props: ComposerPromptEditorProps) {
 
   const focusAt = (nextCursor: number) => {
     if (!editor) return;
-    // view.focus() writes the state selection to the DOM as it focuses. A
-    // bare DOM focus leaves the native caret at the start until
-    // ProseMirror resyncs it 20ms later, and dictation tools type fast
-    // enough to land keys there, ahead of the text already inserted.
+    // ProseMirror resyncs a bare DOM focus 20ms later; fast dictation can type
+    // at the start before that. view.focus() writes the selection immediately.
     editor.view.focus();
     if (snapshotRef.current.value !== latestValueRef.current) return;
     const boundedCursor = clampEditorCursor(snapshotRef.current.value, nextCursor);

@@ -433,8 +433,6 @@ export function ProviderModelsSection({
   );
 }
 
-// A row gets its flags as primitives and handlers that never change, so toggling,
-// starring or moving one model re-renders that row and leaves the others cached.
 function ProviderModelRow({
   model,
   isHidden,

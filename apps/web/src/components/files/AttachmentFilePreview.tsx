@@ -66,7 +66,6 @@ export function AttachmentFilePreview(props: {
     kind === "markdown" ? "markdown" : kind === "html" ? "html" : delimiter ? "table" : null;
   const attachmentId = props.asset?.attachmentId;
   const { copyToClipboard, isCopied } = useCopyToClipboard({ target: props.name });
-  // useAssetUrlRefresh keys its callback on these objects, so they must stay cached.
   const resource = attachmentId
     ? {
         _tag: "attachment" as const,

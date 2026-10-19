@@ -185,8 +185,6 @@ export function chartScale(
     : { ...niceScale(peak, TICK_COUNT), labeled: true };
 }
 
-// Leave room above the top gridline so the constant-width stroke is not
-// clipped when a series reaches the peak.
 function valueToY(value: number, max: number) {
   return max === 0 ? VIEW_HEIGHT : VIEW_HEIGHT - (value / max) * (VIEW_HEIGHT - PLOT_TOP);
 }

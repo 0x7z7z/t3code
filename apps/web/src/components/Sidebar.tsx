@@ -357,8 +357,6 @@ const sidebarProviderEntriesAtom = Atom.make((get) => {
 }).pipe(Atom.withLabel("sidebar-provider-entries"));
 
 const EMPTY_PROVIDER_ENTRIES: ReadonlyMap<string, SidebarProviderEntry> = new Map();
-// Collapsed shelves share one empty list so a route change alone does not
-// give the sidebar list a new identity.
 const EMPTY_THREADS: readonly EnvironmentThreadShell[] = [];
 
 const SETTLED_TAIL_INITIAL_COUNT = 10;
@@ -386,8 +384,6 @@ interface SidebarThreadPartitionInput {
   readonly serverConfigs: ReadonlyMap<EnvironmentId, EnvironmentServerConfig>;
   readonly optimisticDrop: SidebarOptimisticDrop | null;
   readonly workingShelfEnabled: boolean;
-  // Snooze wakes and the queued-turn grace depend on the clock, so the minute
-  // tick and the precise snooze-wake tick are inputs: a new key repartitions.
   readonly clockKey: string;
 }
 
@@ -401,8 +397,6 @@ const NO_DRAGGED_ORDERS: {
   readonly activeOrder: readonly string[] | undefined;
 } = { settledOrder: NO_DRAGGED_ORDER, activeOrder: undefined };
 
-// Where the dragged row would sort if dropped on the settled or the
-// time-ordered active shelf; the strategy previews those slots.
 function resolveDraggedOrders(input: {
   readonly drag: { readonly activeKey: string; readonly occurredAt: string };
   readonly threadByKey: ReadonlyMap<string, EnvironmentThreadShell>;
@@ -438,10 +432,8 @@ function routeThreadOnly(
   return routeThread === undefined ? EMPTY_THREADS : [routeThread];
 }
 
-// Everything Sidebar derives from thread shells. Computed inside one hook so
-// each value reaches the component frozen and cached on its real inputs: in
-// the component body, later hook calls made the compiler treat these maps as
-// possibly mutated and recompute them, and every dnd-kit input with them.
+// A separate hook keeps maps frozen and cached on their real inputs;
+// later Sidebar hooks would otherwise invalidate every dnd-kit input.
 function useSidebarThreads(input: {
   readonly projectScopeKey: string | null;
   readonly scopedProjectKeys: ReadonlySet<string> | null;
@@ -477,7 +469,6 @@ function useSidebarThreads(input: {
     false,
     Schema.Boolean,
   );
-  // The settled tail restarts whenever the project scope changes.
   const [settledTail, setSettledTail] = useState({
     scopeKey: projectScopeKey,
     count: SETTLED_TAIL_INITIAL_COUNT,
@@ -790,9 +781,8 @@ function useSidebarLookups() {
 function scheduleSnoozeWake(wakeAt: string | null, onWake: () => void): (() => void) | undefined {
   const wakeAtMs = wakeAt === null ? Number.NaN : Date.parse(wakeAt);
   if (Number.isNaN(wakeAtMs)) return undefined;
-  // setTimeout delays are signed 32-bit: anything larger overflows and fires
-  // immediately, turning a far-future wake (event-condition snoozes synced
-  // from elsewhere) into a tight re-arm loop.
+  // Delays above signed 32-bit range fire immediately, causing a tight
+  // re-arm loop for far-future snoozes.
   const delayMs = Math.min(Math.max(0, wakeAtMs - Date.now()) + 50, 2_147_483_647);
   const id = window.setTimeout(onWake, delayMs);
   return () => window.clearTimeout(id);
@@ -1123,9 +1113,8 @@ type SortableThreadRowBag = Pick<
 const SIDEBAR_SORTABLE_DRAG_DISABLED = { draggable: true } as const;
 const SIDEBAR_SORTABLE_DRAG_ENABLED = { draggable: false } as const;
 
-// Takes the row's props rather than a render function: a closure from the
-// sidebar body is new on every sidebar render, which rebuilt the bag and
-// re-rendered every memoized row with it.
+// A render closure from Sidebar changes every render, rebuilding the
+// sortable bag and invalidating every memoized row.
 function SortableThreadRow(
   props: Omit<SidebarThreadRowProps, "sortable"> & {
     sortableId: string;
@@ -1155,7 +1144,6 @@ function SortableThreadRow(
     transition: contextDrag && isDragging ? "transform 150ms ease-out" : transition,
     isDragging: isDragging && !contextDrag,
   };
-  // Keyed by variant so a card/slim switch remounts the row.
   return <SidebarThreadRow key={rowProps.variant} {...rowProps} sortable={bag} />;
 }
 
@@ -1857,9 +1845,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     onSnooze(threadRef, preset);
   };
   const [snoozeMenuOpenRaw, setSnoozeMenuOpen] = useState(false);
-  // The React Compiler caches render results on their inputs, so a clock read
-  // here would stay frozen until `thread` changes and a queued-turn gate would
-  // never reopen. The gate's clock is state, reset with the thread.
+  // A render-time clock read stays frozen in the compiler cache, so the
+  // queued-turn gate needs a clock in state that resets with the thread.
   const [snoozeGateClock, setSnoozeGateClock] = useState(() => ({
     thread,
     now: new Date().toISOString(),
@@ -2375,11 +2362,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                   {props.settlementSupported || showSnoozeButton || hasUnsentDraft ? (
                     <span
                       className={cn(
-                        // focus-visible, not focus-within: a mouse click leaves
-                        // the Settle button focused, and a plain focus-within
-                        // would keep the controls pinned over the status label
-                        // once the pointer moves away (e.g. after a failed
-                        // settle) instead of cross-fading back.
+                        // A mouse click leaves Settle focused; focus-within would keep its
+                        // controls over the status label after the pointer leaves.
                         "pointer-events-none absolute inset-y-0 right-0 flex items-stretch opacity-0 transition-opacity has-[:focus-visible]:pointer-events-auto has-[:focus-visible]:static has-[:focus-visible]:opacity-100 group-any-hover/sidebar-row:pointer-events-auto group-any-hover/sidebar-row:static group-any-hover/sidebar-row:opacity-100",
                         snoozeMenuOpen && "pointer-events-auto static opacity-100",
                       )}
@@ -3018,7 +3002,6 @@ export default function Sidebar() {
     .map((thread) => scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)))
     .join("\0");
 
-  // The highlight belongs to one result list; a new list starts at the top.
   const activeSearchResultIndex =
     searchHighlight.orderKey === threadSearchResultOrderKey ? searchHighlight.index : 0;
   const setActiveSearchResultIndex = (index: number | ((index: number) => number)) =>
@@ -3044,9 +3027,8 @@ export default function Sidebar() {
   }, [activeSearchResultKey]);
 
   const orderedThreadKeysRef = useRef(orderedThreadKeys);
-  // Handlers read these through refs: depending on per-update Map/Set
-  // identities would give every row a fresh callback prop on each shell
-  // event and defeat row memoization during streaming.
+  // Read changing Map/Set values through refs so streamed shell events
+  // cannot invalidate every row's callback props.
   const threadByKeyRef = useRef(threadByKey);
   const settledThreadKeysRef = useRef(settledThreadKeys);
   const snoozedThreadKeysRef = useRef(snoozedThreadKeys);
@@ -3303,7 +3285,6 @@ export default function Sidebar() {
   };
   const restrictBelowPins: Modifier = (args) =>
     restrictBelowSidebarLabel(args, dragLabelOffsetRef.current);
-  // A new array re-renders DndContext and with it every sortable row.
   const dndModifiers = [
     restrictToVerticalAxis,
     restrictBelowPins,
@@ -3316,7 +3297,6 @@ export default function Sidebar() {
     listMotionRef.current?.update(false);
   };
 
-  // Working rows can supply chat context, but never preview sidebar movement.
   const isContextDrag = dragState?.contextDrag === true || dragState?.activeSection === "working";
   const dragTargetSection = isContextDrag ? null : (dragState?.targetSection ?? null);
   const finishThreadDrag = (started: boolean) => {
@@ -3464,10 +3444,6 @@ export default function Sidebar() {
   }
   const attemptPin = (threadRef: ScopedThreadRef) => {
     void (async () => {
-      // Fresh pins take the top of the arranged run: pinThread computes a
-      // key before the smallest key across ALL pinned shells — including
-      // snoozed pins hidden from this list, whose keys are still part of
-      // the run — so the new pin can't land beneath a hidden head.
       const result = await pinThread(threadRef);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
@@ -3563,9 +3539,8 @@ export default function Sidebar() {
     items.push(...settledRows);
     return items;
   })();
-  // Thread shells update on every streamed event without moving rows. Keep the
-  // list's identity until its order changes, so the sorting strategy, the
-  // sortable context and every sortable row stay memoized meanwhile.
+  // Streaming updates shells without moving rows. Retain the list until its
+  // order changes to preserve sorting strategy and row memoization.
   const sidebarListItemsKey = sidebarListItemsFresh
     .map((item) => (item.kind === "thread" ? item.section + ":" + item.key : item.marker))
     .join("\n");
@@ -3575,9 +3550,8 @@ export default function Sidebar() {
   if (sidebarListItemsKeyState !== sidebarListItemsKey) {
     setSidebarListItemsKeyState(sidebarListItemsKey);
     setSidebarListItems(sidebarListItemsFresh);
-    // The rest of this render still runs before React applies the update, and
-    // threadByKey already lacks rows that just left, such as a thread settled
-    // into the collapsed Settled shelf.
+    // React applies this update after render, but threadByKey already lacks
+    // rows that moved into collapsed shelves.
     sidebarListItems = sidebarListItemsFresh;
   }
   useEffect(() => {
@@ -3588,9 +3562,8 @@ export default function Sidebar() {
       cancelThreadDrag();
     }
   }, [cancelThreadDrag, dragState, sidebarListItems]);
-  // Rows only move when the rendered order, a row's section, or the draft block
-  // changes. Running the motion pass on that alone keeps ordinary shell events
-  // from forcing a layout read and animating rows that drifted for other reasons.
+  // Only order/section/draft changes need motion; ordinary shell events
+  // must not force layout reads or animate unrelated drift.
   const listMotionLayoutKey = [
     sidebarListItemsKey,
     visibleDraftSessionCount,
@@ -4773,10 +4746,8 @@ export default function Sidebar() {
                 <SortableContext items={sortableIds} strategy={sidebarSortingStrategy}>
                   <ul
                     ref={attachListMotionRef}
-                    // VoiceOver treats an exposed list as an interaction boundary,
-                    // which hides its rows from ordinary linear navigation. A
-                    // presentational list also makes its implicit listitems
-                    // presentational while preserving every descendant control.
+                    // VoiceOver lists hide rows behind an interaction boundary. Presentation
+                    // flattens the list and its items while preserving descendant controls.
                     role="presentation"
                     className={cn(
                       "relative flex flex-col gap-px",

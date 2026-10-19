@@ -1272,11 +1272,6 @@ export interface PlanFollowUpComposerSnapshot {
   readonly threadContexts: ReadonlyArray<ThreadContextRecord>;
 }
 
-/**
- * The caller clears the composer before awaiting the send, so every field it
- * held has to be written back here: a dropped field silently discards user
- * context.
- */
 export function restorePlanFollowUpComposer(input: {
   readonly snapshot: PlanFollowUpComposerSnapshot;
   readonly writePrompt: (prompt: string) => void;

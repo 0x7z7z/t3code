@@ -115,7 +115,6 @@ export function HtmlRenderDocument(props: {
   readonly onContentHeight?: (height: number) => void;
   /** Reports the image viewer opening and closing, so a virtualized row can stay mounted. */
   readonly onFullscreenChange?: ((fullscreen: boolean) => void) | undefined;
-  /** Called when the page has loaded. */
   readonly onLoad?: () => void;
 }) {
   const theme = useHtmlRenderTheme();
@@ -131,10 +130,9 @@ export function HtmlRenderDocument(props: {
   const environmentKeybindings = useAtomValue(
     serverEnvironment.configValueAtom(props.threadRef?.environmentId ?? null),
   )?.keybindings;
-  // The app resolves a replayed key in its live context, so every allowed
-  // binding counts whatever its `when`, and a key that any binding gives to
-  // another command stays with the page. Only Cmd/Ctrl chords: a printable key
-  // would type into the composer instead.
+  // Replay only Cmd/Ctrl chords bound exclusively to allowed commands,
+  // regardless of `when`: resolution uses live app context, and printable
+  // keys could otherwise type into the composer.
   const mac = isMacPlatform(navigator.platform);
   const resolve = (shortcut: KeybindingShortcut): HtmlRenderShortcut => ({
     key: shortcut.key,
@@ -247,7 +245,6 @@ export function HtmlRenderDocument(props: {
     window.addEventListener("message", replayKey);
     return () => window.removeEventListener("message", replayKey);
   }, []);
-  // A clicked page image opens in the same viewer as chat images, gated like a link.
   useEffect(() => {
     const openImage = (event: MessageEvent) => {
       const frame = frameRef.current;

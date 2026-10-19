@@ -130,7 +130,6 @@ interface FilePreviewPanelProps {
   revealLine: number | null;
   revealRequestId: number;
   onOpenFile: (relativePath: string) => void;
-  /** Moves this folder browser to another folder in place; see `navigateFolder`. */
   onNavigateFolder: (relativePath: string, folderTrail: string, keepSource: boolean) => void;
   /** The deeper path breadcrumbs keep after the browser moved up; see `navigateFolder`. */
   folderTrail: string | undefined;
@@ -209,10 +208,6 @@ function WorkspaceImagePreview(props: {
   );
 }
 
-/**
- * HTML runs in a sandboxed frame with an opaque origin, so a page cannot reach
- * the app's session or storage.
- */
 function WorkspaceBrowserPreview(props: {
   readonly environmentId: EnvironmentId;
   readonly threadRef: ScopedThreadRef;
@@ -1017,13 +1012,9 @@ export default function FilePreviewPanel({
     attachment === undefined && relativePath !== null,
   );
   const attemptedPath = file.readError?.resolvedPath ?? file.readError?.operationPath;
-  // A chat link cannot tell a folder from a file, so a folder arrives here as
-  // a file surface and the read fails. Keep the breadcrumbs, drop the preview
-  // pane, and let the tree fill the surface with the folder revealed. Mutation
-  // refresh stays on so the surface notices if the path becomes a file. A host
-  // folder outside the workspace gets a tree of its own, rooted at that folder.
-  // `folderTrail` is set only when crumbs walked the browser up: the deeper path
-  // kept for the way back down. The explorer (`""`) shows crumbs only then.
+  // Chat folder links arrive as file surfaces and fail their read. Keep the
+  // tree and mutation refresh so a folder becoming a file is detected. Host
+  // folders get their own root; folderTrail retains the path below breadcrumbs.
   const breadcrumbPath =
     attachment !== undefined ? null : (relativePath ?? (folderTrail === undefined ? null : ""));
   // A host trail that walked up to the workspace root (`/repo/project` is `""`) no
@@ -1036,7 +1027,6 @@ export default function FilePreviewPanel({
     attachment === undefined &&
     (file.isNotFile || (folderTrail !== undefined && file.data === null && file.error === null));
   const hostFolderPath = isFolder && isHostFile ? relativePath : null;
-  // Everything preview-related keys off previewPath; a folder has no preview.
   const previewPath = isFolder ? null : relativePath;
   const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);
   const showExplorer = shouldShowFileExplorer({

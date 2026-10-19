@@ -51,9 +51,6 @@ const state = vi.hoisted(() => ({
   done: vi.fn(),
 }));
 
-// Session grants come from per-test atoms so a test can revoke or regrant mid-flow; the
-// real scope checks in ~/state/session read them through the app registry, which the
-// wizard is also rendered with.
 vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
   const actual = await original();
   return {
@@ -124,8 +121,6 @@ vi.mock(import("../settings/ChatGptWelcomeCoordinator"), async (original) => ({
   ...(await original()),
   ChatGptWelcomeCoordinator: () => <></>,
 }));
-// The real viewport mounts a Ghostty terminal against the PTY; these tests only need to
-// see whether the wizard shows it.
 vi.mock(import("../ThreadTerminalDrawer"), async (original) => ({
   ...(await original()),
   TerminalViewport: () => <div data-terminal-viewport />,

@@ -99,7 +99,6 @@ describe("showDesktopUpdateDownloadedToast", () => {
   it("falls back to the version the download was started for", async () => {
     const openExternal = vi.fn().mockResolvedValue(true);
 
-    // The `update-downloaded` event can land after the download RPC resolves.
     showDesktopUpdateDownloadedToast(
       { openExternal },
       downloadedState({ downloadedVersion: null }),

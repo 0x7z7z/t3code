@@ -226,10 +226,8 @@ export function BranchToolbarBranchSelector({
   const branchRefState = usePaginatedBranches({
     environmentId,
     cwd: branchCwd,
-    // The server filters refs by substring, so it has to be given the sanitized
-    // name as well: querying the raw "new branch" drops an existing new-branch
-    // from the response entirely, which would defeat the collision check below.
-    // Ref names cannot contain an ASCII space, so sanitizing loses no matches.
+    // The server matches substrings, so raw "new branch" would miss the
+    // existing new-branch collision. Ref names cannot contain ASCII spaces.
     query: sanitizeNewRefName(deferredBranchQuery.trim()),
   });
   const trimmedBranchQuery = branchQuery.trim();

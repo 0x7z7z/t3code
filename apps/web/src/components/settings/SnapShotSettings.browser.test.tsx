@@ -20,7 +20,6 @@ const bridge = vi.hoisted(() => ({
   onSnapShotEvent: vi.fn(() => () => undefined),
 }));
 const toast = vi.hoisted(() => vi.fn());
-// Client settings behave like the real store: an update re-renders every reader.
 const settingsStore = vi.hoisted(() => ({
   current: {} as typeof DEFAULT_CLIENT_SETTINGS,
   listeners: new Set<() => void>(),

@@ -117,7 +117,6 @@ it.each([
   await click("Use reset");
   await click("Use credit");
   expect(consume).toHaveBeenCalledOnce();
-  // Both popups unmount once their exit animations finish.
   await expect.poll(() => document.querySelector('[role="alertdialog"]')).toBeNull();
   await expect.poll(() => document.querySelector('[data-slot="popover-popup"]')).toBeNull();
   const status = document.querySelector('[role="status"]');

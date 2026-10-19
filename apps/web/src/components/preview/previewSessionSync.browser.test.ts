@@ -11,8 +11,6 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-// Only the transport is substituted. The hook, atom registry and preview
-// store run unchanged, including lazy evaluation and refresh notifications.
 type ListResult = AsyncResult.AsyncResult<PreviewListResult, never>;
 type EventResult = AsyncResult.AsyncResult<PreviewEvent, never>;
 const harness = vi.hoisted(() => ({
@@ -203,8 +201,6 @@ describe("native preview session synchronization", () => {
     expect(readThreadPreviewState(ref).activeTabId).toBe("opened");
     expect(readThreadPreviewState(ref).serverRevision).toBe(2);
     expect(readThreadPreviewState(ref).listLoaded).toBe(false);
-    // The overtaken list is not a baseline, so the hook asks again; its
-    // waiting state must not reconcile, and the fresh answer completes it.
     expect(harness.lists.get(ref.threadId)?.box.requests).toBe(2);
     expect(readThreadPreviewState(ref).activeTabId).toBe("opened");
     appAtomRegistry.set(atom, AsyncResult.success(result(2, ["opened"])));

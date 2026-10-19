@@ -314,7 +314,6 @@ describe("PreviewView", () => {
       TEST_THREAD_REF,
       "http://172.25.85.75:5173/app?mode=test#top",
     );
-    // History keys off the requested loopback URL, which stays stable across hosts.
     await vi.waitFor(() =>
       expect(mocks.recordVisitForThread).toHaveBeenCalledWith(
         TEST_THREAD_REF,

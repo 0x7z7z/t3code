@@ -11,7 +11,6 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { findAssistantCitationSourceAnchor } from "~/lib/assistantTextSelection";
 
-// No router is mounted; the citation chip only needs navigation to exist.
 vi.mock(import("@tanstack/react-router"), async (original) => ({
   ...(await original()),
   useNavigate: () => async () => {},

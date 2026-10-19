@@ -59,10 +59,8 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
   const canWrite = () =>
     threadRef !== null && readEnvironmentScope(threadRef.environmentId, AuthTerminalOperateScope);
 
-  // Every client-side id source participates: the server list lags fresh opens,
-  // and an id collision attaches two viewports to one PTY session. Without a
-  // readable session list the next free number may already be taken on the
-  // server, so the id gets a unique suffix.
+  // The server list lags fresh opens, and id collisions share one PTY.
+  // Without a readable list, add a unique suffix to avoid unseen server ids.
   const allocateTerminalId = () => {
     const ids = new Set([
       ...(knownSessions ?? []).map((session) => session.target.terminalId),

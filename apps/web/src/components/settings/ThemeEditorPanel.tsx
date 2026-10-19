@@ -406,9 +406,8 @@ export function ThemeEditorPanel({
 
       setName(editingTheme?.label ?? seedName ?? "");
       setActiveAppearance(nextAppearance);
-      // Themes saved by the guided editor carry the managed flag; anything else
-      // (imports, hand-edited files, older saves) opens in advanced mode so
-      // guided regeneration cannot silently discard hand-tuned colors.
+      // Unmanaged themes open in advanced mode so guided regeneration cannot
+      // discard imported or hand-tuned colors.
       setIsAdvanced(sourceTheme !== null && sourceTheme.managed !== true);
       setSimpleColorsDirtyByAppearance({ light: false, dark: false });
       setShouldRegenerateGuidedColors(sourceTheme !== null && sourceTheme.managed !== true);
@@ -443,7 +442,6 @@ export function ThemeEditorPanel({
     return null;
   };
 
-  // Moves off a palette the merge target already has, once per target change.
   const mergeKey =
     isEditing || mergeTarget === null ? null : `${mergeTarget.id}:${takenAppearances.join(",")}`;
   const [appliedMergeKey, setAppliedMergeKey] = useState<string | null>(null);
@@ -540,10 +538,8 @@ export function ThemeEditorPanel({
     const highlightedRoles = selectedHighlightRolesKey.split(",") as Array<ThemeColorRole>;
     const refreshHighlights = () => setUsageCount(highlightThemeRoleUsage(highlightedRoles));
     refreshHighlights();
-    // A refresh snapshots computed styles for the whole tree twice, so it is
-    // throttled rather than run per frame: a streaming reply or a virtualized
-    // list mutates the DOM continuously and would otherwise stall the main
-    // thread for as long as the inspector is open.
+    // Each refresh snapshots computed styles for the whole tree twice.
+    // Throttle continuous DOM mutations from streaming and virtualized lists.
     const MIN_REFRESH_INTERVAL_MS = 500;
     let refreshFrame: number | null = null;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;

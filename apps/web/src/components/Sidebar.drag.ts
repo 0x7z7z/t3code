@@ -50,7 +50,6 @@ export function createSidebarCollisionDetection(
       ?.getBoundingClientRect();
     if (items && boundary && source?.kind === "thread" && pointer) {
       boundarySection ??= source.section === "pinned" ? "pinned" : "active";
-      // Use the visible divider row, including its sortable translation.
       // Only pointer movement can change sections: opening the destination
       // moves this row, but must not toggle a stationary gesture back.
       const previousY = previousPointerY ?? pointer.y;

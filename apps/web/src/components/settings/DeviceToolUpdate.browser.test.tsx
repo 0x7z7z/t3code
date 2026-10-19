@@ -40,7 +40,6 @@ vi.mock("./useScopedSettings", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./useScopedSettings")>()),
   useUpdateScopedSettings: () => vi.fn(),
 }));
-// Rows resolve scope and permissions; only their controls matter here.
 vi.mock("./settingsLayout", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./settingsLayout")>()),
   SettingsRow: ({ control, children }: { control?: ReactNode; children?: ReactNode }) => (
@@ -50,7 +49,6 @@ vi.mock("./settingsLayout", async (importOriginal) => ({
     </>
   ),
 }));
-// The version popover holds the Update button; render the button in place of the popover.
 vi.mock("../device/DeviceToolVersions", () => ({
   DeviceToolVersions: ({ action }: { action?: ReactNode }) => action ?? null,
 }));

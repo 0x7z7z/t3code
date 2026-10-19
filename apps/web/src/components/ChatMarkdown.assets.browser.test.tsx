@@ -5,7 +5,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const mint = vi.hoisted(() => vi.fn());
-// Atoms derived from the server config run in the real registry over a missing config.
 vi.mock(import("../state/server"), async (original) => {
   const actual = await original();
   const { Atom } = await import("effect/reactivity");

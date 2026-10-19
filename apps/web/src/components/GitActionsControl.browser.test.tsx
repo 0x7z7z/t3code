@@ -51,7 +51,6 @@ vi.mock(import("~/state/entities"), async (original) => ({
 }));
 vi.mock(import("~/state/query"), async (original) => ({
   ...(await original()),
-  // Serves both the VCS status and the source-control discovery queries.
   useEnvironmentQuery: (() => ({
     data: {
       sourceControlProviders: [],
@@ -75,7 +74,6 @@ vi.mock(import("~/state/query"), async (original) => ({
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
-  // The only command whose result matters here is the thread's branch metadata update.
   useAtomCommand: ((_command: unknown, options: unknown) =>
     options === "thread branch metadata update"
       ? async ({ environmentId, input }: { environmentId: string; input: { branch: string } }) => {
@@ -137,7 +135,6 @@ vi.mock(import("~/components/ui/toast"), async (original) => {
 import { useComposerDraftStore } from "~/composerDraftStore";
 import GitActionsControl from "./GitActionsControl";
 
-// ThreadDetailsPanel keeps this component mounted behind React.memo when threads change.
 const MemoGitActionsControl = memo(GitActionsControl);
 
 let root: Root;
@@ -204,7 +201,6 @@ describe("Git actions while thread details load", () => {
     await render();
     await openCommitDialog();
 
-    // The primary environment's task grant must not leak into this thread's environment.
     await expect.element(button("Commit on new branch")).toBeDisabled();
     expect(commits()).toBe(0);
   });

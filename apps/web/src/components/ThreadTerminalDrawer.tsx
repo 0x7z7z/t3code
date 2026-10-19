@@ -409,8 +409,6 @@ interface TerminalLaunchLocation {
 }
 
 export function TerminalViewport(props: TerminalViewportProps) {
-  // A different launch is a different session, so it gets a fresh surface and fresh
-  // session bookkeeping.
   const sessionKey = JSON.stringify([
     props.threadRef.environmentId,
     props.threadId,
@@ -1078,14 +1076,12 @@ function TerminalSessionViewport({
     previousSessionRef.current = current;
   }, [terminalOutput, terminalError, terminalStatus, terminalVersion]);
 
-  // Each new request focuses again, even when nothing else changed.
   const focusRequest = autoFocus && canOperateTerminal && visible ? focusRequestId : null;
   useEffect(() => {
     if (focusRequest === null) return;
     (terminalRef.current ?? containerRef.current)?.focus();
   }, [focusRequest]);
 
-  // The surface measures its mount, so each drawer resize or window resize refits it.
   // A hidden surface skips fitting, and showing it again fits through setVisible.
   const layoutRevision = visible ? `${drawerHeight}:${resizeEpoch}` : null;
   useEffect(() => {

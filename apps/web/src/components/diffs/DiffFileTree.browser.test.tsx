@@ -11,7 +11,6 @@ import { diffFileTreeEntries } from "./diffFileTree.logic";
 import { useCodeViewFileReveal } from "./useCodeViewFileReveal";
 
 const captured = vi.hoisted(() => ({ model: null as unknown }));
-// Read the tree model the component builds, so tests can assert its selection and expansion.
 vi.mock(import("@pierre/trees/react"), async (original) => {
   const actual = await original();
   const RealFileTree = actual.FileTree;

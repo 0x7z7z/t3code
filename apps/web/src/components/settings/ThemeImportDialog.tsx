@@ -170,7 +170,6 @@ export function ThemeImportDialog({
       setConflicts(null);
     }
   }
-  // Opening or closing drops any read still in flight.
   useEffect(() => {
     if (!open) return;
     importRequestRef.current += 1;

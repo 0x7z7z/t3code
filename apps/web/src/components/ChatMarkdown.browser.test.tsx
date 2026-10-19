@@ -10,7 +10,6 @@ import { MarkdownFindContext } from "./chat/markdownFindContext";
 import { useThreadFindHighlights } from "./chat/threadFindHighlights";
 import { setMarkdownTaskChecked } from "./files/filePreviewMode";
 
-// Atoms derived from the server config run in the real registry over a missing config.
 vi.mock(import("../state/server"), async (original) => {
   const actual = await original();
   const { Atom } = await import("effect/reactivity");
@@ -20,7 +19,6 @@ vi.mock(import("../state/server"), async (original) => {
     serverEnvironment: { ...actual.serverEnvironment, configValueAtom: (() => noConfig) as never },
   };
 });
-// A standard client session, so environment-owned file links can open.
 vi.mock(import("../state/session"), async (original) => {
   const { AuthStandardClientScopes } = await import("@t3tools/contracts");
   const granted = new Set<string>(AuthStandardClientScopes);
@@ -36,7 +34,6 @@ vi.mock(import("../remoteOpen"), async (original) => ({
   ...(await original()),
   useRemoteOpenResolution: () => ({ state: { mode: "local-exec" }, isResolved: true }) as never,
 }));
-// A rendered diagram is an SVG; real Mermaid layout is not what these tests exercise.
 vi.mock(import("./chat/MermaidDiagram"), async (original) => ({
   ...(await original()),
   MermaidDiagram: () => <svg aria-label="Diagram" />,

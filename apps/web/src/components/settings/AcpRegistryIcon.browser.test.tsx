@@ -27,8 +27,6 @@ const image = () => container.querySelector("img");
 const fallback = () => container.querySelector('[data-slot="acp-icon-fallback"]');
 
 it("falls back to the raw allowlisted CDN URL when the validating fetch is blocked", async () => {
-  // The official CDN serves no CORS headers, so the fetch can reject even
-  // though native <img> loading works.
   fetchIcon.mockRejectedValue(new TypeError("Failed to fetch"));
   await act(async () => root.render(<AcpRegistryAgentIcon icon={url} />));
 

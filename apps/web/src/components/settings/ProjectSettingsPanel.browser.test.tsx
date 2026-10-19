@@ -52,7 +52,6 @@ const state = vi.hoisted(() => ({
   clearDraft: vi.fn(),
 }));
 
-// Session grants come from the server; each test drives them through these atoms.
 vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
   const actual = await original();
   return {
@@ -104,7 +103,6 @@ vi.mock(import("~/lib/composerDraftUploads"), async (original) => ({
   ...(await original()),
   releaseProjectDraftUploads: state.releaseUploads,
 }));
-// Sections with their own data sources and tests; this file covers project permissions.
 vi.mock(import("./ProjectDefaultsSettings"), async (original) => ({
   ...(await original()),
   ProjectDefaultsSettings: (() => null) as never,

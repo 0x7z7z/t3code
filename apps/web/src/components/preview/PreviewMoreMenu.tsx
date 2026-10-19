@@ -164,10 +164,6 @@ export function PreviewMoreMenu({
           </span>
         </MenuItem>
         <MenuSeparator />
-        {/*
-         * Grouped so the heading has a `MenuGroup` ancestor — `MenuGroupLabel`
-          reads its context and throws without one.
-         */}
         <MenuGroup>
           {profileName ? (
             <MenuGroupLabel className="max-w-64">
