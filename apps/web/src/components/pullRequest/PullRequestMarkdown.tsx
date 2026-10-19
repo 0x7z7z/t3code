@@ -114,9 +114,8 @@ export function PullRequestMarkdown({
           );
         }
         return (
-          // A plain anchor rather than the page's openExternal button: the desktop window
-          // turns a blocked _blank into openExternal itself, and in a browser tab — where
-          // there is no shell to call — this is the only one of the two that goes anywhere.
+          // Use an anchor in browsers; desktop converts blocked _blank navigation to
+          // openExternal.
           <a
             key={segment.id}
             href={segment.url}

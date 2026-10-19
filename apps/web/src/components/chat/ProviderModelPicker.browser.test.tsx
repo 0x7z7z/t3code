@@ -34,7 +34,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-// Returns the trigger's visible text, which is what the user reads before opening the picker.
 async function triggerText(node: ReactNode) {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const container = document.createElement("div");

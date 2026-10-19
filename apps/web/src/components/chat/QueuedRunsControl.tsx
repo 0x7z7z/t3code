@@ -89,13 +89,11 @@ export function QueuedRunsControl({
     readonly runId: RunId;
     readonly insertIndex: number | null;
   } | null>(null);
-  // Drags must start from the grip, not from an accidental text-drag on the
-  // row. The grip arms its run id on pointerdown; dragstart verifies it.
+  // Arm from the grip to prevent accidental text drags from reordering queued runs.
   const dragArmedRunIdRef = useRef<RunId | null>(null);
   const steerInFlightRef = useRef(false);
-  // Once the projection holds the message the optimistic copy is stale no
-  // matter what happened to its run — keying on still-queued runs alone would
-  // resurrect a phantom "pending" row after the run is cancelled or started.
+  // Acknowledge by message id; run-only checks can resurrect phantom pending rows after
+  // cancellation or startup.
   const acknowledgedMessageIds = new Set((projection?.messages ?? []).map((message) => message.id));
   const queuedImageAttachmentResources = queuedImageResources(projection);
   const queuedImageAttachmentUrls = useAssetUrls(

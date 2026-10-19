@@ -3,8 +3,6 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import { WorkLogDetails } from "./WorkLog";
 
-// The scroller's geometry is simulated so the test controls it: a 384px
-// viewport over content whose height the test grows like a streamed trace.
 const VIEWPORT = 384;
 let contentHeight = 0;
 let scrollTop = 0;

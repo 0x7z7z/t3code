@@ -9,9 +9,8 @@ import { AttachmentImage } from "../media/AttachmentImage";
 
 const MAX_ZOOM = 8;
 
-// The viewer lays out below the native caption strip so its controls never share a row with
-// the window buttons. ExpandedImageDialog and the media dialog viewport mirror this in CSS
-// through --native-titlebar-height.
+// Subtract the native caption strip to keep controls below window buttons; dialog CSS mirrors
+// this with --native-titlebar-height.
 function readViewerSize() {
   return { width: window.innerWidth, height: window.innerHeight - windowControlsOverlayHeight() };
 }

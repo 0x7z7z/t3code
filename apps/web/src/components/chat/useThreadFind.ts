@@ -360,8 +360,6 @@ function useServerResults(
         }
       : null;
   const targetKey = target ? JSON.stringify([progressive, target]) : null;
-  // Resolving the atom only when the request changes keeps unrelated renders from
-  // touching the atom family.
   const [storedAtom, setStoredAtom] = useState(() => ({
     key: targetKey,
     atom: resolveThreadFindAtom(target, progressive),

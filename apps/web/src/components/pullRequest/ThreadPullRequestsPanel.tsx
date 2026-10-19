@@ -332,7 +332,6 @@ function LinkRowImpl({
   );
 }
 
-/** Memoized so a modifier key or a sync of one link re-renders only the rows that changed. */
 const LinkRow = memo(LinkRowImpl);
 
 function latestSyncedAt(links: ReadonlyArray<ThreadPullRequestLink>): string | null {
@@ -368,9 +367,8 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
     .toSorted((left, right) =>
       left.id === thread?.projectId ? -1 : right.id === thread?.projectId ? 1 : 0,
     );
-  // LegendList re-renders its rows when `data` changes identity. `links` and values derived
-  // from it go through plain functions only here, before the next hook, so the compiler keeps
-  // `lines` in its own cache scope.
+  // LegendList re-renders on data identity changes; derive lines before the next hook to retain
+  // their compiler cache.
   const links = visibleThreadPullRequests(thread?.pullRequests ?? []);
   const lines = pullRequestListLines(resolveThreadPullRequestChains(links));
   const openCount = links.filter(
@@ -433,8 +431,6 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Threads that run a stack or a sweep link hundreds of pull requests; only the rows in
-          view are mounted. */}
       <LegendList<PullRequestListLine>
         data={lines}
         keyExtractor={lineKey}

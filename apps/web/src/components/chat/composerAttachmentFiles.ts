@@ -28,10 +28,6 @@ const IMAGE_MIME_TYPE_BY_EXTENSION: Readonly<Record<string, string>> = {
   webp: "image/webp",
 };
 
-/**
- * Some sources (drags from other apps, files piped through a shell) hand over a
- * `File` with an empty or generic MIME type.
- */
 export function inferImageMimeTypeFromName(name: string): string | null {
   const dotIndex = name.lastIndexOf(".");
   if (dotIndex <= 0) {
@@ -128,10 +124,8 @@ export function fileAttachmentCapabilityBlockReason(
 }
 
 /**
- * When `capabilities.attachmentUploads` flips off (reconnect, version skew),
- * tear down only uploads that have not been persisted onto a draft file.
- * Once `uploadedAttachmentId` is stamped, the draft references that server
- * copy after reload even if its local `File` is still available in memory.
+ * Release only unpersisted uploads; hydrated draft files still reference their server copy
+ * after reload.
  */
 export function attachmentsToReleaseOnUploadCapabilityLoss(
   attachments: ReadonlyArray<ComposerImageAttachment | ComposerFileAttachment>,

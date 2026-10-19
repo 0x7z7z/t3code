@@ -101,9 +101,8 @@ export function McpAppFrame(props: {
   };
   const asset = useAssetUrlState(props.environmentId, resource);
   const refreshAsset = useAssetUrlRefresh(props.environmentId, resource);
-  // The frame keeps its first URL: a re-minted one would reload the app. A
-  // cached URL near expiry is minted afresh first, since a frame cannot report
-  // a failed load.
+  // Retain the first URL to avoid reloading the app; re-mint near-expiry cached URLs because
+  // frames cannot report failed loads.
   const [src, setSrc] = useState<string | null>(null);
   const [mintFailed, setMintFailed] = useState(false);
   const minting = useRef(false);
@@ -220,9 +219,8 @@ export function McpAppFrame(props: {
       cancelled = true;
     };
   }, [props.environmentId, props.threadId, props.itemId, app.tool]);
-  // The bridge belongs to the captured document. A frame that navigates keeps
-  // its window, so a second load stops the app rather than letting a page T3
-  // never served pose as it.
+  // Navigation retains the frame window; stop on a second load so another document cannot
+  // impersonate the served app.
   const loads = useRef({ generation: 0, count: 0 });
   const onFrameLoad = () => {
     if (loads.current.generation !== documentGeneration) {
@@ -265,8 +263,7 @@ export function McpAppFrame(props: {
           : { toolInfo: { tool: current.toolDefinition } }),
       };
     };
-    // Approvals render in the page, beneath the top layer a full-screen app
-    // occupies, so the app returns inline before T3 asks.
+    // Return inline before asking so approvals remain visible above the app.
     const ask = async (message: string) => {
       flushSync(() => setDisplayMode("inline"));
       const approved = await requestConfirmDialog(message);
@@ -388,8 +385,7 @@ export function McpAppFrame(props: {
         void host.teardown().then(() => setClosed(true));
       },
       onSizeChanged: (size) => {
-        // Full screen is a fixed box; what the app reports there would leave
-        // the inline row its full-screen height on the way back.
+        // Ignore fullscreen sizing so returning inline does not retain the fullscreen height.
         if (latest.current.displayMode === "fullscreen") return;
         if (size.height !== undefined) setHeight(clampMcpAppHeight(size.height));
       },
@@ -444,9 +440,8 @@ export function McpAppFrame(props: {
     <div style={{ height }}>
       <div
         ref={boxRef}
-        // Full screen is the same box shown in the browser's top layer: moving
-        // the frame to another parent would reload the app, and the timeline's
-        // rows contain fixed positioning, which the top layer escapes.
+        // Keep the same parent to avoid reloading the frame; the top layer escapes timeline
+        // positioning containment.
         {...(fullscreenSupported ? { popover: "manual" as const } : {})}
         data-mcp-app-fullscreen={fullscreen ? "" : undefined}
         className={cn(

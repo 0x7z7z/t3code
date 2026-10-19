@@ -37,9 +37,8 @@ import { type NewProjectScriptInput } from "../ProjectScriptsControl";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
- * Adds, edits, and deletes the active project's scripts. A script's keyboard
- * shortcut lives in the environment's keybindings, so each change writes the
- * script settings first and then reconciles the shortcut.
+ * Script shortcuts live in environment keybindings; write script settings before reconciling
+ * shortcuts.
  */
 export function useProjectScriptEditing(input: {
   readonly environmentId: EnvironmentId;

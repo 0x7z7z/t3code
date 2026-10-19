@@ -95,9 +95,8 @@ function excerptSlice(file: FileDiffMetadata | null, excerpt: PullRequestReviewG
   return { fileDiff, rows: shown, shown: shown.length, total: rows.length, drawn };
 }
 
-// The excerpt expands against an old side of its own: the file's real old side differs from
-// the new one wherever another hunk changed it, and the renderer needs the two to agree around
-// the lines it shows. A slice across hunks has nothing consistent to expand into.
+// Expand excerpts against a matching old side; other hunks make the file's real old side
+// inconsistent with excerpt context.
 function excerptLoader(
   excerpt: PullRequestReviewGuideExcerpt,
   sliceRows: ExcerptSlice["rows"],

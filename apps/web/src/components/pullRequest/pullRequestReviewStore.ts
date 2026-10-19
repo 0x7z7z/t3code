@@ -4,10 +4,8 @@ import { create } from "zustand";
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };
 
 /**
- * A counter rather than anything derived from the comment: two remarks on one line can be the
- * same length, and an id built from the draft's own contents would collide with a comment that
- * was already removed — which shares a React key with it and, worse, makes discarding one card
- * delete both.
+ * Use a counter: content-derived ids can collide across comments and make deleting one card
+ * delete another.
  */
 let pendingCommentSequence = 0;
 

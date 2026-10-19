@@ -86,8 +86,6 @@ vi.mock(import("~/state/usePullRequestStack"), async (original) => ({
     refresh,
   })) as never,
 }));
-// The real tabs load diffs, markdown and checks from the environment; these stand-ins
-// expose the actions they hand back to the panel and a tall scroller.
 vi.mock(import("./PullRequestSummaryTab"), async (original) => ({
   ...(await original()),
   PullRequestSummaryTab: (({
@@ -285,7 +283,6 @@ async function runAction(action: string) {
   }
   if (["Ask a question", "Explain this PR"].includes(action) || action.startsWith("Fix findings")) {
     await page.getByRole("button", { name: "More pull request actions" }).click();
-    // Menu items carry a description under their label.
     await page.getByRole("menuitem", { name: new RegExp(`^${action}`) }).click();
     return;
   }
@@ -365,7 +362,6 @@ it("folds the title only for the active tab's own scroller", async () => {
 
   const summary = await scrollTo("summary-scroller", 600);
   await vi.waitFor(() => expect(titleFold()).toBe(true));
-  // Folding the header keeps the content under the reader's eye.
   expect(summary.scrollTop).toBeLessThan(600);
 
   await scrollTo("summary-scroller", 0);

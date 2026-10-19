@@ -133,9 +133,8 @@ interface DiffSlice {
 }
 
 /**
- * The viewer's own per-file counts are hidden and drawn from this side of its shadow root
- * instead: its counts are hunk sums, and a file whose hunks the host withheld would read as
- * an empty change rather than as the counts the host did report.
+ * Viewer counts sum hunks and show zero when hosts withhold them; render host counts outside
+ * the shadow root.
  */
 const REPLACE_FILE_COUNTS_CSS = `
 [data-diffs-header] [data-additions-count],
@@ -145,8 +144,6 @@ const REPLACE_FILE_COUNTS_CSS = `
 
 const NO_SLICES: ReadonlyArray<DiffSlice> = [];
 
-// Each slice is parsed once per cache key and the parse lives as long as the slice does, so a
-// slice arriving costs one parse rather than one per slice already on screen.
 const sliceParses = new WeakMap<DiffSlice, Map<string, RenderablePatch | null>>();
 
 function parseSlice(slice: DiffSlice, cacheKey: string, ignoreWhitespace: boolean) {
@@ -335,8 +332,6 @@ function PullRequestCodeTab({
       },
     }),
   );
-  // Pages accumulate into slices as each answer arrives, so the slice list is adjusted while
-  // rendering the answer rather than one commit later.
   const [appliedPage, setAppliedPage] = useState<{
     readonly data: typeof diffQuery.data;
     readonly cursor: string | null;
@@ -452,9 +447,7 @@ function PullRequestCodeTab({
     resolve: hostReview.resolve && detail.viewerPermissions.resolve,
   };
   const canCommentOnLines = review.inlineComment && commit === null;
-  // The cache key carries the theme, which is what the tokenizer caches against, so a theme
-  // change is still a fresh parse. The patch's own hash is part of it too: a refreshed page
-  // reuses its cursor, and a key of position alone would hand back the parse it replaced.
+  // Tokenizer caches depend on theme; include patch hash because refreshed pages reuse cursors.
   const parsedSlices = loadedSlices.map((slice) =>
     parseSlice(
       slice,
@@ -485,15 +478,12 @@ function PullRequestCodeTab({
     ),
   );
   const fileTreeEntries = diffFileTreeEntries(files);
-  // Placing a conversation takes more than its file being in the diff: its line has to fall
-  // inside a hunk that was rendered. One that does not is drawn nowhere, so it belongs in the
-  // off-diff list rather than disappearing between the two.
+  // Place threads only in rendered hunks; file membership alone can leave conversations
+  // invisible.
   const placedThreadIds = (() => {
     const placed = new Set<string>();
-    // A commit's diff counts lines within that commit; a review comment is anchored to the
-    // pull request's head diff. Pinning one onto the other would put the remark against
-    // whichever code happens to hold that line number in this commit, so while a commit is on
-    // screen every conversation is listed rather than placed.
+    // Commit and pull request diffs use different line coordinates; list conversations instead
+    // of placing them in commit diffs.
     if (commit !== null) return placed;
     for (const file of files) {
       const path = resolveFileDiffPath(file);
@@ -556,8 +546,7 @@ function PullRequestCodeTab({
       path,
       fileDiff,
       annotations,
-      // The viewer re-renders an item only when its version changes, so everything the
-      // annotations show has to be part of it.
+      // The viewer redraws annotations only when their version changes.
       annotationsVersion: fnv1a32(
         annotations
           .map(
@@ -591,8 +580,7 @@ function PullRequestCodeTab({
   const withheldContent =
     loadedSlices.some((slice) => slice.truncated) ||
     parsedSlices.some((parsed) => parsed?.kind === "raw");
-  // Only once the diff is whole: returning here while a cursor is outstanding would take the
-  // sentinel off screen and end the walk, leaving the rest of the change unasked for.
+  // Keep the sentinel until all pages load; returning raw slices early would stop pagination.
   const rawSlices =
     nextCursor === null
       ? parsedSlices.flatMap((parsed) => (parsed?.kind === "raw" ? [parsed] : []))
@@ -687,8 +675,7 @@ function PullRequestCodeTab({
     setToggledFiles(new Set());
   };
 
-  const orderedCommits = // By instant, not by the text: GitLab keeps a commit's own UTC offset, so two commits
-    // from different zones would sort by how they were written rather than when they landed.
+  const orderedCommits = // GitLab preserves UTC offsets, so compare instants.
     detail.commits.toSorted(
       (left, right) => Date.parse(right.committedDate) - Date.parse(left.committedDate),
     );
@@ -702,8 +689,7 @@ function PullRequestCodeTab({
     if (item.type !== "diff") return;
     const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === item.id);
     if (!file) return;
-    // A range collapses to its last line: only GitHub carries a multi-line comment, and one
-    // that silently lost its first line on the other hosts would be worse than one line.
+    // Only GitHub supports multiline comments; use the last line consistently across hosts.
     const path = resolveFileDiffPath(file);
     const previousPath = resolveFileDiffPreviousPath(file);
     const sourceFile = parsedSlices
@@ -746,11 +732,8 @@ function PullRequestCodeTab({
     if (comment !== null) onFinish(comment);
   };
 
-  // The viewer's SlotPortals memoizes each visible file's header/annotation portal on these
-  // render props and on `options` below; a fresh identity on any of them — as a plain inline
-  // function or object literal would be — invalidates that memo and recreates every portal on
-  // screen on any tab re-render (a drag-selection, a keystroke in the draft, a review-store
-  // update), which is the jank this file is otherwise clean of.
+  // Stable render props and options preserve the viewer's memoized portals during selection,
+  // typing and review-store updates.
   const renderCodeViewFooter = () =>
     nextCursor === null ? null : (
       <div
@@ -845,9 +828,8 @@ function PullRequestCodeTab({
 
   const renderThreadCard = (thread: PullRequestReviewThread) => (
     <ReviewThreadCard
-      // Named with the pull request too: a thread's id is the host's own, and two pull requests
-      // can hand out the same one — which would leave one card's open editor standing over the
-      // other's conversation.
+      // Host thread ids can collide across pull requests; include pull request identity so
+      // editor state cannot leak.
       key={`${reference.projectId}#${reference.number}:${thread.id}`}
       thread={thread}
       workspaceRoot={detail.workspaceRoot}
@@ -956,12 +938,8 @@ function PullRequestCodeTab({
     </div>
   );
 
-  // A rebase or a force-push can take the scoped commit out of the change. Its diff may still
-  // be reachable on the host, but it is no longer part of what is being reviewed, so the scope
-  // goes back to the whole change rather than sitting under a name nothing matches.
-  // Including when the change reports no commits at all: the scope dropdown is the only way back
-  // to the whole diff and it is not drawn without commits to list, so a scope that outlived them
-  // would leave the tab reading one obsolete commit with nothing to press.
+  // Reset missing commit scope, including empty commit lists: without the dropdown, the reader
+  // could be trapped on an obsolete diff.
   const selectedCommit = orderedCommits.find((entry) => entry.oid === commit);
   const scopeLabel = selectedCommit ? selectedCommit.messageHeadline : "All commits";
   const changeIgnoreWhitespace = (next: boolean) => {
@@ -1403,9 +1381,8 @@ function PullRequestCodeTab({
             const composedPath = event.nativeEvent.composedPath?.() ?? [];
             for (const node of composedPath) {
               if (!(node instanceof HTMLElement)) continue;
-              // A control inside the header — the collapse chevron — handles itself, and
-              // this capture listener fires before its own click does. Leave it alone or
-              // the two toggles cancel out.
+              // Let nested controls handle clicks; the capture listener would otherwise toggle
+              // before their own handler and cancel it.
               if (node instanceof HTMLButtonElement || node instanceof HTMLAnchorElement) {
                 return;
               }

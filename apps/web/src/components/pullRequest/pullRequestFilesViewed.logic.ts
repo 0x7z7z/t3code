@@ -29,8 +29,7 @@ export function isFileViewed(
 }
 
 /**
- * A press is held until a read that could have seen it comes back, rather than cleared when the
- * write succeeds: that read is a separate round trip, and dropping the press in between flashes
+ * Keep presses until a read could have seen the write; clearing on write success would flash
  * the checkbox back.
  */
 export function settleFileViewedOverlay(
@@ -49,10 +48,8 @@ export function settleFileViewedOverlay(
 }
 
 /**
- * `owned` are the paths that request still answers for, which keeps a failure from reaching past
- * its own presses: a path pressed again since belongs to a later request or to the next flush,
- * and putting that box back to the host's answer would take a press out from under the reader's
- * hand.
+ * Revert only owned paths: later presses belong to another request or flush and must survive
+ * this failure.
  */
 export function revertFileViewedOverlay(
   overlay: FileViewedOverlay,

@@ -476,7 +476,6 @@ interface MessagesTimelineProps {
     readonly threadId: ThreadId;
     readonly title: string;
   } | null;
-  /** Set on a workflow coordinator's thread: its script message renders as this opening. */
   workflowOpening?: WorkflowOpening | null;
   onForkFromRun: (input: {
     readonly sourceThreadId: ThreadId;
@@ -508,9 +507,8 @@ interface MessagesTimelineProps {
   contentInsetEndAdjustment: number;
   onIsAtEndChange: (isAtEnd: boolean) => void;
   /**
-   * Off while the user is reading history; LegendList's own maintainScrollAtEnd
-   * would otherwise re-pin regardless of ChatView's scroll-mode refs whenever
-   * the user drifts near the bottom.
+   * Disable while reading history: LegendList can otherwise re-pin near the bottom regardless
+   * of ChatView scroll mode.
    */
   liveFollowEnabled: boolean;
   onContentOverflowChange?: (overflows: boolean) => void;
@@ -800,8 +798,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     });
   }, [latestRun, listIdentityKey]);
 
-  // Find the fold that hides the match: imported turns have no run id but still
-  // fold under a synthetic key, so the match's own run id cannot open them.
   const findFoldRunIds = findActive
     ? timelineTurnFoldRunIdsByEntryId({
         timelineEntries,
@@ -1386,11 +1382,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
     contentInsetEndAdjustment,
   });
 
-  // Each row carries its own provider. LegendList moves rows into their
-  // containers one commit after this component renders, so a provider around
-  // the list would re-render the outgoing thread's rows with the incoming
-  // thread's context just before they unmount. extraData hands a changed
-  // sharedState to the rows that stay.
+  // LegendList moves rows one commit late; per-row providers prevent outgoing rows from
+  // receiving the next thread's context.
   const renderItem = ({ item }: { item: MessagesTimelineRow }) => (
     <TimelineRowCtx value={sharedState}>
       <div className="messages-timeline-row-frame">
@@ -1544,13 +1537,8 @@ function keyExtractor(item: MessagesTimelineRow) {
   return item.id;
 }
 
-// LegendList estimates unmeasured rows from the running average size of their
-// type. One type for every assistant reply lets a few very long replies, or
-// one that is streaming, lift the estimate for short replies to thousands of
-// pixels. Rows then mount one at a time, each measurement shrinks the list
-// and mounts the next row in the same commit, and scrolling into unmeasured
-// history exceeds React's nested update limit. Doubling-length buckets keep
-// each average within about 2x of the rows it estimates.
+// LegendList averages sizes by type. Length buckets prevent long replies from inflating
+// short-row estimates and causing nested-update loops.
 function getItemType(item: MessagesTimelineRow) {
   if (item.kind !== "message") return item.kind;
   const lengthBucket = Math.max(0, Math.floor(Math.log2(item.message.text.length / 1000)));
@@ -1775,10 +1763,7 @@ function TimelineMinimap({
               const activeDistance =
                 resolvedActiveIndex === null ? null : Math.abs(index - resolvedActiveIndex);
               return (
-                // Compositor-friendly on purpose: in-view state and the hover
-                // fisheye animate constantly (every scroll tick and streaming
-                // update flips a band of strips), so the strip animates only
-                // transform and opacity.
+                // Scroll and streaming updates animate many strips; use only transform and opacity.
                 <span
                   aria-hidden="true"
                   className={cn(
@@ -3978,8 +3963,7 @@ function WorkGroupHeader(props: {
   );
 }
 
-/** Subscribes directly to the UI state store for expand/collapse state,
- *  so toggling re-renders only this component — not the entire list. */
+/** Subscribe here so expand/collapse re-renders only this section. */
 const AssistantChangedFilesSection = memo(function AssistantChangedFilesSection({
   turnSummary,
   routeThreadKey,
@@ -4742,10 +4726,6 @@ function sameRowsInput(left: MessagesTimelineRowsInput, right: MessagesTimelineR
   return Object.keys(left).length === Object.keys(right).length;
 }
 
-/**
- * Rows derived from the previous projection of the same list, so a streamed
- * text update patches its message rows instead of deriving every row again.
- */
 function useIncrementalTimelineRows(
   identity: string,
   input: MessagesTimelineRowsInput,

@@ -132,9 +132,7 @@ export const ChangedFilesTree = memo(function ChangedFilesTree(props: {
 }) {
   const { files, allDirectoriesExpanded, onOpenTurnDiff, resolvedTheme, runId, onFileContextMenu } =
     props;
-  // Overrides apply only while their key matches the current one, so starting from no key is
-  // the same as starting with no overrides. That lets this hook run before the tree is built,
-  // and the compiler caches the tree on `files`.
+  // Declare state before building the tree so the compiler can cache the tree on `files`.
   const [directoryExpansionState, setDirectoryExpansionState] = useState<{
     key: string | null;
     overrides: Record<string, boolean>;

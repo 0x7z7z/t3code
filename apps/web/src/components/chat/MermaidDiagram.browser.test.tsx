@@ -2,7 +2,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { sanitizeMermaidSvg } from "./MermaidDiagram";
 
-// The label markup Mermaid's sequence diagrams emit for $$...$$ text.
 function noteSvg(label: string) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><foreignObject height="34" width="35" x="57" y="85"><div style="width: fit-content;" xmlns="http://www.w3.org/1999/xhtml"><div style="display: flex; align-items: center; justify-content: center; white-space: nowrap;"><span class="katex">${label}</span></div></div></foreignObject></svg>`;
 }

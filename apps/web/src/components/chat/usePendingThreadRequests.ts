@@ -52,7 +52,6 @@ const NO_PENDING_REQUESTS = { approvals: [], userInputs: [] } as const;
 const NO_PENDING_APPROVALS: ReturnType<typeof derivePendingApprovals> = [];
 const NO_PENDING_USER_INPUTS: ReturnType<typeof derivePendingUserInputs> = [];
 
-/** Writes the custom answer for a question of the pending user input the making render saw. */
 function makePendingCustomAnswerSetter(input: {
   readonly activePendingUserInput: PendingUserInput | null;
   readonly activePendingRequestKey: string;
@@ -87,14 +86,9 @@ function makePendingCustomAnswerSetter(input: {
   };
 }
 
-/**
- * Pending approvals and user-input questions for the active thread: what is
- * waiting, the user's in-progress answers, and the commands that respond.
- */
 export function usePendingThreadRequests(input: {
   readonly environmentId: EnvironmentId;
   readonly activeThreadId: ThreadId | null;
-  // The effect that prunes stale question drafts re-runs when this object changes.
   readonly activeThread: { readonly id: ThreadId } | undefined;
   readonly serverProjection: OrchestrationV2ThreadProjection | null;
   readonly supportsQuestionAttachments: boolean;
@@ -373,8 +367,6 @@ export function usePendingThreadRequests(input: {
     return result;
   };
 
-  // Closes an async question without messaging the agent. The server records
-  // the dismissal so every client releases the composer.
   const onDismissUserInput = async (requestId: RuntimeRequestId) => {
     if (!activeThreadId) return;
 

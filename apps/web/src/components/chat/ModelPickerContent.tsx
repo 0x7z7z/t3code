@@ -242,8 +242,7 @@ function ModelPickerProviderNotices({
   );
 }
 
-// Owns the list's measured height and scroll fades, which change on every scroll and
-// resize without touching the picker's model lists.
+// Isolate scroll and resize state so it does not re-render the picker's model lists.
 function ModelPickerList({
   listRef,
   itemKeys,
@@ -273,7 +272,6 @@ function ModelPickerList({
 
   // Keyed by content: a new disabled-reason closure rebuilds an identical key array.
   const itemListKey = JSON.stringify(itemKeys);
-  // A new list starts from the top until the measurement below lands.
   const [fadesResetFor, setFadesResetFor] = useState(itemListKey);
   if (fadesResetFor !== itemListKey) {
     setFadesResetFor(itemListKey);
@@ -708,7 +706,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     return notice ? [{ instanceId: entry.instanceId, notice }] : [];
   });
 
-  // The first selectable models get the numbered jump shortcuts, in list order.
   const modelJumpModelKeys = visibleModels
     .filter((model) => !getModelDisabledReason?.(model.instanceId, model.slug))
     .slice(0, MODEL_PICKER_JUMP_KEYBINDING_COMMANDS.length)

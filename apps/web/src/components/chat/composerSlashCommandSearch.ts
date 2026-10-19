@@ -13,9 +13,8 @@ type SlashSearchItem = Extract<
 >;
 
 /**
- * A provider expands a slash command only when it opens the whole message;
- * anywhere else it reaches the agent as literal text, so it is not offered
- * there.
+ * Providers expand slash commands only at the start of the whole message; elsewhere they
+ * receive literal text.
  */
 export function slashCommandItemsForPromptPosition(
   items: ReadonlyArray<SlashSearchItem>,

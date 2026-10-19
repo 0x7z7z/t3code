@@ -56,17 +56,13 @@ export function usePullRequestFilesViewed(options: {
   const requests = useRef(0);
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Everything held here belongs to one change request on one environment. The environment is
-  // part of that: two of them can hand out the same project id, and a press made against one
-  // must never be answered for by the other.
+  // Environment ids are part of the scope because different servers can reuse project ids.
   const scopeKey = `${environmentId} ${reference.projectId} ${reference.repository} ${reference.number}`;
   const scope = useRef(scopeKey);
 
-  // The host's answer as it stood when a completed write was acknowledged, per path. The first
-  // answer that differs from it is the first read that could have seen the write, which is what
-  // retires the press rather than the host happening to agree with it.
+  // Retire presses only after a read newer than the acknowledged write, even if an older answer
+  // already agrees.
   const answeredFrom = useRef<Map<string, FileViewedStates | null>>(new Map());
-  // The committed answer, read when a write completes rather than when it was sent.
   const committedStates = useRef(states);
 
   useEffect(() => {
@@ -120,8 +116,7 @@ export function usePullRequestFilesViewed(options: {
   const currentTarget = useEffectEvent(() => ({ environmentId, reference }));
   const flushTarget = useEffectEvent(flush);
 
-  // Leaving a change request, the environment it lives on, or the page itself records what was
-  // pressed and then drops the rest, sending those last presses to the scope being left.
+  // Flush remaining presses to the departing scope before clearing state.
   useEffect(() => {
     const leaving = currentTarget();
     scope.current = scopeKey;

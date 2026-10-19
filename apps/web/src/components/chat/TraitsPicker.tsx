@@ -290,9 +290,8 @@ function getTraitSelectChange(
 }
 
 /**
- * `modelOptions` must already carry the composer's implicit defaults (see
- * `withImplicitFastModeDefault`) so the persisted selection matches what the
- * picker would write.
+ * Pass implicit defaults from `withImplicitFastModeDefault` so persisted selections match
+ * picker writes.
  */
 export function getReasoningTraitStep(input: {
   provider: ProviderDriverKind;
@@ -329,8 +328,6 @@ export function getReasoningTraitStep(input: {
           input.reportedModelSelection,
         );
   const ordered = input.direction > 0 ? descriptor.options : descriptor.options.toReversed();
-  // A reported value outside the catalog, such as OpenCode's "default", steps
-  // from the catalog default, or from the end when there is none.
   const position =
     [current, getDescriptorStringValue(descriptor)]
       .map((value) => ordered.findIndex((option) => option.id === value))

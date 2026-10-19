@@ -66,9 +66,8 @@ function controlBlockWidths(block: HTMLElement): { natural: number; iconOnly: nu
 }
 
 /**
- * Both the composer (deciding which blocks move into overflow) and the
- * context strip (deciding whether its labels may expand) read the same
- * numbers, so neither decision depends on what the other one hid last render.
+ * Measure shared geometry independently of what either the composer or context strip hid last
+ * render.
  */
 export function measureRestingComposerControls(
   controls: HTMLElement,

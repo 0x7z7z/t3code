@@ -1,7 +1,4 @@
-/**
- * The same combobox as the project and branch pickers, and dressed the same, rather than a menu:
- * a menu's typeahead claims every keypress to jump between rows, which a search box cannot share.
- */
+/** Menu typeahead consumes search keystrokes; use a combobox. */
 import type { ReactNode } from "react";
 
 import { Button } from "../ui/button";
@@ -91,9 +88,8 @@ export function PullRequestCandidatePicker<T>({
       }}
       open={open}
       onOpenChange={(nextOpen, details) => {
-        // Cancelled rather than ignored, so the combobox also skips its own close work: freezing
-        // the query and returning focus to the trigger, either of which would take the next
-        // keystroke away from the box.
+        // Cancel item-press closure so query freezing and trigger focus cannot steal the next
+        // search keystroke.
         if (!nextOpen && details.reason === "item-press") {
           details.cancel();
           return;

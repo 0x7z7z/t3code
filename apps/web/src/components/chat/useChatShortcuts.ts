@@ -10,7 +10,7 @@ import {
 import { getTerminalFocusOwner, type TerminalFocusOwner } from "../../lib/terminalFocus";
 import { shouldTypeToFocusComposer } from "./composerFocusRedirect";
 
-/** Runs a command. Returning false lets the key event through untouched. */
+/** Returning false lets the key event through untouched. */
 export type ChatShortcutHandler = (context: {
   readonly event: KeyboardEvent;
   readonly terminalFocusOwner: TerminalFocusOwner | null;
@@ -28,15 +28,9 @@ export interface ChatShortcutsInput {
   readonly typeIntoComposer: (key: string) => boolean;
   readonly closeThreadFind: () => void;
   readonly commands: Partial<Record<KeybindingCommand, ChatShortcutHandler>>;
-  /** Handles commands not in `commands`, such as project scripts. */
   readonly fallback: (command: KeybindingCommand) => ChatShortcutHandler | undefined;
 }
 
-/**
- * The chat's window keyboard shortcuts, plus Escape closing thread find.
- * Listeners attach once and read the latest input on each event, so handlers
- * act on the current render without re-registering on every change.
- */
 export function useChatShortcuts(input: ChatShortcutsInput) {
   const latest = useRef(input);
   useLayoutEffect(() => {

@@ -68,7 +68,6 @@ export function ComposerBannerStack({ className, items, attachedAbove }: Compose
     };
   }, []);
 
-  // A stack that shrinks to one banner collapses, so the next stack starts collapsed.
   if (items.length < 2 && stackExpanded) {
     setStackExpanded(false);
   }

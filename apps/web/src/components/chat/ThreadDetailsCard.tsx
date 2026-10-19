@@ -152,9 +152,8 @@ export function ThreadDetailsCard({
         inlineOpen ? (
           <aside
             aria-label="Thread details"
-            // Slides down to make room for the find bar, but returns in the same frame
-            // the bar closes: a floating preview below moves up at once and would
-            // otherwise overlap the card mid-slide.
+            // Return immediately when find closes to avoid overlapping the preview that moves
+            // up in the same frame.
             className={cn(
               "absolute z-20",
               topInset > 0 &&

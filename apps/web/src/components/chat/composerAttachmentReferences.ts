@@ -8,7 +8,6 @@ import {
   ensureInlineContextReferences,
 } from "../../lib/composerContextReferences";
 
-/** Route references that finish preparing asynchronously to the draft that accepted them. */
 export function insertAttachmentReferencesForDraft(input: {
   target: ComposerThreadTarget;
   liveAttachmentTargetKey: string;

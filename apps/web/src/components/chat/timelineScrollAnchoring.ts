@@ -74,9 +74,8 @@ export function getRowBottom(state: TimelineListMeasurementState, index: number)
 }
 
 /**
- * The list's own content length includes the composer inset spacer, so this
- * measures from the last row instead. Unknown row geometry or an unmeasured
- * viewport counts as fitting.
+ * Exclude the composer inset spacer by measuring the last row. Unknown geometry counts as
+ * fitting.
  */
 export function timelineContentOverflowsViewport(
   state: TimelineListMeasurementState | undefined,

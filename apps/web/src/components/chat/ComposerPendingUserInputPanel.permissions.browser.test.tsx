@@ -50,7 +50,6 @@ it("cancels an answer's pending auto-submit on revocation and resumes after a ne
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  // A disabled button swallows the click, as it would for a user.
   const chooseOption = () =>
     [...container.querySelectorAll("button")]
       .find((button) => button.textContent?.includes("Incremental"))!

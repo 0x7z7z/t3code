@@ -11,15 +11,8 @@ import { toastManager } from "../ui/toast";
 import { usageLimitsBannerItem } from "./ComposerUsageLimits";
 
 /**
- * The open /usage-limits panel for one thread, model and turn. Only the open
- * moment is stored: the rows read live provider data, so a redeemed reset
- * credit or refreshed probe shows through. Anything that spends quota closes
- * it: a new turn from any source, or the agent resuming after an approval or
- * answered question.
- *
- * `panelKey` names that thread, model and turn. It is null while the provider
- * list or the thread itself is unavailable, such as during a reconnect; the
- * panel then stays hidden rather than being dropped.
+ * Keep provider data live after opening. Hide without discarding when panelKey is unavailable
+ * during reconnect; clear when quota-spending work resumes.
  */
 export function useUsageLimitsPanel(input: {
   readonly environmentId: EnvironmentId;
@@ -44,7 +37,6 @@ export function useUsageLimitsPanel(input: {
     readonly threadKey: string;
     readonly now: number;
   } | null>(null);
-  // Drop the snapshot as soon as the thread or model changes so it cannot resurface stale.
   if (panel !== null && panelKey !== null && panel.key !== panelKey) {
     setPanel(null);
   }
@@ -64,7 +56,6 @@ export function useUsageLimitsPanel(input: {
   const offered =
     providerDriver !== null && hasProviderUsageLimits(providerDriver, providers, sources);
 
-  // Answered locally from the last Limits snapshot; the agent never sees it.
   const open = useStableCallback(() => {
     const now = Date.now();
     const nextReport =

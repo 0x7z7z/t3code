@@ -245,9 +245,8 @@ const loadCodeTab = () => import("./PullRequestCodeTab");
 const PullRequestCodeTab = lazy(loadCodeTab);
 
 /**
- * What the last hand-off wrote into each draft, kept outside React because the panel that wrote it
- * is closed by the time the next one opens. It is how a prompt the reader has since edited is told
- * apart from the one they were handed: only the sentence still exactly as written may be replaced.
+ * Keep handoff text across panel unmounts; replace only unchanged handoff contributions so user
+ * edits survive.
  */
 const lastHandoffPromptByDraft = new Map<string, string>();
 
@@ -406,10 +405,6 @@ function pullRequestDetailSummary(data: PullRequestDetail | null) {
   return data === null ? null : { ...data, checksState: pullRequestChecksState(data.checks) };
 }
 
-/**
- * Loads a pull request's detail and activity and merges them, with the snapshot cache, the shared
- * summary and the list row, into the detail the panel shows.
- */
 function usePullRequestDetail(
   environmentId: EnvironmentId,
   reference: PullRequestRef,
@@ -675,11 +670,9 @@ export function PullRequestDetailPanel({
   } else if (!tabMountState.tabs.has(tab)) {
     setTabMountState({ key: tabScopeKey, tabs: new Set(tabMountState.tabs).add(tab) });
   }
-  // Each tab restores the condensed state its own scrolling left behind.
   const [condensedByTab, setCondensedByTab] = useState<Partial<Record<DetailTab, boolean>>>({});
   const condensed = condensedByTab[tab] ?? false;
   const scrollerByTab = useRef<Partial<Record<DetailTab, HTMLDivElement | null>>>({});
-  // Fresh ref callbacks would detach and reattach every scroller on each render.
   const [scrollerRefs] = useState(() => ({
     summary: (node: HTMLDivElement | null) => {
       scrollerByTab.current.summary = node;
@@ -940,9 +933,8 @@ export function PullRequestDetailPanel({
     });
     setPendingAction(null);
     if (result._tag === "Failure") {
-      // A merge strategy a branch policy forbids is refused at completion and nowhere earlier —
-      // Azure DevOps publishes no per-strategy availability to hide the control with — so
-      // "action failed" would leave the reader pressing the same button again.
+      // Azure DevOps exposes no per-strategy availability; explain branch-policy rejection
+      // after the attempted action.
       const failure = squashAtomCommandFailure(result);
       const hint =
         updateMethod === "rebase"
@@ -1191,9 +1183,7 @@ export function PullRequestDetailPanel({
       actingEnvironmentId,
       acting?.projectId ?? handoffSummary.projectId,
     );
-    // The thread is opened before the checkout rather than after it, because the project's setup
-    // script only runs for a checkout that knows which thread it is for — and a worktree with no
-    // dependencies installed is not something anyone can test.
+    // Open the thread first: checkout setup runs only when the checkout knows its thread.
     const opened = await newThread(projectRef).then(
       (session) => session,
       () => null,
@@ -1233,9 +1223,8 @@ export function PullRequestDetailPanel({
     );
     if (!pointed) {
       setHandoff(null);
-      // The checkout is on disk; only the thread failed to move onto it. Writing the task now
-      // would send the agent at whatever the thread was already open on — which is the one
-      // outcome worth stopping for, since it reads as success and is not.
+      // Do not send the task if rebinding failed: the agent would work in the thread's previous
+      // checkout.
       toastManager.update(toastId, {
         type: "error",
         title: "Checked out, but the thread stayed where it was",
@@ -2760,7 +2749,6 @@ export function PullRequestDetailPanel({
           const scroller = scrollerByTab.current[tab];
           if (event.target !== scroller || scroller === null || scroller === undefined) return;
           const top = scroller.scrollTop;
-          // Decided here, not in a state updater, which React may run during render.
           const previous = condensedByTab[tab] ?? false;
           const foldHeight = foldRef.current?.scrollHeight ?? 0;
           let next = previous;

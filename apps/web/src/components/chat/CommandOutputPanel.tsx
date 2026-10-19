@@ -7,10 +7,8 @@ import { useServerConfigs } from "../../state/entities";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
 
-// Within this many pixels of the end still counts as following the output.
 const FOLLOW_SLACK_PX = 8;
 
-/** True when the environment streams command output; older servers only return final output. */
 export function useCommandOutputStreaming(environmentId: EnvironmentId): boolean {
   return (
     useServerConfigs().get(environmentId)?.environment.capabilities.commandOutputStreaming === true
@@ -18,9 +16,8 @@ export function useCommandOutputStreaming(environmentId: EnvironmentId): boolean
 }
 
 /**
- * Output of one expanded command row: streams while the command runs, then
- * shows its final output. Mount it only when `useCommandOutputStreaming` holds.
- * It subscribes only while mounted, so collapsed rows and other threads receive nothing.
+ * Mount only when `useCommandOutputStreaming` holds; unmounting unsubscribes collapsed rows and
+ * other threads.
  */
 export function CommandOutputPanel(props: {
   readonly environmentId: EnvironmentId;
@@ -34,12 +31,10 @@ export function CommandOutputPanel(props: {
     }),
   );
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Follow new output until the reader scrolls up; scrolling back down resumes.
   const followRef = useRef(true);
   const text = data?.output.text ?? "";
   const { resolvedTheme } = useTheme();
 
-  // This panel only re-renders when its output changes, so keep the end in view after each.
   useLayoutEffect(() => {
     const element = scrollRef.current;
     if (element && followRef.current) element.scrollTop = element.scrollHeight;

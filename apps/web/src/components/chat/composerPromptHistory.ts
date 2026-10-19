@@ -49,11 +49,6 @@ function stripTrailingReviewComments(prompt: string): string {
   return cut === prompt.length ? prompt : prompt.slice(0, cut).trimEnd();
 }
 
-/**
- * Inline terminal chips are sent as `@terminal-1:12-13` labels in the text with
- * their content in the trailing block. Once the block is stripped the label
- * points at nothing, so remove it too.
- */
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

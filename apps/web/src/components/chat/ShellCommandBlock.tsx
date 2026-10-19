@@ -10,7 +10,6 @@ import { HighlightedTokens } from "./HighlightedTokens";
 
 const WORD_CLASS_NAME = "inline-block max-w-full [overflow-wrap:anywhere]";
 
-// The shell parser loads with the first expanded command, not with the timeline.
 let embeddedScriptsModule: Promise<typeof import("../../lib/embeddedScripts")> | undefined;
 function loadEmbeddedScripts() {
   embeddedScriptsModule ??= import("../../lib/embeddedScripts");
@@ -35,7 +34,6 @@ function PlainWords({ code }: { code: string }) {
 function HighlightedCommand({ code, theme }: { code: string; theme: "light" | "dark" }) {
   const { embeddedScripts } = use(loadEmbeddedScripts());
   const language = commandHighlightLanguage(code);
-  // Only shell syntax nests scripts; PowerShell's own grammar colors its strings.
   const embedded = language === "shellscript" ? embeddedScripts(code) : [];
   return (
     <HighlightedTokens

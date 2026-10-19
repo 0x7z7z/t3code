@@ -1042,7 +1042,6 @@ describe("MessagesTimeline subagents", () => {
         { onOpenThread },
       );
       const children = () => buttons("Open Package audit");
-      // A settled run folds its work behind a "Worked for" summary.
       const fold = buttons(/^Worked for/)[0];
       if (fold) await click(fold);
       if (count > 1) {
@@ -1211,7 +1210,6 @@ describe("MessagesTimeline scroll position", () => {
     const props = baseProps();
     function Chat() {
       const [liveFollowEnabled, setLiveFollowEnabled] = useState(true);
-      // The chat view stops following the live edge when the reader scrolls.
       return (
         <div className="contents" onWheelCapture={() => setLiveFollowEnabled(false)}>
           <MessagesTimeline

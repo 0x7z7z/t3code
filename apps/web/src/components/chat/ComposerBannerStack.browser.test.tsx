@@ -53,7 +53,6 @@ it("only offers notice details when the description cannot fit", async () => {
   await render(4000, "OpenCode");
   expect(hasDetails()).toBe(false);
 
-  // A narrow composer hides the description entirely, so details are the only way to read it.
   container.style.width = "300px";
   await nextFrame();
   expect(hasDetails()).toBe(true);

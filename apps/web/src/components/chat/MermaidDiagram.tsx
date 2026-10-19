@@ -30,9 +30,7 @@ function loadMermaid(): Promise<Mermaid> {
 const REMOTE_CSS_URL = /url\(\s*(?!['"]?#)[^)]*\)/gi;
 let purifier: ReturnType<typeof DOMPurify> | null = null;
 
-// Mermaid renders $$...$$ labels with KaTeX's MathML output. These are KaTeX's
-// MathML element types, without annotation (Mermaid strips it), semantics (only
-// a wrapper, so its content is kept), and mglyph (a trusted-input image).
+// Allow KaTeX MathML, excluding annotations and trusted-input images; unwrap semantics.
 const KATEX_MATHML_TAGS = new Set([
   "math",
   "menclose",
@@ -59,8 +57,6 @@ const KATEX_MATHML_TAGS = new Set([
   "munder",
   "munderover",
 ]);
-// Presentation attributes KaTeX sets on those elements. The existing profiles
-// already cover class, style, width, height, display, and xmlns.
 const KATEX_MATHML_ATTRIBUTES = new Set([
   "accent",
   "accentunder",
@@ -90,9 +86,8 @@ const KATEX_MATHML_ATTRIBUTES = new Set([
   "voffset",
 ]);
 
-// Diagrams can come from untrusted PR descriptions, so strip anything that can
-// navigate, run script, or fetch remote content on top of Mermaid's own strict
-// sanitization.
+// PR descriptions are untrusted; block navigation, script and remote fetches beyond Mermaid's
+// strict sanitization.
 export function sanitizeMermaidSvg(svg: string): string {
   if (!purifier) {
     purifier = DOMPurify(window);
@@ -216,8 +211,6 @@ function mermaidImageUrl(svg: string): string {
   }
   element.setAttribute("xmlns", "http://www.w3.org/2000/svg");
   element.style.maxWidth = "none";
-  // A standalone image inherits nothing from the page, including the text color
-  // that HTML labels such as math use.
   const { backgroundColor, color } = getComputedStyle(document.body);
   element.style.backgroundColor = backgroundColor;
   element.style.color = color;

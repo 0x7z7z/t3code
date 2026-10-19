@@ -8,11 +8,8 @@ const ACTIVE_SUBAGENT_STATUSES = new Set<OrchestrationV2Subagent["status"]>([
 ]);
 
 /**
- * Whether a subagent started another run after a notification reported its
- * final outcome, so that outcome no longer describes it. Claude resumes a
- * finished subagent under the same id. An active subagent is always on a later
- * run, even when the notification was delivered late from the queue; a settled
- * one is on a later run when it started after the notification arrived.
+ * Claude can resume a finished subagent under the same id. Active agents supersede queued
+ * outcomes; settled agents do so only if they started after notification.
  */
 export function subagentResumedSince(
   agent: Pick<OrchestrationV2Subagent, "status" | "startedAt">,

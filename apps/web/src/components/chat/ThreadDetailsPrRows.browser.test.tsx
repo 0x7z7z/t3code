@@ -5,7 +5,6 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 const watchCommand = vi.hoisted(() => vi.fn());
 
-// The row queries its own pull request; this test covers only which rows the list shows.
 vi.mock(import("./ThreadDetailsPrRow"), async (importOriginal) => ({
   ...(await importOriginal()),
   ThreadDetailsPrRow: ({

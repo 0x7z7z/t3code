@@ -170,12 +170,8 @@ export function editPullRequestThreadComment<
 type LegacyLinkedPullRequest = Pick<ThreadLinkedPullRequest, "repository" | "number">;
 
 /**
- * Decided from the thread's full link list, never from the single legacy `linkedPullRequest`:
- * that field is one server-chosen link out of many, and a thread's own second link or lower
- * stack layer would otherwise be handed a checkout button for a branch it already works on.
- * Repository and number are not enough either way: one environment can hold two checkouts of
- * the same repository under different projects, and the other project's checkout is somebody
- * else's branch.
+ * Use all thread links and include project identity: a legacy single link misses stack layers,
+ * and another project's checkout is a different branch.
  */
 export function pullRequestPanelContext(
   thread: {
@@ -389,9 +385,8 @@ export function orderPullRequestComments<T extends { readonly createdAt: string 
 export type PullRequestReviewOutcome = "approved" | "changes-requested" | "dismissed";
 
 /**
- * Hosts spell the same three differently — GitHub reports `CHANGES_REQUESTED`, Bitbucket
- * `changes_requested` — so case and separator are ignored, and anything else (GitHub's
- * `COMMENTED`, a state no host here reports yet) is not a verdict.
+ * Hosts vary review-state case and separators; only recognized verdicts count, excluding states
+ * such as COMMENTED.
  */
 export function pullRequestReviewOutcome(
   reviewState: string | null,
@@ -408,10 +403,7 @@ export function pullRequestReviewOutcome(
   }
 }
 
-/**
- * Every host returns ISO-8601 but not all of them in UTC, and `2026-07-05T01:00:00+02:00` sorts
- * after `2026-07-05T00:30:00Z` as text while falling an hour and a half before it in time.
- */
+/** Hosts preserve UTC offsets, so lexical ISO-8601 order can differ from chronological order. */
 function instant(iso: string): number {
   return Date.parse(iso);
 }
@@ -513,19 +505,14 @@ export function groupPullRequestTimelineConversations(
 }
 
 /**
- * A body that is nothing but a marker therefore renders as an empty block, so it is treated as
- * no body at all. The stripped text decides that and nothing else: the body itself is passed on
- * whole, because a comment demonstrating an HTML comment inside a code fence still has to show
- * it.
+ * Treat marker-only bodies as empty, but preserve original text so HTML comments demonstrated
+ * in fences remain visible.
  */
 export function visibleBody(body: string): string | null {
   return body.replace(/<!--[\s\S]*?-->/gu, "").trim().length === 0 ? null : body.trim();
 }
 
-/**
- * Merged wins over closed: GitHub sets both timestamps on a merge, and reporting "closed" for a
- * merged pull request would misstate what happened.
- */
+/** GitHub sets both closed and merged timestamps on merge; merged takes precedence. */
 export function buildPullRequestTimeline(
   detail: Pick<
     PullRequestDetailView,
@@ -705,9 +692,8 @@ export function handoffPrompt(
   existing: {
     readonly prompt: string;
     /**
-     * What the last hand-off into this draft wrote — its own contribution alone, never the
-     * merged prompt it landed in, or a draft that held the reader's text before the first
-     * hand-off would read as all hand-off and be replaced wholesale by the second.
+     * Store only the last handoff contribution; storing the merged prompt would let later
+     * handoffs overwrite user text.
      */
     readonly lastHandoffPrompt: string | undefined;
   },
@@ -737,10 +723,7 @@ export function handoffReviewComments(
   ];
 }
 
-/**
- * Everything derived from the pull request is explicitly marked untrusted: review bodies
- * and check output are attacker-controlled on public repositories.
- */
+/** Review bodies and check output are attacker-controlled on public repositories. */
 export function buildFixFindingsHandoff(input: {
   readonly number: number;
   readonly title: string;
@@ -939,11 +922,7 @@ function pullRequestContextComment(
   };
 }
 
-/**
- * It is the reader's own chip, so it sits outside the `pull-request-` namespace a
- * hand-off owns and sweeps: a later hand-off must not delete a reference the reader put
- * there themselves.
- */
+/** Keep user chips outside the handoff-owned namespace so later handoffs cannot delete them. */
 export function buildPullRequestReferenceContext(
   input: PullRequestContextMetadata,
 ): ReviewCommentContext {
@@ -1203,7 +1182,6 @@ export function readPullRequestDetailSnapshot(
   }
 }
 
-// Snapshot keys in the order they were last written, oldest first.
 const PULL_REQUEST_DETAIL_SNAPSHOT_INDEX_KEY = "t3.pullRequests.recentDetails";
 const PULL_REQUEST_DETAIL_SNAPSHOT_LIMIT = 20;
 
@@ -1218,7 +1196,6 @@ function readPullRequestDetailSnapshotIndex(storage: SnapshotStorage): string[] 
   }
 }
 
-// Keeps the snapshots of the 20 most recently saved pull requests and removes older ones.
 export function writePullRequestDetailSnapshot(
   storage: SnapshotStorage | undefined,
   environmentId: string,

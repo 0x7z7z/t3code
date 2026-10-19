@@ -18,13 +18,10 @@ import { useLinkedThreadPullRequest } from "../ThreadStatusIndicators";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
 /**
- * The change request a thread is linked to. When the linked one is merged or
- * closed and the thread's branch has a newer open one, that one replaces it:
- * the thread is relinked on the server, and an open panel showing the old one
- * follows.
+ * When a closed or merged link has a newer open replacement on the same branch, relink it on
+ * the server and move its open panel.
  */
 export function useThreadLinkedPullRequest(input: {
-  // Null for drafts, which have nothing to relink on the server.
   readonly serverThreadRef: ScopedThreadRef | null;
   readonly environmentId: EnvironmentId | null;
   readonly persisted: ThreadLinkedPullRequest | null;
@@ -105,7 +102,6 @@ export function useThreadLinkedPullRequest(input: {
   return {
     linked,
     linkedKey: linked ? JSON.stringify([linked.projectId, linked.repository, linked.number]) : null,
-    // Detail is shown for the persisted link; a replacement only exists once it is merged.
     hasDetail: persisted !== null,
   };
 }

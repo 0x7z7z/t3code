@@ -73,8 +73,6 @@ vi.mock(import("../../state/orchestration"), async (original) => {
     }),
   };
 });
-// Tooltip and hover card content renders inline so the suite can read every row's agent
-// details across many states without hovering each row.
 vi.mock(import("../ui/tooltip"), async () => {
   const { cloneElement } = await import("react");
   return {
@@ -96,7 +94,6 @@ async function render(element: ReactElement) {
   current = element;
   await act(async () => root.render(element));
 }
-// The mocked hooks read `state` while rendering, so a new element picks up changes.
 const update = () => act(async () => root.render(cloneElement(current)));
 const click = (element: HTMLElement) => act(async () => element.click());
 const buttons = () => [...container.querySelectorAll("button")];
@@ -122,7 +119,6 @@ function sectionToggle(expanded: boolean) {
 const heading = () => container.querySelector("h3")?.textContent;
 const buttonsWithLabel = (matches: (label: string) => boolean) =>
   buttons().filter((button) => matches(button.getAttribute("aria-label") ?? ""));
-// Joins rendered text nodes; `visibleOnly` drops screen-reader-only text.
 function textNodes(separator: string, visibleOnly = false) {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
   const parts: string[] = [];

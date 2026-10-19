@@ -1,9 +1,6 @@
 /**
- * Sending while any of it is outstanding snapshots a message whose chip has nothing behind it,
- * and the late result lands in whatever draft is open by then.
- *
- * Counted rather than flagged: two pastes can be in flight at once, and the first to finish must
- * not clear the second's claim.
+ * Count work per draft so one finished paste cannot release another; sending early would strand
+ * attachment chips.
  */
 class PendingDraftWork {
   private readonly counts = new Map<string, number>();
@@ -23,7 +20,5 @@ class PendingDraftWork {
   }
 }
 
-/**
- * Module-scoped, so a transfer keeps its claim on a draft across a remount of the composer.
- */
+/** Keep claims across composer remounts. */
 export const pendingDraftWork = new PendingDraftWork();

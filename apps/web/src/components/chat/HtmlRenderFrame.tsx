@@ -52,9 +52,8 @@ export function HtmlRenderFrame(props: {
     mimeType: "text/html",
     disposition: "inline" as const,
   };
-  // A cached URL with life left is reused, so the browser's cache serves the
-  // page again; one near expiry is minted afresh, since a frame cannot report a
-  // failed load.
+  // Reuse cached URLs with life left, but re-mint near expiry because frames cannot report
+  // failed loads.
   const [src, setSrc] = useState<string | null>(null);
   const srcExpiresAt = useRef(0);
   const [expandedSrc, setExpandedSrc] = useState<string | null>(null);

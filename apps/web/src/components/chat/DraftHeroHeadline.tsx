@@ -158,15 +158,13 @@ export function DraftHeroHeadline({
         );
   const selectedPickerItem = pickerItems.find((item) => item.value === activeProjectKey) ?? null;
 
-  // The picker can change the draft's target while the no-project home is
-  // still being opened; a stale continuation must not retarget it again.
+  // A picker change while the no-project home opens must invalidate the stale continuation.
   const latestTargetRef = useRef({ draftId, activeProjectKey, scratchTargetEnvironmentId });
   useEffect(() => {
     latestTargetRef.current = { draftId, activeProjectKey, scratchTargetEnvironmentId };
   }, [activeProjectKey, scratchTargetEnvironmentId, draftId]);
-  // An empty draft instead opens the chosen project's own draft, like starting a new thread there:
-  // moving it would replace that draft and strand whatever it holds, such as the browser tabs of
-  // the no-project draft.
+  // Open the project's own draft when empty; retargeting would overwrite its existing draft and
+  // strand browser tabs.
   const selectProject = (project: (typeof projects)[number], logicalProjectKey: string) => {
     if (!draftId) {
       return;

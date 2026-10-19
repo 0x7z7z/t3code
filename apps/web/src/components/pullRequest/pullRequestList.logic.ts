@@ -372,9 +372,8 @@ export function retainVisiblePullRequestStatsBatches(
 }
 
 /**
- * The feed is sliced by recency, so an older authored or review-requested row can be
- * missing from its first page and arrive with a later one; grouping the loaded pages would
- * then move it above rows already read.
+ * Recency pagination can introduce older authored or review-requested rows later; grouping feed
+ * pages would move them above rows already read.
  */
 export function partitionPullRequestsWithPriority<Entry extends PullRequestListEntry>(
   entries: ReadonlyArray<Entry>,
@@ -417,9 +416,8 @@ export type PullRequestDiffStats = ReadonlyMap<
 >;
 
 /**
- * The stats read is keyed by the rows on screen, so adding or removing one row is a fresh
- * query with nothing in it yet; replacing the map would blank every count already showing for
- * the round trip.
+ * Row changes create fresh stats queries; replacing the map would blank existing counts during
+ * that round trip.
  */
 export function mergePullRequestDiffStats(
   previous: PullRequestDiffStats,
@@ -601,9 +599,8 @@ export function writePullRequestListSnapshot(
 }
 
 /**
- * Until `projectsKnown`, the id is kept rather than dropped: an environment that has not
- * reported yet is not the same as one without the project, and dropping first would show every
- * project's pull requests for a moment before narrowing back down.
+ * Retain the project id until the environment reports projects so reconnect cannot briefly show
+ * all projects.
  */
 export function resolveProjectScope<Id extends string>(
   projectId: Id | undefined,
@@ -649,9 +646,8 @@ export function resolveQueryEnvironmentIds<Id extends string>(
 }
 
 /**
- * Still connecting is not the same as gone: a server the workspace already knows about is kept
- * named here even while it has nothing to answer with yet, so the lookup that follows finds
- * nothing under it rather than falling through to a different server's project of the same id.
+ * Retain known connecting environments so lookup cannot fall through to another server's
+ * same-numbered project.
  */
 export function resolveSelectedEnvironmentId<Id extends string>(
   namedEnvironmentId: Id | undefined,
@@ -663,9 +659,8 @@ export function resolveSelectedEnvironmentId<Id extends string>(
 }
 
 /**
- * Every host searches more than a row shows — GitHub reads bodies and commit messages, GitLab
- * and Bitbucket read descriptions — so a result can be a real match with nothing on the row to
- * show for it.
+ * Hosts search bodies and commit messages as well as visible row fields, so invisible matches
+ * still count.
  */
 export function scorePullRequestMatch(entry: PullRequestListEntry, query: string): number {
   const needle = query.trim().toLowerCase();
@@ -891,11 +886,8 @@ export function reusePullRequestEntries<Entry extends PullRequestListEntry>(
 const PULL_REQUEST_OVERRIDE_TRUST_MS = 60_000;
 
 /**
- * A read that started before the action can land after it and still say the old thing, so an
- * override is not cleared because an answer arrived but because the answer agrees: the row is
- * there in the state the override said. A row that is absent says nothing — the authored and
- * reviewing groups are read apart from the feed, and a page is only a page — so absence never
- * confirms.
+ * Reads can predate an action; retire overrides only when the returned row agrees. Absence from
+ * a partial feed or priority group proves nothing.
  */
 export function settlePullRequestOverrides<Entry extends PullRequestListEntry>(
   overrides: ReadonlyMap<string, PullRequestListOverride>,

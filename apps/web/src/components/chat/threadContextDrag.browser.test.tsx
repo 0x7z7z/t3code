@@ -23,8 +23,6 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-// ChatComposer is memoized and reused across thread navigation; each render's
-// drop callback must write into the draft of the thread it last rendered.
 const ComposerDropTarget = memo(function ComposerDropTarget({
   draftKey,
   drafts,

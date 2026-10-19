@@ -238,10 +238,7 @@ export function usePullRequestHandoffs({
   // One at a time whatever the key: they all check the same pull request out.
   const [handoff, setHandoff] = useState<string | null>(null);
 
-  /**
-   * Nothing is checked out: asking a question is not a reason to move somebody's working tree
-   * or to make a worktree they did not ask for.
-   */
+  /** Asking a question must not change a checkout or create a worktree. */
   const openThreadWithTask = async (
     projectRef: ReturnType<typeof scopeProjectRef>,
     task: PullRequestThreadTask | null,
@@ -314,9 +311,7 @@ export function usePullRequestHandoffs({
       title: "Preparing the pull request checkout...",
     });
     const projectRef = scopeProjectRef(environmentId, detail.projectId);
-    // The thread is opened before the checkout rather than after it, because the project's setup
-    // script only runs for a checkout that knows which thread it is for — and a worktree with no
-    // dependencies installed is not something anyone can test.
+    // Open the thread first: checkout setup runs only when the checkout knows its thread.
     const opened = await newThread(projectRef).then(
       (session) => session,
       () => null,

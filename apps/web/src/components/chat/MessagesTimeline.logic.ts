@@ -317,9 +317,8 @@ export interface TimelineEndState {
 }
 
 /**
- * strict isAtEnd flickers false for a frame while streaming content grows under
- * the viewport, so follow re-arms within this distance of the real content
- * bottom instead.
+ * Streaming can make strict isAtEnd flicker false for a frame; re-arm near the real content
+ * bottom.
  */
 const TIMELINE_FOLLOW_REARM_THRESHOLD_PX = 40;
 
@@ -331,12 +330,8 @@ export function resolveTimelineIsAtEnd(state: TimelineEndState | undefined): boo
   if (contentLength === undefined || scroll === undefined || scrollLength === undefined) {
     return state.isAtEnd;
   }
-  // contentLength includes the composer inset spacer, but the composer hides
-  // the same amount of viewport, so the inset cancels: plain
-  // contentLength - scroll - scrollLength is the gap between the last real row
-  // and the visible edge above the composer. LegendList's own isAtEnd subtracts
-  // the inset and is true anywhere in the bottom composer-height band, so it is
-  // only a fallback here, never a short-circuit.
+  // The composer inset cancels its hidden viewport area. LegendList subtracts it again, so its
+  // isAtEnd is only a fallback.
   return contentLength - scroll - scrollLength <= TIMELINE_FOLLOW_REARM_THRESHOLD_PX;
 }
 
@@ -715,9 +710,8 @@ interface SupersededAttemptFold {
 }
 
 /**
- * Item status alone cannot tell: an interrupted stream also closes as
- * `completed`. The reply must be the attempt's last output; trailing tool or
- * reasoning work means the attempt was still going.
+ * Interrupted streams can also be `completed`; only the attempt's last output proves the reply
+ * finished.
  */
 function completeSupersededReplyEntryIds(
   timelineEntries: ReadonlyArray<TimelineEntry>,
@@ -802,10 +796,8 @@ function deriveSupersededAttemptFolds(
 }
 
 /**
- * This is deliberately keyed on the turn's own lifecycle rather than transient
- * working state: right after the user sends a message, the previous turn is
- * still the "active" one until the server creates the new turn, and folding
- * must not flicker through that window.
+ * Use the turn lifecycle: after send, the previous turn remains active until the server creates
+ * the next one.
  */
 function deriveUnsettledRunId(
   latestRun: TimelineLatestRun | null,
@@ -824,9 +816,8 @@ function deriveUnsettledRunId(
 }
 
 /**
- * A child can keep working after its launching turn settles (or its attempt is
- * superseded), and the waiting footer counts it, so its card stays visible
- * until the child ends.
+ * Children can outlive their launching turn or attempt; keep their cards visible while the
+ * waiting footer counts them.
  */
 function liveSubagentCardEntryIds(entries: ReadonlyArray<TimelineEntry>): ReadonlySet<string> {
   const visible = new Set<string>();
@@ -891,9 +882,8 @@ function responseBoundaryRunId(entry: TimelineEntry): RunId | null {
 }
 
 /**
- * A promptless provider restart replaces the native turn without adding a user
- * message. Keep every provider turn since the initiating prompt in one visual
- * response until the replacement turn settles.
+ * Promptless provider restarts replace the native turn; group them under the initiating prompt
+ * until settled.
  */
 function lastResponseBoundaryIndex(timelineEntries: ReadonlyArray<TimelineEntry>): number {
   return timelineEntries.findLastIndex(timelineEntryStartsResponse);
@@ -984,9 +974,8 @@ function deriveTurnFolds(input: {
     terminalEntry: Extract<TimelineEntry, { kind: "message" }> | null;
     hasStreamingMessage: boolean;
     /**
-     * Entry timestamps alone undercount the duration (the first entry appears
-     * only once the provider starts producing output), and a turn cut short by
-     * a steer may hold a single instantaneous commentary message.
+     * Entry timestamps omit provider startup and may collapse steered turns to one
+     * instantaneous message.
      */
     startBoundary: string | null;
     anchorEntryId: string;
@@ -994,9 +983,7 @@ function deriveTurnFolds(input: {
   const groupsByRunId = new Map<RunId, TurnGroup>();
   const runlessFailedKeys = new Set<RunId>();
 
-  // Fold state is keyed by run, so each runless prompt lends its response a
-  // stable key of its own. Decide per prompt, not per thread: a V1 thread's
-  // first V2 run must not unfold every imported turn above it.
+  // Key runless responses per prompt so the first V2 run cannot unfold every imported turn.
   let runlessKey: RunId | null = null;
   let responseKey: RunId | null = null;
   let pendingBoundary: { createdAt: string; anchorEntryId: string } | null = null;
@@ -1015,9 +1002,7 @@ function deriveTurnFolds(input: {
     if (!ownRunId) {
       continue;
     }
-    // Resuming a subagent moves its item to the resuming run, but the item
-    // keeps its place in the turn that started it. It folds with that turn,
-    // so the later run's fold still opens under its own prompt.
+    // Resumed subagent items retain their original position and must fold with that turn.
     const runId =
       responseKey !== null && (promptIndexByRunId.get(ownRunId) ?? -1) > index
         ? responseKey
@@ -1086,7 +1071,6 @@ function deriveTurnFolds(input: {
         continue;
       }
       if (entry.kind === "work" && entry.entry.itemType === "notification") continue;
-      // User input stays visible after the surrounding work settles.
       if (entry.kind === "work" && entry.entry.questionAnswer !== undefined) continue;
       hiddenEntryIds.add(entry.id);
     }
@@ -1110,8 +1094,7 @@ function deriveTurnFolds(input: {
 
     const isLatestInterruptedTurn =
       input.latestRun?.runId === runId && input.latestRun.status === "interrupted";
-    // A turn cut short by a steer leaves trailing work entries behind its
-    // terminal message — take whichever ended last.
+    // A steer can leave trailing work after the terminal message; use whichever ended last.
     const lastEntryEnd =
       lastEntry.kind === "message" ? lastEntry.message.updatedAt : lastEntry.createdAt;
     const elapsedMs =
@@ -1268,7 +1251,6 @@ function withoutSubagentDelegationRows(entries: ReadonlyArray<TimelineEntry>) {
 
 const supersededReasoningEntries = new WeakMap<TimelineEntry, TimelineEntry>();
 
-/** A steer or subsequent activity ends thinking even if the provider omits its completion. */
 function settleSupersededReasoning(entries: ReadonlyArray<TimelineEntry>) {
   return entries.map((entry, index) => {
     if (
@@ -1325,10 +1307,7 @@ export function deriveMessagesTimelineRows(input: {
   expandedAttemptIds?: ReadonlySet<RunAttemptId>;
   expandedWorkGroupIds?: ReadonlySet<string>;
   isWorking: boolean;
-  /**
-   * The live work has no app run (a provider-native subagent thread), so
-   * runless entries are the current response instead of settled history.
-   */
+  /** Provider-native subagent work has no app run; treat runless entries as the live response. */
   runlessWorkActive?: boolean;
   activeTurnStartedAt?: string | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
@@ -1985,10 +1964,7 @@ export interface MessagesTimelineRowsProjection {
   readonly rows: MessagesTimelineRow[];
 }
 
-/**
- * Runless (imported V1) turns fold under a synthetic key, so the entry's own
- * run id is not enough to open them.
- */
+/** Imported V1 turns fold under synthetic keys, which their entry run ids cannot open. */
 export function timelineEntryTurnFoldRunId(
   input: Pick<
     MessagesTimelineRowsInput,
@@ -2183,7 +2159,6 @@ function isRowUnchanged(a: MessagesTimelineRow, b: MessagesTimelineRow): boolean
     }
 
     case "mcp-app": {
-      // Same reason: an equal app keeps its live frame and its state.
       const bm = b as typeof a;
       return (
         a.createdAt === bm.createdAt &&

@@ -1,6 +1,3 @@
-// Type-to-focus: printable keys and pastes that land on no editable target go to
-// the composer, so the user can start typing anywhere in the chat.
-
 export const TYPE_TO_FOCUS_EDITABLE_SELECTOR = [
   "input",
   "textarea",
@@ -49,8 +46,7 @@ const SECRET_REQUEST_SELECTOR = '[data-v2-item-type="secret_request"]';
 
 export function shouldRedirectInputToComposer(event: Event): boolean {
   if (event.defaultPrevented) return false;
-  // Near a pending secret request, input is meant for its private field: it
-  // must never land in the composer draft, which is persisted and sent.
+  // Secret-request typing must never enter the composer draft, which is persisted and sent.
   if (eventPathContainsSelector(event, SECRET_REQUEST_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_EDITABLE_SELECTOR)) return false;
   if (eventPathContainsSelector(event, TYPE_TO_FOCUS_INTERACTIVE_SELECTOR)) return false;

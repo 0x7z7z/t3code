@@ -63,9 +63,6 @@ export function PullRequestReviewForm({
   const [requestedVerdict, setRequestedVerdict] = useState<PullRequestReviewVerdict>("comment");
   const comments = usePendingReviewComments(reference);
   const reviewKey = pullRequestReviewKey(reference);
-  // The panel stays mounted while the selected pull request changes. Keeping summaries beside
-  // the keyed line-comment drafts makes the selected pull request's body correct on the first
-  // render, before an effect could reset state left behind by the previous one.
   const body = usePullRequestReviewStore((store) => store.summaries[reviewKey] ?? "");
   const removeComments = usePullRequestReviewStore((store) => store.removeComments);
   const setSummary = usePullRequestReviewStore((store) => store.setSummary);
