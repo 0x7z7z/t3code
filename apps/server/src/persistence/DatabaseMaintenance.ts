@@ -179,7 +179,6 @@ const make = Effect.gen(function* () {
       const beforeBytes = Number((yield* fs.stat(databasePath)).size);
       const result = yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
-        // Held through compaction and VACUUM.
         yield* lockExclusively(databasePath);
         const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
         if (!(yield* maintenance.verify).valid) {

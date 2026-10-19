@@ -34,9 +34,9 @@ import {
 } from "../provider/Drivers/ClaudeHome.ts";
 
 const CLAUDE_TIMEOUT_MS = 180_000;
-/** The tools an investigation can see. `--tools` takes bare names; patterns go in the allow list. */
+/** `--tools` takes bare names; patterns go in the allow list. */
 const CLAUDE_INVESTIGATION_TOOLS = "Read,Grep,Glob,Bash";
-/** What it may run without asking. In dontAsk mode every other call, Bash included, is refused. */
+/** In dontAsk mode every call outside this list, Bash included, is refused. */
 const CLAUDE_INVESTIGATION_ALLOWED = [
   "Read",
   "Grep",

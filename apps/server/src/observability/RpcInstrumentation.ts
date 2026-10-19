@@ -9,10 +9,7 @@ import { rpcRequestDuration, rpcRequestsTotal, withMetrics } from "./Metrics.ts"
 
 type WsRpcMethod = RpcGroup.Rpcs<typeof WsRpcGroup>["_tag"];
 
-/**
- * Trace queries and dashboards group by these labels, so they keep their historical values
- * even where they differ from the method prefix.
- */
+/** Trace queries and dashboards depend on these labels, including differences from method prefixes. */
 const RPC_AGGREGATES = {
   [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: "orchestrationV2",
   [ORCHESTRATION_V2_WS_METHODS.getWorkflowScript]: "orchestration",

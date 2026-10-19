@@ -363,10 +363,8 @@ it.live.each(["thread", "shell"] as const)(
     }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
 
-// Compaction keeps the oldest and newest event per message, so a cursor older
-// than the deleted rows still replays each message where the client would
-// first have seen it (reducers append on first sight) and reaches the same
-// final state. No snapshot fallback is needed.
+// Clients append messages on first sight, so compaction must retain each
+// message's oldest event as well as its newest to preserve order on replay.
 it.effect("thread resume across compacted history keeps message order and final state", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -413,7 +411,6 @@ it.effect("thread resume across compacted history keeps message order and final 
         )
       `;
     }
-    // Only the event between a's first and newest is deleted.
     assert.equal((yield* maintenance.compactEventStore).deletedEventCount, 1);
 
     const items = yield* subscribeOrchestrationV2Thread({

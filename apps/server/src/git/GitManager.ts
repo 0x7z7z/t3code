@@ -178,13 +178,7 @@ const PR_LOOKUP_CACHE_CAPACITY = 2_048;
 const PR_LOOKUP_GIT_STATE_TTL = Duration.minutes(5);
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
-/**
- * A hosting provider rejects a throttled request immediately, so caching every
- * failure for a flat 20s made a rate-limited poller re-ask *faster* than a
- * healthy one does (which waits PR_LOOKUP_CACHE_TTL), turning a transient 429
- * into sustained pressure. Backing off per branch keeps the retry rate below
- * the healthy rate once a branch has failed more than a couple of times.
- */
+/** Back off repeated failures per branch to keep retries below the healthy polling rate. */
 export function prLookupFailureTtl(consecutiveFailures: number): Duration.Duration {
   const exponent = Math.max(0, consecutiveFailures - 1);
   const backoffMs = Duration.toMillis(PR_LOOKUP_FAILURE_BASE_TTL) * Math.pow(2, exponent);
@@ -621,7 +615,6 @@ function headBranchProbe(
   );
 }
 
-/** A URL's host as `new URL` reads it: lowercased, any non-default port kept, `:443` dropped. */
 function urlHost(url: string): string | null {
   return URL.canParse(url) ? new URL(url).host : null;
 }

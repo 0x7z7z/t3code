@@ -86,7 +86,7 @@ interface TrackedClone {
   };
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const repositories = yield* SourceControlRepositoryService.SourceControlRepositoryService;
   const clones = yield* Ref.make(new Map<ProjectId, TrackedClone>());
@@ -188,13 +188,7 @@ export const make = Effect.gen(function* () {
       if (phase === "done") yield* scheduleRemoval(projectId);
     });
 
-  /**
-   * Runs in its own fiber; the tracker records the outcome through `onExit`,
-   * which still runs when the fiber is interrupted (a `matchCause` handler
-   * would be skipped). Once git has finished the clone is marked done before
-   * the post-clone hook runs, so a late Cancel cannot tear down a complete
-   * checkout.
-   */
+  /** Mark the clone done before post-clone hooks so a late cancel cannot delete a complete checkout. */
   const runClone = (projectId: ProjectId, tracked: TrackedClone) =>
     repositories
       .cloneRepository(

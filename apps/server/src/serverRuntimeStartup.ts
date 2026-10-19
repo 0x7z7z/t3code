@@ -348,7 +348,6 @@ const resolveStartupBrowserTarget = Effect.gen(function* () {
  */
 export const announceStartupPairingUrl = (pairingUrl: string) =>
   Effect.logInfo("Authentication required. Open T3 Code using the pairing URL.").pipe(
-    // Indented to match the annotation line the pretty logger printed before.
     Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
   );
 
@@ -568,8 +567,7 @@ const make = (options?: StartupOptions) =>
         ).pipe(Effect.map((targets): AutoBootstrapWelcomeTargets => targets)),
       });
       yield* Effect.logInfo("V2 orchestration recovery completed", recovery);
-      // Runs after activation: the status check fetches every enabled project's
-      // remote, and awaiting it here held command readiness for that long.
+      // Fetching every enabled project's remote must not delay command readiness.
       yield* runStartupPhase(
         "projects.auto-pull",
         Effect.gen(function* () {

@@ -333,10 +333,9 @@ export function splitNullSeparatedGitStdoutPaths(
 }
 
 /**
- * Refuses a ref name with a leading "-" before it reaches checkout or `worktree add`. Git refuses
- * such branch and tag names, and both commands, or the `git branch` that `worktree add` runs, read
- * one as an option. `--end-of-options` cannot guard them: Git before 2.44 reads it like `--`.
- * A lone "-" is the previous checkout, which both commands read as a ref.
+ * Checkout and `worktree add` read leading-dash refs as options. Git before
+ * 2.44 treats `--end-of-options` like `--`, so it cannot guard them. A lone
+ * `-` is allowed as the previous checkout.
  */
 const refuseOptionLikeRefName = (operation: string, cwd: string, refName: string | undefined) =>
   refName !== undefined && refName !== "-" && refName.startsWith("-")
@@ -473,12 +472,8 @@ const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFai
   [/fatal: '[^']+' already exists|destination path .+ already exists/i, "path_already_exists"],
 ];
 
-// Hooks write to the same stream git does, and nothing distinguishes their text
-// from git's: a pre-push hook echoing "authentication failed" would otherwise
-// be read as a credential failure. `remote:` is deliberately excluded — git
-// prefixes every byte the server sends that way, remote hook output included,
-// so trusting it would reintroduce the same false positive from the other end
-// of the connection.
+// Hooks share Git's stderr and can imitate its errors. `remote:` prefixes
+// remote hook output too, so only Git's own diagnostic prefixes are trusted.
 const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 // ssh reports the refusal itself, unprefixed, and git only adds a generic
 // "Could not read from remote repository" after it. Dropping ssh's line would
@@ -1165,8 +1160,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     );
 
   /**
-   * Runs `git worktree list --porcelain -z`. Git before 2.36 rejects `-z`, so a failed run
-   * retries the line form and returns it NUL-delimited, the same shape as `-z` output.
+   * Git before 2.36 rejects `worktree list -z`; normalize the fallback line
+   * form to the same NUL-delimited shape.
    */
   const executeWorktreeList = Effect.fn("executeWorktreeList")(function* (
     operation: string,
@@ -4083,8 +4078,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
   const listWorktreePaths: GitVcsDriver.GitVcsDriver["Service"]["listWorktreePaths"] = (cwd) =>
     executeWorktreeList("GitVcsDriver.listWorktreePaths", cwd, []).pipe(
-      // One record per worktree, each ended by an empty field. A `prunable`
-      // record's directory is gone, and another checkout may now sit there.
+      // A `prunable` record's directory is gone; another checkout may now sit there.
       Effect.map(({ stdout }) =>
         stdout.split("\0\0").flatMap((record) => {
           const fields = record.split("\0");

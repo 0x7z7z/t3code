@@ -1063,11 +1063,9 @@ export const subscribeOrchestrationV2Shell = Effect.fn("ws.orchestrationV2.subsc
       ),
     );
 
-    // Always attach the enrichment subscription before the first load so
-    // completions that race HTTP snapshot fetch still push a refresh. We still
-    // emit one compact metadata refresh up front: getAvailable may have been
-    // cold on the HTTP path (null identity), and enrichment PubSub events
-    // published before this subscribe attached are dropped.
+    // Subscribe before loading so racing enrichment completions push a refresh.
+    // Emit an initial refresh too: PubSub drops completions before subscription,
+    // and the HTTP snapshot may contain a cold repository identity.
     const completionMarker =
       input.requestCompletionMarker === true
         ? Stream.make({ kind: "synchronized" as const })
@@ -2957,10 +2955,8 @@ const layerWsRpc = (
                 })),
                 Stream.debounce(Duration.millis(PROVIDER_STATUS_DEBOUNCE_MS)),
               );
-              // Gated on the subscriber's capability flag because an
-              // already-shipped client decodes this stream against the old
-              // event union and its whole config subscription dies on an
-              // unknown member.
+              // Clients without this capability reject unknown event types and lose
+              // their entire config subscription.
               const environmentThemeUpdates =
                 input.environmentThemes === true
                   ? environmentTheme.streamChanges.pipe(

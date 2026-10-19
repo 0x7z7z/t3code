@@ -320,7 +320,6 @@ const make = Effect.gen(function* () {
     projects: ReadonlyArray<{ readonly workspaceRoot: string }>,
     entries: StorageCleanupReportEntry[],
   ) {
-    // Include deleted and archived threads, even those without a branch or project.
     const rows = yield* sql<{ worktreePath: string }>`
       SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
       FROM orchestration_v2_projection_threads
@@ -374,7 +373,6 @@ const make = Effect.gen(function* () {
     });
     // Let the first walk reach its own limit so unmeasurable folders get cached.
     // Later walks share the remaining sweep budget.
-    // Unmeasured folders still appear with an unknown size.
     const now = yield* Clock.currentTimeMillis;
     const measurementDeadline = now + 30_000;
     let firstMeasurement = true;
@@ -439,9 +437,7 @@ const make = Effect.gen(function* () {
     }
   });
 
-  // Whether cwd stopped being a checkout of this branch. Two small Git reads,
-  // since every worktree in a sweep is asked; statusDetailsLocal also diffs and
-  // counts.
+  // Use two small Git reads: statusDetailsLocal also diffs and counts for every worktree.
   const branchChanged = Effect.fn("StorageCleanup.branchChanged")(function* (
     cwd: string,
     branch: string | null,

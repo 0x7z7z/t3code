@@ -88,8 +88,6 @@ const proxyWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
     Effect.gen(function* () {
       const writeToClient = yield* client.writer;
       const writeToUpstream = yield* upstream.writer;
-      // Whichever side closes first ends the other via scope teardown: a close
-      // fails the pull with a SocketError, which loses the race.
       return yield* Effect.raceFirst(
         pumpFrames(upstream, writeToClient),
         pumpFrames(client, writeToUpstream),

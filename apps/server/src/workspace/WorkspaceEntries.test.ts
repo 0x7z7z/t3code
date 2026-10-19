@@ -176,7 +176,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
         const workspaceEntries = yield* WorkspaceEntries.WorkspaceEntries;
         for (const { directoryPath, ignored, except } of [
           { directoryPath: "node_modules", ignored: true, except: [] },
-          // A force-tracked file and a folder holding tracked files stay unignored.
           { directoryPath: "dist", ignored: true, except: ["dist/kept.js", "dist/vendored"] },
           // git reads `[id]/page.tsx` as a pathspec, which matches the tracked `i/page.tsx`.
           { directoryPath: "[id]", ignored: true, except: ["[id]/page.tsx"] },
@@ -205,8 +204,6 @@ it.layer(layerTest, { excludeTestServices: true })("WorkspaceEntries", (it) => {
     );
 
     it.effect("lists a host folder and its parent, each from its own root", () =>
-      // Folder links outside the workspace browse by passing the host folder as
-      // `cwd`; walking up passes the parent. Each stays bounded by its own root.
       Effect.gen(function* () {
         const parent = yield* makeTempDir();
         const path = yield* Path.Path;

@@ -362,10 +362,7 @@ function nextListCursor(
   cursorAdvance = delivered.length,
 ): string | null {
   if (fetched.length === 0) return null;
-  // Taken from what the host answered rather than from what survived de-duplication: a slice can
-  // be entirely rows already sent — a hundred change requests touched in the same second is one
-  // repository's boring afternoon — and reading "nothing new" as "nothing left" would end the
-  // walk on the instant it was stuck on, with everything older unreachable for good.
+  // Use all fetched rows: a slice containing only duplicates must still advance to older rows.
   const oldest = fetched.reduce((left, right) => (right.updatedAt < left.updatedAt ? right : left));
   return listCursorAt(previous, oldest.updatedAt, fetched, cursorAdvance);
 }
@@ -864,10 +861,7 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * Every write goes through it: the page hides what a viewer may not do, and a request that
-   * arrived without passing through the page — or after the access behind it was withdrawn — must
-   * not be handed to a provider on the client's word. Read freshly for that reason, rather than
-   * taken from whatever the detail said when the page loaded.
+   * Recheck permissions for every write because access may have changed since the page loaded.
    */
   const viewerPermissionsOf = (
     project: SupportedProject,
@@ -1272,11 +1266,8 @@ export const make = Effect.gen(function* () {
                 chunk,
                 (project): Effect.Effect<RepositoryBatch> => {
                   const fetched = rows.get(project.repository.trim().toLowerCase()) ?? [];
-                  // GitHub does not index every repository for search — a renamed one answers for
-                  // its old name with silence rather than with an error — so a repository the
-                  // search said nothing at all about is read on its own, once, before it is
-                  // believed. Only on its first slice: after that it has a boundary to carry on
-                  // from, and silence past one means the rows are older rather than absent.
+                  // GitHub search can silently miss renamed repositories. Fall back to a repository read
+                  // on the first slice unless an earlier search established visibility.
                   const lastVisible = searchVisibleAt.get(
                     searchVisibilityKey(project.host, project.repository),
                   );
@@ -1976,10 +1967,8 @@ export const make = Effect.gen(function* () {
     );
 
   /**
-   * Neither is a question a permission read answers: every host lets the person who wrote
-   * something rewrite it whatever access they have otherwise, and none of them reports that as a
-   * permission — so a check here could only guess, and a wrong guess takes the control away from
-   * the one person certain to be allowed.
+   * Hosts allow authors to edit their content without reporting that as a permission.
+   * A permission check here could incorrectly deny the author access.
    */
   const update: PullRequestService["Service"]["update"] = (input) =>
     requireProject(input).pipe(
@@ -2546,8 +2535,6 @@ export const make = Effect.gen(function* () {
     }
     mergedEpochs.set(scope, projectEpochs.get(ref.projectId) ?? projectEpochFloor);
   };
-  // Keys carry the reference back out of the cache loader, so the slot layout is shared with
-  // `refOfCacheKey` rather than read positionally at every loader.
   const refCacheKey = (ref: CredentialRef) =>
     JSON.stringify([
       refEpoch(ref),
@@ -3292,10 +3279,6 @@ export const make = Effect.gen(function* () {
       });
     return { read: credentialCached(read), fileKey };
   })();
-  /**
-   * Whether the change request, or the one commit asked for, changes this file under these names.
-   * Walks the same slices the reader was shown, reading only their file names once held.
-   */
   const changesFile = (input: PullRequestDiffFileContentsInput) => {
     const wanted = diffFiles.fileKey(input.oldPath, input.newPath);
     const walk = (cursor: string | undefined): Effect.Effect<boolean, PullRequestError> =>

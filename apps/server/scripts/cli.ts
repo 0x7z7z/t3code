@@ -153,11 +153,7 @@ const buildExeCmd = Command.make(
   ),
 );
 
-/**
- * Publishes the `t3.tgz` launcher scripts/build-npm-launcher.ts produced. The
- * launcher downloads its executable from the GitHub Release, so the release
- * workflow runs this only after that release is published.
- */
+/** The launcher downloads from GitHub Releases, so publish only after its release exists. */
 const publishCmd = Command.make(
   "publish",
   {

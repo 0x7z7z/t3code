@@ -15,8 +15,6 @@ export function nextScheduledRunAt(
 ): DateTime.DateTime | null {
   if (schedule.type === "webhook") return null;
   if (schedule.type === "interval") {
-    // Persisted rows created before the one-minute floor remain readable, but
-    // they must not retain their old high-frequency execution rate.
     // Intervals advance elapsed time, including across daylight-saving changes.
     return DateTime.addDuration(from, Math.max(schedule.everyMs, MIN_SCHEDULED_TASK_INTERVAL_MS));
   }

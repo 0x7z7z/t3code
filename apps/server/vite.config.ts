@@ -18,9 +18,7 @@ const repoEnv = loadRepoEnv();
 const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(packageJson.version)
   ? "nightly"
   : "latest";
-// Sent with every analytics event. Release workflows set it for pingdotgg/t3code
-// builds only, so local builds and forks report "dev". A typo fails the build
-// instead of mislabeling events.
+// Official release workflows set the telemetry channel; local builds and forks use "dev".
 const TELEMETRY_CHANNELS = ["stable", "nightly", "preview", "dev"];
 const telemetryChannel = process.env.T3CODE_TELEMETRY_CHANNEL?.trim() || "dev";
 if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
@@ -29,10 +27,8 @@ if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
   );
 }
 
-// `build:exe` wraps the same bundle in a Node single-executable. tsdown's exe
-// step refuses multi-chunk output and counts the sourcemap as a chunk, and the
-// executable needs a host Node that supports `--build-sea` (25.7+), so this is
-// a separate mode rather than a second entry in the default build.
+// tsdown's executable step requires a single chunk and counts sourcemaps as
+// chunks. It also needs Node >=25.7 for `--build-sea`, so it runs separately.
 const packExecutable = process.env.T3CODE_PACK_EXE === "1";
 const SEA_NODE_VERSION = "26.8.2";
 const SEA_TARGETS = {
@@ -90,10 +86,8 @@ export default mergeConfig(
           }
         : {}),
       deps: {
-        // `neverBundle` forces the native packages out: returning false from
-        // `alwaysBundle` only means "no opinion", so a transitive dependency
-        // would still be bundled — which silently inlined native loaders such
-        // as node-gyp-build, losing native acceleration.
+        // `alwaysBundle: false` means "no opinion", so transitive native loaders
+        // still need `neverBundle` to retain native acceleration.
         alwaysBundle: shouldBundleCliDependency,
         neverBundle: (id: string) => isExternalCliDependency(id),
         onlyBundle: false,

@@ -170,8 +170,6 @@ it.effect(
         yield* insertRow(sql, { ...row, enabled: 1 }, now);
       }
 
-      // it.effect freezes the clock; pin it just past the seeded due time so
-      // the poll sees the rows as due.
       yield* TestClock.setTime(Date.parse(now) + 1_000);
       const dispatched = yield* Ref.make(0);
       const lastDispatched = yield* Deferred.make<void>();

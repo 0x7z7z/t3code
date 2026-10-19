@@ -1,9 +1,6 @@
 /**
- * serve-sim's preview drives its "Simulator" panel by sending shell commands over a token-gated
- * socket. Proxying that would hand any environment session arbitrary command execution on the
- * host, so T3 runs the same underlying commands itself, typed per action: `xcrun simctl ui` and
- * `simctl privacy` for iOS, the `serve-sim-ax-settings` helper that serve-sim bundles for the
- * accessibility toggles, and `adb shell` for Android.
+ * serve-sim's preview socket accepts shell commands, so proxying it would grant
+ * arbitrary host execution to environment sessions. Run typed actions instead.
  */
 import {
   type DeviceActionInput,

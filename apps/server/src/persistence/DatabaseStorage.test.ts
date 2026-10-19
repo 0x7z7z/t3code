@@ -74,7 +74,6 @@ it.effect("publishes file accounting and the doctor command after each pass", ()
     assert.include(before!.compactCommand, "--base-dir");
     assert.include(before!.compactCommand, config.baseDir);
 
-    // The next reclaim pass frees the dropped table and republishes.
     yield* sql`DROP TABLE discarded`;
     yield* TestClock.adjust("1 minute");
     const storage = yield* DatabaseStorage.DatabaseStorage;

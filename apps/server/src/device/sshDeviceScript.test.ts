@@ -89,7 +89,6 @@ else { const child=spawn(process.execPath,[path.join(path.dirname(process.argv[1
         await NodeFSP.copyFile(agent, NodePath.join(NodePath.dirname(agent), "daemon.mjs"));
         const nextHubVersion = DEVICE_HUB_VERSION + "-upgrade";
         const nextAgentVersion = AGENT_DEVICE_VERSION + "-upgrade";
-        // Each owner stands in for a host on a different platform.
         const hostPlatforms: Record<string, NodeJS.Platform> = { one: "linux", two: "darwin" };
         const hubArgs = async (owner: string): Promise<ReadonlyArray<string>> =>
           JSON.parse(
@@ -142,7 +141,6 @@ else { const child=spawn(process.execPath,[path.join(path.dirname(process.argv[1
           expect(concurrent.hubPort).toBe(manual.hubPort);
           expect(manual.daemonPort).toBeUndefined();
           expect((await hubArgs("one")).slice(-2)).toEqual(["--platform", "android"]);
-          // A hub started before discovery was filtered has no recorded platform.
           const hubFile = NodePath.join(root, "hosts/one/hub.json");
           const { platform: _platform, ...unfilteredHub } = JSON.parse(
             await NodeFSP.readFile(hubFile, "utf8"),

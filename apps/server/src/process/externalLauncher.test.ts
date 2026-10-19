@@ -980,7 +980,6 @@ it.effect.skipIf(windowsHost)(
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
-// Runs on the live clock so the probe's real timeout fires.
 it.live.skipIf(windowsHost)("a stalled handler probe drops only the file manager", () =>
   Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;

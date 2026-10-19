@@ -271,10 +271,8 @@ function initRepo(
     yield* runGit(cwd, ["init", "--initial-branch=main"]);
     yield* runGit(cwd, ["config", "user.email", "test@example.com"]);
     yield* runGit(cwd, ["config", "user.name", "Test User"]);
-    // Hermetic line endings: machine-global `core.autocrlf=true` on Windows
-    // makes Git check out CRLF, which breaks exact-content assertions that
-    // write LF with Node. Local config overrides the global so the fixture
-    // (and its linked worktrees, which share config) always checks out LF.
+    // Machine-global core.autocrlf=true on Windows breaks LF exact-content assertions.
+    // Local config also covers linked worktrees.
     yield* runGit(cwd, ["config", "core.autocrlf", "false"]);
     yield* fs.writeFileString(NodePath.join(cwd, "README.md"), "hello\n");
     yield* runGit(cwd, ["add", "README.md"]);
@@ -2671,7 +2669,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* initRepo(repoDir);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        // Origin is the base repository; a lone remote would be the base itself.
+        // A lone remote would be treated as the base repository.
         yield* runGit(repoDir, [
           "remote",
           "add",
@@ -4430,7 +4428,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        // Origin is the base repository; a lone remote would be the base itself.
+        // A lone remote would be treated as the base repository.
         yield* runGit(repoDir, [
           "remote",
           "add",
@@ -4498,13 +4496,11 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       ghRepo: "https://github.example.com:8443/pingdotgg/codething-mvp",
       ghResolved: null,
     },
-    // The GitHub resolver finds no repository for this GitLab remote, so the remote decides.
     {
       remoteUrl: "https://gitlab.example.com:8443/pingdotgg/codething-mvp.git",
       ghRepo: null,
       ghResolved: null,
     },
-    // With a port on the remote's host the provider ignores gh-resolved and picks the remote.
     {
       remoteUrl: "https://github.example.com:8443/pingdotgg/codething-mvp.git",
       ghRepo: null,
@@ -4613,7 +4609,6 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     },
     { ghRepo: "contributor/demo", ghResolved: "acme/demo", head: "dev" },
     { ghRepo: "acme/demo", ghResolved: "base", head: "contributor:dev" },
-    // The provider ignores these GH_REPO values, so gh-resolved decides.
     { ghRepo: "junk/extra/contributor/demo", ghResolved: "acme/demo", head: "contributor:dev" },
     { ghRepo: "base", ghResolved: "acme/demo", head: "contributor:dev" },
   ] as const)(
@@ -4677,14 +4672,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       ghResolved: null,
       head: "dev",
     },
-    // An SSH port is not part of the host the provider uses.
     {
       remoteUrl: "ssh://git@github.example.com:2222/contributor/demo.git",
       ghRepo: "github.example.com/contributor/demo",
       ghResolved: null,
       head: "dev",
     },
-    // The provider ignores gh-resolved only when the remote's host carries a port.
     {
       remoteUrl: "https://github.example.com:8443/contributor/demo.git",
       ghRepo: null,
@@ -4898,7 +4891,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        // Origin is the base repository; a lone remote would be the base itself.
+        // A lone remote would be treated as the base repository.
         yield* runGit(repoDir, [
           "remote",
           "add",
@@ -4971,7 +4964,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        // Origin is the base repository; a lone remote would be the base itself.
+        // A lone remote would be treated as the base repository.
         yield* runGit(repoDir, [
           "remote",
           "add",
@@ -5039,7 +5032,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
         const forkDir = yield* createBareRemote();
         yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-        // Origin is the base repository; a lone remote would be the base itself.
+        // A lone remote would be treated as the base repository.
         yield* runGit(repoDir, [
           "remote",
           "add",
@@ -5533,7 +5526,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* initRepo(repoDir);
       const forkDir = yield* createBareRemote();
       yield* runGit(repoDir, ["remote", "add", "fork-seed", forkDir]);
-      // Origin is the base repository; a lone remote would be the base itself.
+      // A lone remote would be treated as the base repository.
       yield* runGit(repoDir, [
         "remote",
         "add",

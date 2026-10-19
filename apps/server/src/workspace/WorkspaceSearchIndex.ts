@@ -555,9 +555,7 @@ function parseWorkspaceSearchIndexKey(key: string): {
   };
 }
 
-/**
- * @public Service construction is part of the canonical Effect module API.
- */
+/** @public */
 export const layer = (key: string) => {
   const { cwd, variant } = parseWorkspaceSearchIndexKey(key);
   return Layer.effect(WorkspaceSearchIndex, make(cwd, variant));

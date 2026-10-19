@@ -154,7 +154,6 @@ export function renderWebhookPrompt(
       if (!missing.includes(expression)) missing.push(expression);
       return "";
     }
-    // An empty value carries no request data, so it needs no frame or note.
     if (text === "") return "";
     framed = true;
     return `<${tag}>${text.replace(MENTION, "$&\u2060")}</${tag}>`;

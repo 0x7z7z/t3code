@@ -2114,9 +2114,8 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
               payload: { type: "user_message", message: "Future work" },
             }),
           ].join("\n"),
-          // Node's BigInt stat (which the Effect file system now uses) floors
-          // sub-millisecond precision, so a one-millisecond offset can round
-          // back to `nowMs`; use a full second to stay clear of the clock.
+          // Node's BigInt stat floors sub-millisecond precision, so a one-millisecond
+          // offset can round back to `nowMs`; use a full second to stay clear of the clock.
           mtimeMs: nowMs + 1_000,
         });
 

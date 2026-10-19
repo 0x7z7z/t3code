@@ -1225,12 +1225,8 @@ function isPathSegmentUnderAppDir(segment: string, appDir: string): boolean {
   return segment === appDir || segment.startsWith(`${appDir}/`);
 }
 
-// On Linux AppImage builds the runtime mounts the app under a temporary dir and
-// injects APPIMAGE/APPDIR/ARGV0/OWD plus mount entries on PATH/LD_LIBRARY_PATH.
-// The integrated terminal inherits the server process environment, so without
-// this scrub those leak into the PTY and tools resolve against the AppImage
-// mount instead of the user's real environment (e.g. `php` reporting PHP_BINARY
-// as the AppImage path). See issue #1699.
+// AppImage injects its mount paths into the inherited environment, which
+// makes PTY tools resolve against the mount instead of the user's system.
 function stripAppImageRuntimeEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   if (env.APPIMAGE === undefined && env.APPDIR === undefined) return env;
 
@@ -1371,7 +1367,7 @@ export const resolveProviderInstanceTerminalEnvironment = Effect.fn(
   );
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.fn("TerminalManager.make")(function* () {
   const { terminalLogsDir, providerStatusCacheDir, baseDir } = yield* ServerConfig.ServerConfig;
   const ptyAdapter = yield* PtyAdapter.PtyAdapter;
@@ -1443,9 +1439,8 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       return { ...input, env };
     },
   );
-  // One process-table snapshot per poll tick, shared across every terminal.
-  // Per-terminal `pgrep`/`ps` calls multiply spawn load by terminal count and
-  // can exhaust the PID space on hosts with many sessions (#6332).
+  // Per-terminal process-table scans multiply spawn load and can exhaust
+  // PID space on hosts with many sessions; share one snapshot per poll tick.
   const fallbackProcessTableSnapshot = (
     platform === "win32"
       ? windowsProcessTableSnapshot()

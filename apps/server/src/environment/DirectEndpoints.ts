@@ -93,7 +93,7 @@ export function resolveBoundEndpoints(input: {
   }));
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const config = yield* ServerConfig.ServerConfig;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -107,11 +107,9 @@ export const make = Effect.gen(function* () {
         interfaces: NodeOS.networkInterfaces(),
       }),
     ];
-    // Tailscale Serve terminates HTTPS on the tailnet name and forwards to
-    // loopback, so it works even for a loopback-only server. The name is only
-    // listed once it answers as this server: Serve setup can fail without
-    // stopping startup. Anything slower than the probe leaves it out rather
-    // than holding back the addresses already found.
+    // Tailscale Serve terminates HTTPS and forwards to loopback. Advertise its
+    // tailnet name only after it answers as this server; setup can fail without
+    // stopping startup.
     if (config.tailscaleServeEnabled) {
       const servedUrl = yield* readTailscaleStatus.pipe(
         Effect.map((status) => status.magicDnsName),

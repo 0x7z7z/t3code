@@ -176,13 +176,8 @@ export function transcriptLineGate(markers: readonly [string, ...string[]]) {
 }
 
 /**
- * Streams one transcript and returns the usage records it contains, or `null`
- * when the file could not be read.
- *
- * The distinction matters to the caller's cache: a genuinely empty transcript
- * is a stable fact worth memoising, while a transient read failure memoised
- * under the same `(size, mtime)` key would silently drop that file's usage
- * until the file next changes.
+ * Returns `null` on a read failure. Caching that as an empty transcript under
+ * the same `(size, mtime)` key would hide its usage until the file changes.
  */
 export async function readTranscriptRecords<State>(
   filePath: string,

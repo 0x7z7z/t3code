@@ -28,10 +28,8 @@ export class DatabaseStorage extends Context.Service<
 >()("t3/persistence/DatabaseStorage") {}
 
 /**
- * Deletes superseded history every few hours and hands freed pages back to
- * the filesystem every minute. Deleted events are always superseded by a
- * retained event with a higher sequence, so a client replaying from an older
- * cursor still reaches the same state; no replay boundary is published.
+ * Deleted events are superseded by a retained event with a higher sequence, so clients
+ * replaying from an older cursor still reach the same state without a replay boundary.
  */
 const make = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

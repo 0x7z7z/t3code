@@ -3,7 +3,6 @@ import * as NodeModule from "node:module";
 
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-// Exercises the patched console-list helper in patches/node-pty@1.2.0-beta.15.patch.
 // The agent calls `require("child_process").fork` at call time, so replacing it on
 // the shared CJS module stands in for the forked helper on every platform.
 const requireCjs = NodeModule.createRequire(import.meta.url);

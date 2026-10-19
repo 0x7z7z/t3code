@@ -198,9 +198,8 @@ export const make = Effect.gen(function* () {
     launcherManaged: launcher.managed,
   });
   const serverInstallation = serverSelfUpdate === null ? yield* resolveServerInstallation : null;
-  // Static is correct: the control fd is known at bootstrap, and the desktop
-  // app and its bundled server ship in one artifact, so a present fd means the
-  // app speaks the requestDesktopUpdate protocol.
+  // The desktop and bundled server ship together, so a control fd guarantees
+  // the requestDesktopUpdate protocol is available.
 
   const desktopAppUpdate =
     serverSelfUpdate === "desktop-managed" && serverConfig.desktopTelemetryControlFd !== undefined;

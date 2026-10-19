@@ -9,17 +9,9 @@ const DEFAULT_POLL_INTERVAL = Duration.seconds(2);
 const startupParentPid = process.ppid;
 
 /**
- * Completes when the process that launched this backend is gone.
- *
- * A desktop-launched backend reads its bootstrap envelope once and never looks
- * at its launcher again. When the launcher dies without a graceful stop (a WSL
- * relay killed during an app update, for instance), the backend would keep
- * serving and holding its ownership lock while no desktop can reach it, and
- * every replacement launch is refused. An orphan is adopted by init or, on
- * Linux, by a subreaper, so any change of parent counts rather than only a
- * move to pid 1. A backend that already starts under init has no launcher to
- * lose, and Windows keeps the original parent id after the parent exits, so
- * neither is watched.
+ * A lost launcher leaves this backend holding its ownership lock, blocking replacements.
+ * Any parent change counts because Linux may reparent to a subreaper rather than init.
+ * Windows retains the original parent id after exit; backends started under init have no launcher.
  */
 export const awaitLauncherLoss = (options?: {
   readonly launcherPid?: number;

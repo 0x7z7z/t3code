@@ -106,7 +106,6 @@ export class WorkspaceEntries extends Context.Service<
   }
 >()("t3/workspace/WorkspaceEntries") {}
 
-/** Paths sent to one `git check-ignore` call when labelling a folder's children. */
 const IGNORE_CHECK_CHUNK_SIZE = 1000;
 
 const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(function* (
@@ -137,7 +136,7 @@ const resolveBrowseTarget = Effect.fn("WorkspaceEntries.resolveBrowseTarget")(fu
   );
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
@@ -340,13 +339,9 @@ export const make = Effect.gen(function* () {
               maxOutputBytes: 16 * 1024 * 1024,
             })
             .pipe(Effect.orElseSucceed(() => undefined));
-        // Git consults the index for every path it classifies, which costs hundreds of
-        // milliseconds for a `node_modules`-sized folder. Asking about the folder itself answers
-        // for every child: `check-ignore` exits 0 only when the folder is ignored and nothing
-        // under it is tracked, and an ignored folder hides all of its children. Git reads paths as
-        // pathspecs, so a folder whose path has magic (`:foo`) or glob (`[id]`) characters, or
-        // one reached through a symlink, can get a different answer per child and still asks git
-        // about each.
+        // Checking an ignored folder once avoids expensive index lookups per child.
+        // Exit 0 also guarantees no tracked descendants. Symlinks and pathspec
+        // magic can produce different answers per child and need individual checks.
         if (
           entries.length > IGNORE_CHECK_CHUNK_SIZE &&
           target.relativePath !== "" &&

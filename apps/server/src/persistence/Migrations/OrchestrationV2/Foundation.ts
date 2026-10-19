@@ -2,9 +2,8 @@ import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
 /**
- * The original V2 schema used a single `provider` column for both configured instance
- * routing and driver identity. They remain write-through shadows where the old schema
- * declared them NOT NULL; all V2 reads and indexes use the explicit columns added here.
+ * Legacy `provider` columns remain write-through shadows where NOT NULL;
+ * V2 reads and indexes use the explicit driver and instance columns.
  */
 export default Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;

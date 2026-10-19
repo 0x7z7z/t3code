@@ -113,11 +113,8 @@ export class ProjectSetupScriptRunner extends Context.Service<
   }
 >()("t3/project/ProjectSetupScriptRunner") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
-/**
- * Each run gets its own random token so script output cannot spoof completion, and the sentinel
- * pattern is built per run from it.
- */
+/** @public */
+/** A per-run random token prevents script output from spoofing completion. */
 const COMPLETION_SENTINEL_PREFIX = "__T3_SETUP_DONE__";
 const OUTPUT_LINE_MAX_LENGTH = 400;
 const PARTIAL_LINE_MAX_LENGTH = 4_096;
@@ -179,7 +176,7 @@ function wrapCommandForCompletion(
   }
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const projects = yield* ProjectService.ProjectService;
   const terminalManager = yield* TerminalManager.TerminalManager;

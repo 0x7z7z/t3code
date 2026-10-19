@@ -12,14 +12,9 @@ const UNRECORDED_FILE_SECONDS = 0.6;
 const recordedSeconds: Readonly<Record<string, number>> = shardWeights;
 
 /**
- * Splits server test files across `--shard` runs by recorded duration. Vitest's
- * default split hashes file paths into equal-count shards, which can put the
- * slowest files on one runner. Here the longest file goes to the lightest shard
- * first. Every shard derives the same split from the same file list, so each
- * file still runs in exactly one shard. Weights are each file's wall time in a
- * CI shard, imports included: the gaps between consecutive file results in the
- * `Test Server` logs. Imports are about a third of a shard, so test time alone
- * leaves the shards with many small files slowest.
+ * Weights include import time, about a third of each CI shard; test durations
+ * alone underestimate shards with many small files. Every shard must derive
+ * the same split so each file runs exactly once.
  */
 export class WeightedShardSequencer extends BaseSequencer {
   override async shard(files: TestSpecification[]) {

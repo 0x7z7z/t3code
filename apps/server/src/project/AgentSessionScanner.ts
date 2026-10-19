@@ -576,7 +576,7 @@ function sameTranscriptIdentity(
   );
 }
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   // Different project imports can arrive concurrently from multiple clients.

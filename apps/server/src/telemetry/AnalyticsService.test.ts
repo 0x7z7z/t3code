@@ -81,10 +81,6 @@ const respondWithStatus =
   (request) =>
     Effect.succeed(HttpClientResponse.fromWeb(request, new Response(null, { status })));
 
-/**
- * Records 20 events, then lets ten minutes of background flushes run against
- * a client that answers every send with `respond`. Returns the sent batches.
- */
 const sendForTenMinutes = (respond: Respond) =>
   Effect.gen(function* () {
     const batches: Array<ReadonlyArray<SentEvent>> = [];
@@ -175,7 +171,6 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       ];
       assert.deepEqual(channels(yield* sendForTenMinutes(respondWithStatus(204))), ["dev"]);
 
-      // Stands in for the value the bundler writes in at build time.
       vi.stubGlobal("__T3CODE_TELEMETRY_CHANNEL__", "nightly");
       assert.deepEqual(channels(yield* sendForTenMinutes(respondWithStatus(204))), ["nightly"]);
     }).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllGlobals()))),

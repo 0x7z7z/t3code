@@ -1001,7 +1001,7 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
 });
 
 /** @public */
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const localHost = yield* DeviceHost.DeviceHost;
   const config = yield* ServerConfig.ServerConfig;

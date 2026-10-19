@@ -132,7 +132,7 @@ export class WorkspaceFileSystem extends Context.Service<
   }
 >()("t3/workspace/WorkspaceFileSystem") {}
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -378,10 +378,8 @@ export const make = Effect.gen(function* () {
   });
 
   /**
-   * Resolves the file a write targets. The deepest existing ancestor resolves to
-   * its real path before the root check, so neither the file nor the directories
-   * created for it can follow a symlink out of the root. A dangling symlink is
-   * rejected rather than written through.
+   * Resolve the deepest existing ancestor before the root check so symlinks
+   * cannot redirect file or directory creation outside the root. Reject dangling links.
    */
   const resolveWriteTarget = Effect.fn("WorkspaceFileSystem.resolveWriteTarget")(function* (
     input: ProjectWriteFileInput,

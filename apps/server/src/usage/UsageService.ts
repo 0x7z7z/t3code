@@ -442,8 +442,6 @@ export const make = Effect.gen(function* () {
   const awaitPersisted = Effect.suspend(() => Fiber.awaitAll([...pendingPersists])).pipe(
     Effect.asVoid,
   );
-  // A write still running when the service shuts down finishes first, so the
-  // next start does not lose the last scan.
   yield* Effect.addFinalizer(() => awaitPersisted);
 
   /**
@@ -464,8 +462,6 @@ export const make = Effect.gen(function* () {
   }> =>
     Effect.gen(function* () {
       const cached = fileCache.get(filePath);
-      // Provider is part of the identity: if both providers were ever pointed
-      // at one directory, a hit parsed by the other parser must not be reused.
       if (
         cached &&
         cached.size === size &&

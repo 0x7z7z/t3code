@@ -469,13 +469,9 @@ const resolveFileManagerRevealKind = Effect.fn("externalLauncher.resolveFileMana
   },
 );
 
-// Callers apply a timeout (`resolveAvailableEditorsForConfig`) and disconnect
-// mid-connect; neither may cancel a scan other connects are waiting on, or
-// throw away work a slow host (a busy server at startup, a long PATH) needs
-// more than one connect to finish. Expiry uses the monotonic clock
-// (Clock.monotonicTimeNanos), matching the command-resolution cache in
-// @t3tools/shared/shell, so a backward wall-clock adjustment cannot keep an
-// expired entry alive.
+// Shared scans must survive individual callers timing out or disconnecting,
+// so discovery on a slow host can finish across multiple connections.
+// Monotonic expiry prevents backward wall-clock changes from extending stale entries.
 const EDITOR_DISCOVERY_CACHE_TTL_NANOS = 60_000_000_000n;
 
 interface EditorDiscoveryCacheEntry {
@@ -739,7 +735,7 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
   );
 });
 
-/** @public Service construction is part of the canonical Effect module API. */
+/** @public */
 export const make = Effect.gen(function* () {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const fileSystem = yield* FileSystem.FileSystem;

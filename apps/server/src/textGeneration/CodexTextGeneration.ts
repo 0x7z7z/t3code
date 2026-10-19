@@ -289,9 +289,7 @@ export const makeCodexTextGeneration = Effect.fn("makeCodexTextGeneration")(func
         [
           "exec",
           ...execLaunchArgs,
-          // Text generation needs only the prompt. A user's MCP server would
-          // otherwise start and could act on it, as Claude's --strict-mcp-config
-          // prevents for Claude.
+          // A user's MCP server could act on the text-generation prompt.
           ...CODEX_NO_PLUGIN_ARGS,
           ...(mcpServersOff ? ["--config", mcpServersOff] : []),
           "--ephemeral",

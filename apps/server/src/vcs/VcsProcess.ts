@@ -64,14 +64,10 @@ const GITHUB_PROCESS_CONCURRENCY = 4;
 export const CHECKPOINT_CAPTURE_OPERATION = "GitVcsDriver.checkpoints.captureCheckpoint";
 
 /**
- * Appends `key=value` to the `GIT_CONFIG_*` entries git reads as command-line
- * config, so argv stays the same on every platform and nothing is written to
- * the user's config. The entry goes after any inherited ones. Windows env names
- * are case-insensitive (elsewhere git reads only `GIT_CONFIG_COUNT`), so there the
- * count is found regardless of casing, read from
- * the last spelling (a per-command value spread over process.env), and updated
- * under every spelling so the child sees it whichever one Node keeps. A count
- * git would reject is left alone so git still reports it.
+ * Appends after inherited Git config without writing the user's config. On
+ * Windows, update every casing of GIT_CONFIG_COUNT using the last inherited
+ * spelling's value, since Node may retain any spelling. Invalid counts are
+ * left for Git to reject.
  */
 export const gitConfigEnv = (
   env: NodeJS.ProcessEnv,

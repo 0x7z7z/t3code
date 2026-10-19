@@ -474,11 +474,9 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  // A machine-disabled provider instance that a deleted project's override
-  // once turned on must not stay probed and alive forever. Nothing else
-  // removes the entry, so deletion is where it goes; best-effort because a
-  // settings write failure should not block the deletion it is cleaning up
-  // after, and a server crash before a replay never revisits this project.
+  // A deleted project's override may keep a machine-disabled provider instance
+  // alive. Cleanup is best-effort because settings failures must not block deletion;
+  // no replay revisits the project after a server crash.
   const clearProjectSettingsOverrides = (projectId: ProjectId) =>
     serverSettings.updateSettings({ projectSettingsOverrides: { [projectId]: null } }).pipe(
       Effect.asVoid,

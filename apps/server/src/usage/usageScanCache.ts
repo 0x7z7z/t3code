@@ -284,10 +284,8 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // v4 records of stateful formats (Codex) predate service tiers, so they
-    // all priced as standard. Keep them, because the rollout may be gone, but
-    // make a live rollout re-parse whole: no file has size -1, and a zero
-    // position cannot resume.
+    // Legacy state lacks service tiers. Retain usage for deleted rollouts,
+    // but force live files to re-parse with an impossible size and non-resumable position.
     const legacy = format.state !== undefined && version < USAGE_SCAN_CACHE_VERSION;
     // A corrupt state disqualifies the entry: resuming with it would attach
     // appended usage to the wrong model or replay fork-copied history.

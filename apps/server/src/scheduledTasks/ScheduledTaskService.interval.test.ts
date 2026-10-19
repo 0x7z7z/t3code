@@ -87,7 +87,6 @@ it.effect.each([
       const resumed = yield* service.setEnabled({ id: created.task.id, enabled: true });
       expect(resumed.task.nextRunAt).toBe(expected);
 
-      // Exercise completion rescheduling without starting any provider process.
       const completed = yield* service.runNow({ id: created.task.id });
       expect(completed.task.lastRunStatus).toBe("failed");
       expect(completed.task.runCount).toBe(1);
