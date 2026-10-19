@@ -24,11 +24,7 @@ function quotedEnd(rest: string): number {
   return -1;
 }
 
-/**
- * Git ends the name with a tab when it holds a space, and a name with a tab of its own
- * arrives quoted with that tab escaped, so the first literal tab is never part of what the
- * file is called.
- */
+/** Git terminates names with a literal tab and escapes tabs within names. */
 function sidePath(rest: string, prefix: string): string | null {
   const tab = rest.indexOf("\t");
   const token = tab === -1 ? rest : rest.slice(0, tab);
@@ -43,9 +39,8 @@ function headerSide(token: string, prefix: string): string | null {
 }
 
 /**
- * `a/one two b/one two` can split in more than one place, so the split leaving both sides
- * equal wins; a rename (the only case where sides differ) states its names on separate lines
- * instead.
+ * Unquoted paths with spaces are ambiguous; match equal sides, since renames state their paths
+ * separately.
  */
 function headerPaths(rest: string): readonly [string | null, string | null] {
   if (rest.startsWith(QUOTE)) {
@@ -118,10 +113,8 @@ function parseEntries(patch: string): ReadonlyArray<Omit<Entry, "inBody">> {
 }
 
 /**
- * What the head has of each file, as the blob ids from a unified patch's `index <before>..<after>`
- * line: Bitbucket exposes no blob id for a file anywhere else. Keyed by the head's name, except
- * for a deletion where only the old name exists. An entry with no `index` line (most often one
- * Bitbucket excluded by pattern) is left out.
+ * Head blob IDs keyed by the head path (old path for deletions). Omit entries without an index
+ * line; Bitbucket exposes no blob IDs elsewhere.
  */
 export function parseDiffFileRevisions(patch: string): ReadonlyMap<string, string> {
   const revisions = new Map<string, string>();
@@ -134,10 +127,6 @@ export function parseDiffFileRevisions(patch: string): ReadonlyMap<string, strin
   return revisions;
 }
 
-/**
- * The files a unified patch changes, as the name each side has. A side with no file (`/dev/null`
- * for an added or a deleted file) is null; a rename is the only entry whose two names differ.
- */
 export function parseDiffFilePaths(
   patch: string,
 ): ReadonlyArray<{ readonly oldPath: string | null; readonly newPath: string | null }> {

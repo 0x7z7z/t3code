@@ -35,17 +35,10 @@ import type {
 } from "./azureDevOpsPullRequestJson.ts";
 import { definition } from "../client/definition.ts";
 
-/**
- * Every file is two `az` invocations, each paying a Python interpreter's start-up, so reading them
- * one after another is most of what the Code tab waits for.
- */
+/** Each file starts two Python processes; serial reads multiply interpreter startup costs. */
 const DIFF_FILE_CONCURRENCY = 4;
 
-/**
- * How many `az` processes this build will have out at once, counted across every reader rather than
- * per request. Held at what one request at full width spends, so a second reader waits behind the
- * first instead of adding to it.
- */
+/** Share one request's spawn budget across readers so concurrent requests cannot multiply it. */
 export const MAX_DIFF_SPAWNS = 2 * DIFF_FILE_CONCURRENCY;
 
 export const LOCATION_CACHE_CAPACITY = 128;
@@ -60,21 +53,15 @@ const CAPABILITIES: PullRequestCapabilities = {
   search: false,
   reactions: false,
   review: { inlineComment: false, reply: false, resolve: false, verdicts: [] },
-  // `az repos pr reviewer add` and `remove` name identities, and nothing anywhere in `az repos`
-  // lists the ones this repository could name — that lives behind the identity and graph APIs, a
-  // different service with its own permissions.
+  // Reviewer candidates require separate identity/graph APIs and permissions; `az repos` cannot
+  // list them.
   reviewers: { request: true, listCandidates: false },
   edit: { changeRequest: true, comment: false },
-  // Azure does keep a viewed record of its own, but only behind the undocumented contribution
-  // endpoint its web UI talks to, keyed on an iteration so a push would drop every mark anyway.
+  // Azure's viewed marks use an undocumented endpoint and are invalidated by each push.
   viewedFiles: "environment",
 };
 
-/**
- * Azure DevOps states no permission anywhere `az repos pr show` or `az repos pr list` reach: the
- * answer lives in the security namespaces, behind identity descriptors and token paths that would
- * be several calls per pull request to resolve.
- */
+/** Azure's CLI omits permissions; resolving security descriptors would add several calls per PR. */
 const AZURE_DEVOPS_VIEWER_PERMISSIONS: PullRequestViewerPermissions = {
   actions: CAPABILITIES.actions,
   comment: CAPABILITIES.comment,
@@ -104,8 +91,8 @@ function toChangeRequest(pullRequest: AzureDevOpsPullRequest): ProviderChangeReq
     state: pullRequest.state,
     isDraft: pullRequest.isDraft,
     mergeability: pullRequest.mergeability,
-    // Azure counts a pull request's files but never its lines, and counting them here would mean
-    // reading every file on both sides of every row of a listing.
+    // Azure omits line counts; computing them would read both sides of every file in every listing
+    // row.
     additions: 0,
     deletions: 0,
     createdAt: pullRequest.createdAt,
@@ -147,10 +134,8 @@ export const make = Effect.gen(function* () {
   const EMPTY_DIFF_SLICE: ProviderDiffSlice = { patch: "", truncated: false, nextCursor: null };
 
   /**
-   * A pull request cannot move between repositories, so it is remembered rather than re-read: the
-   * marks alone would otherwise pay for a whole pull request read every time they checked whether a
-   * file had been pushed to. Least recently used, so a listing walking cold pull requests cannot
-   * evict the one being read.
+   * PR locations cannot change. Cache them with LRU eviction to avoid full PR reads on each
+   * viewed-file check.
    */
   const locations = new Map<string, AzureDevOpsRepositoryLocation>();
 
@@ -190,10 +175,7 @@ export const make = Effect.gen(function* () {
 
   const EMPTY_ITEM: AzureDevOpsItemContent = { contents: "", isBinary: false };
 
-  /**
-   * Only the sides a change actually has are asked for: Azure answers for a file that is not at a
-   * commit with a failure rather than with nothing.
-   */
+  /** Azure fails reads of absent files; skip the missing side of additions and deletions. */
   const readTexts = (input: {
     readonly cwd: string;
     readonly location: AzureDevOpsRepositoryLocation;
@@ -224,16 +206,12 @@ export const make = Effect.gen(function* () {
       Effect.map(([oldItem, newItem]): AzureDevOpsFileTexts => ({
         oldContents: oldItem.contents,
         newContents: newItem.contents,
-        // Azure hands a file it calls binary over in an encoding of its own, so its own word on
-        // that is taken rather than looked for in bytes it may never have sent verbatim.
+        // Azure encodes binary content, so trust its metadata rather than inspecting the encoded
+        // bytes.
         binary: oldItem.isBinary || newItem.isBinary,
       })),
     );
 
-  /**
-   * An iteration's changes are reported against the merge base rather than against the push before
-   * it, so the newest one is the whole of the change rather than the last slice of it.
-   */
   const listLatestChanges = (input: {
     readonly cwd: string;
     readonly location: AzureDevOpsRepositoryLocation;
@@ -280,8 +258,7 @@ export const make = Effect.gen(function* () {
             items: batch.items.map(toChangeRequest),
             truncated: batch.truncated,
             cursorAdvance: batch.cursorAdvance,
-            // Azure answers in one order whether or not it is being carried on from, so a slice
-            // can always be stepped past — by counting, which is all Azure offers.
+            // Azure's ordering is stable across offset-based pages.
             continues: true,
           })),
         ),
@@ -378,15 +355,12 @@ export const make = Effect.gen(function* () {
 
     getViewerPermissions: () => Effect.succeed(AZURE_DEVOPS_VIEWER_PERMISSIONS),
 
-    // `input.commit` is deliberately dropped: Azure states no commit list on a pull request, so
-    // the Code tab has nothing to scope itself to and always asks for the whole change.
+    // Azure exposes no PR commit list; this diff ignores `input.commit`.
     getDiff: (input) =>
       Effect.gen(function* () {
         const scope = yield* diffScope(input);
         if (scope === null) return EMPTY_DIFF_SLICE;
         const cursor = parseAzureDevOpsDiffCursor(input.cursor);
-        // Reading on stays with the push the first slice was taken against. A push landing
-        // mid-read would otherwise renumber the files and hand the reader one twice, or none.
         const iteration =
           cursor === null
             ? scope.iterations.at(-1)
@@ -406,10 +380,8 @@ export const make = Effect.gen(function* () {
         let edits = 0;
         let index = cursor?.fileIndex ?? 0;
         let full = false;
-        // Every file costs a request a side, and everything read past the point the slice fills is
-        // thrown away and read again by the next slice, so the batch narrows as the budgets do:
-        // what is left of each, over what a file has spent of it on average so far, which is the
-        // only estimate there is before a file is read.
+        // Shrink batches as budgets fill: prefetched files beyond the slice are discarded and read
+        // again.
         const batchWidth = () => {
           if (sections.length === 0) return DIFF_FILE_CONCURRENCY;
           const admits = (left: number, spent: number) =>
@@ -430,9 +402,8 @@ export const make = Effect.gen(function* () {
             batch,
             (change) =>
               readTexts({ cwd: input.cwd, location: scope.location, iteration, change }).pipe(
-                // Only what is this one file's problem. A signed-out CLI, a rate limit or no `az`
-                // at all is the read failing rather than the file, and belongs to the caller,
-                // which pauses the host rather than showing every file as unreadable.
+                // Only file-specific errors become unreadable entries; auth, rate-limit and CLI
+                // failures must reach the caller.
                 Effect.catchTags({
                   AzureDevOpsPullRequestNotFoundError: () => Effect.succeed(null),
                   AzureDevOpsCommandFailedError: () => Effect.succeed(null),
@@ -443,8 +414,7 @@ export const make = Effect.gen(function* () {
             { concurrency: DIFF_FILE_CONCURRENCY },
           );
           for (const { change, texts } of read) {
-            // The diff is synchronous and the reads no longer stand between one file and the next
-            // to let anything else on the server run, so the thread is handed back here.
+            // Synchronous diffs need explicit yields so other server work can run between files.
             yield* Effect.yieldNow;
             const file =
               texts === null
@@ -455,9 +425,8 @@ export const make = Effect.gen(function* () {
             edits += file.edits;
             truncated = truncated || file.truncated;
             index += 1;
-            // Checked after the file is added rather than before it, so every slice carries at
-            // least one: a section heavier than the whole budget would otherwise never be added,
-            // and the read would answer the same slice forever without moving the cursor.
+            // Always add one file before checking budgets; otherwise an oversized file would stall
+            // the cursor.
             if (
               bytes >= MAX_DIFF_SLICE_BYTES ||
               edits + MAX_FILE_DIFF_EDITS > MAX_DIFF_SLICE_EDITS ||
@@ -499,9 +468,7 @@ export const make = Effect.gen(function* () {
       }).pipe(Effect.mapError(fail("getDiffFileContents"))),
 
     /**
-     * A path the change does not carry is at the empty revision, which is where a file the pull
-     * request deletes sits. When the change was too long to follow to its end, those paths are left
-     * out instead: reporting them as deleted would clear a file nobody has read.
+     * Only a complete change can identify absent paths as deleted; a truncated read must omit them.
      */
     getFileRevisions: (input) =>
       Effect.gen(function* () {

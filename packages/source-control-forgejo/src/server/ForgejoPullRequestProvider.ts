@@ -217,8 +217,8 @@ export const make = Effect.gen(function* () {
           ...input,
           path: `${repoPath(input)}/pulls?state=${state}&sort=recentupdate`,
         };
-        // Self-hosted servers may cap pages below 50. Establish their actual page size before
-        // translating the service's row offset into an API page number.
+        // Servers may cap below 50; discover the actual page size before converting row offsets to
+        // page numbers.
         const first = yield* readPage(query, Schema.NullOr(ForgejoPullRequest), 1);
         const pageSize = first.rows.length || 50;
         const firstIndex = Math.floor(offset / pageSize) + 1;

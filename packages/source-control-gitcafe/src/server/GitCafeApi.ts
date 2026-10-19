@@ -136,8 +136,7 @@ export const make = Effect.gen(function* () {
         .pipe(
           // The client's own span would record the query string, which can carry branch names.
           Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
-          // fetch would follow a redirect itself and keep the bearer token on a same-origin hop;
-          // GitCafe's API never redirects a request it serves, so a 3xx is answered as a failure.
+          // GitCafe's API does not redirect; reject 3xx rather than forwarding bearer credentials.
           Effect.provideService(FetchHttpClient.RequestInit, NO_REDIRECT),
         );
       return { status: response.status, text: yield* response.text };

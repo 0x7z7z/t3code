@@ -16,13 +16,11 @@ import * as GitHubQuota from "./GitHubQuota.ts";
 const DEFAULT_TIMEOUT = Duration.seconds(30);
 /** Polite to GitHub's secondary limits, which punish bursts of concurrent requests. */
 const CONCURRENCY = 8;
-/** The headers every GitHub request carries besides its token. */
 const REQUEST_HEADERS = { "x-github-api-version": "2022-11-28", "user-agent": "t3code" };
 
 /**
- * A credential already verified for one host. Every request made under it must target that
- * host, so a page cannot read one account's data with another's token mid-flight. Server-local:
- * never put its value in RPC payloads or cache keys.
+ * Pin every request to this credential's host to prevent mid-page account switches. Never expose
+ * the value in RPCs or cache keys.
  */
 export const PinnedGitHubCredential = Context.Reference<{
   readonly host: string;
@@ -72,11 +70,6 @@ export class GitHubApiNotFoundError extends Schema.TaggedError<GitHubApiNotFound
   }
 }
 
-/**
- * GitHub answered with a failure that is none of the above. `githubErrors` carries GitHub's own
- * error messages, from a GraphQL `errors` list or a REST `message`/`errors` body: they name the
- * field and the reason ("A pull request already exists for acme:feature"), never a token.
- */
 export class GitHubApiResponseError extends Schema.TaggedError<GitHubApiResponseError>()(
   "GitHubApiResponseError",
   {
@@ -106,10 +99,6 @@ export function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
 }
 
-/**
- * Where the API for a host lives. github.com and GHE.com data residency serve it from an `api.`
- * subdomain; GitHub Enterprise Server serves it under `/api` on the instance itself.
- */
 export function gitHubApiUrls(host: string): { readonly rest: string; readonly graphql: string } {
   const normalized = normalizeHost(host);
   if (normalized === "github.com") {
@@ -124,7 +113,6 @@ export function gitHubApiUrls(host: string): { readonly rest: string; readonly g
   return { rest: `https://${normalized}/api/v3`, graphql: `https://${normalized}/api/graphql` };
 }
 
-/** The numeric rate-limit headers GitHub sends, as span attributes. */
 function rateLimitAttributes(
   headers: Readonly<Record<string, string | undefined>>,
 ): Record<string, number | string> {
@@ -143,7 +131,6 @@ function rateLimitAttributes(
   return attributes;
 }
 
-/** The pause GitHub asked for, from `retry-after` or the primary limit's reset. */
 function retryAtFrom(
   headers: Readonly<Record<string, string | undefined>>,
   now: number,
@@ -155,14 +142,12 @@ function retryAtFrom(
 }
 
 /**
- * Whether GitHub refused a request for its rate limit. A GraphQL answer can say so with HTTP 200:
- * a `RATE_LIMITED` error, or an exhausted quota that answers an untyped "API rate limit already
- * exceeded" error, which the headers confirm.
+ * GraphQL can report rate limits with HTTP 200, via RATE_LIMITED or an untyped error plus quota
+ * headers.
  */
 export function isRateLimited(input: {
   readonly status: number;
   readonly headers: Readonly<Record<string, string | undefined>>;
-  /** The GraphQL `errors` list, when the answer is a GraphQL one and has any. */
   readonly graphqlErrors?: ReadonlyArray<{ readonly type?: unknown; readonly message?: unknown }>;
   readonly body?: string;
 }): boolean {
@@ -184,12 +169,7 @@ export function isRateLimited(input: {
   );
 }
 
-/**
- * What one GitHub answer means, as the transport that read it decided: `Ok` carries what the
- * request returns; every other verdict fails with the `GitHubApi*Error` that says why.
- */
 export type GitHubAnswer<A> = {
-  /** Unset when the transport reported none. */
   readonly status: number | undefined;
   readonly headers: Readonly<Record<string, string | undefined>>;
 } & (
@@ -209,22 +189,16 @@ export interface GitHubRequest {
 }
 
 /**
- * What every GitHub request goes through, REST and GraphQL alike: the host's credential, one
- * shared pool of request slots, the quota reserve and the host-wide pause before it is sent, and
- * what GitHub's answer says about them after. Each transport only sends and reads its answer.
+ * REST and GraphQL must share credentials, concurrency slots, quota reserves and host-wide pauses.
  */
 export class GitHubRequestPolicy extends Context.Service<
   GitHubRequestPolicy,
   {
-    /**
-     * Sends one request. `send` receives the headers it must carry (the token and GitHub's API
-     * version) and reports the answer; a failure of its own passes through untouched.
-     */
+    /** send receives required auth/version headers; its own failures pass through unchanged. */
     readonly request: <A, E, R>(
       input: GitHubRequest,
       send: (headers: Readonly<Record<string, string>>) => Effect.Effect<GitHubAnswer<A>, E, R>,
     ) => Effect.Effect<A, E | GitHubApiError, R>;
-    /** The credential a request to `host` would carry right now. */
     readonly credential: (
       host: string,
     ) => Effect.Effect<
@@ -247,7 +221,6 @@ export const make = Effect.gen(function* () {
     const normalized = normalizeHost(host);
     const pinned = yield* PinnedGitHubCredential;
     if (pinned !== null) {
-      // A pinned page only ever talks to the host it verified.
       if (pinned.host !== normalized) {
         return yield* new GitHubApiAuthenticationError({
           host: normalized,
@@ -329,8 +302,8 @@ export const make = Effect.gen(function* () {
               }),
             ),
           );
-        // One deadline covers the headers and the body: a host that answers headers and then
-        // stalls must not hold a shared slot for undici's own five-minute body timeout.
+        // Time out headers and body together so a stalled body cannot hold a shared slot for
+        // undici's five-minute timeout.
         const answer = yield* send({
           ...REQUEST_HEADERS,
           authorization: `Bearer ${Redacted.value(token)}`,

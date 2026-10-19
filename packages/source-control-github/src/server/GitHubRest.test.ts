@@ -134,7 +134,6 @@ describe("GitHubRest", () => {
         "http.response.status_code": 200,
         "github.ratelimit.remaining": 4800,
       });
-      // Nothing recorded carries the query string or the token.
       const everything = spans
         .flatMap((span) => [...span.attributes].map(([key, value]) => `${key}=${String(value)}`))
         .join("\n");
@@ -164,10 +163,8 @@ describe("GitHubRest", () => {
         _tag: "SourceControlRateLimitPausedError",
         retryAt: reset * 1000,
       });
-      // A user's own request may spend the reserve.
       yield* api.rest(read).pipe(Effect.provideService(SourceControlRateLimit.Interactive, true));
       expect(requests).toHaveLength(2);
-      // The reset gives the background its quota back.
       yield* TestClock.setTime(reset * 1000);
       yield* api.rest(read);
       expect(requests).toHaveLength(3);

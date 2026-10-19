@@ -191,8 +191,8 @@ export const runGitHubStackAction = Effect.fn("runGitHubStackAction")(function* 
         (cause) => new GitHubStackResponseInvalidError({ ...identity, cause }),
       ),
     );
-    // viewerCanUpdateBranch is false for an already-current layer, even if rebasing its parent
-    // will make it stale. Check branch write access separately before touching any layer.
+    // viewerCanUpdateBranch is false for current layers that restacking could make stale; check
+    // write access separately.
     if (
       access.some(({ repository }) => {
         const pr = repository?.pullRequest;
@@ -203,8 +203,8 @@ export const runGitHubStackAction = Effect.fn("runGitHubStackAction")(function* 
       })
     )
       return yield* new GitHubStackPermissionError({ ...identity });
-    // GitHub's own "Rebase stack" has no API, and its per-PR "update branch" replays the old
-    // copy of every lower layer into the one above it. The cascade moves each layer's own commits.
+    // GitHub has no stack-rebase API; per-PR updates replay lower layers' old commits instead of
+    // cascading their new heads.
     yield* cascadeRebaseStack({
       host: input.host,
       repository: input.repository,

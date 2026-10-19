@@ -418,8 +418,7 @@ export const make = Effect.gen(function* () {
           error("createRepository", input.cwd, "GitCafe returned an unreadable response.", cause),
         ),
       );
-      // GitCafe admits a repository asynchronously: `cafe repo create` answers while admission is
-      // still running, so wait for it to settle the way `cafe repo create --clone` does.
+      // cafe repo create returns before admission finishes; wait as its --clone flow does.
       const settled = (state: string) => state === "complete" || state === "blocked";
       const pending = created.data.resource;
       const resource = settled(pending.state)

@@ -20,8 +20,6 @@ const CAPABILITIES: PullRequestCapabilities = {
   actions: [...definition.changeRequestActions],
   mergeMethods: ["merge", "squash", "rebase"],
   search: true,
-  // Bitbucket Cloud's API exposes no reaction on a pull request or on a comment, so none is
-  // read and none is offered.
   reactions: false,
   review: {
     inlineComment: true,
@@ -31,17 +29,13 @@ const CAPABILITIES: PullRequestCapabilities = {
   },
   reviewers: { request: true, listCandidates: true },
   edit: { changeRequest: true, comment: true },
-  // Bitbucket Cloud states nothing about what a reviewer has already read: no endpoint carries a
-  // viewed file, and the per-pull-request properties it does offer are one value shared by
-  // everyone rather than one per reader. So the marks are kept here, and the client says whose
-  // they are rather than implying bitbucket.org will show them.
+  // Bitbucket has no per-reader viewed marks; PR properties are shared by everyone.
   viewedFiles: "environment",
 };
 
 /**
- * Bitbucket lets the author of a pull request decline their own with no more than read access,
- * and the permission response says nothing about who opened this one — so withholding the
- * control from the one person entitled to it is the worse of the two mistakes.
+ * Authors can decline their own PRs with read access; repository permissions do not identify that
+ * exception.
  */
 export function bitbucketViewerPermissions(input: {
   readonly canWrite: boolean;
@@ -202,8 +196,8 @@ export const make = Effect.gen(function* () {
             closedAt: pullRequest.state === "closed" ? pullRequest.closedAt : null,
             reviewers: pullRequest.reviewers,
             checks,
-            // Bitbucket publishes no per-repository list of allowed strategies, so the ones it
-            // supports are all offered and a strategy the repository forbids fails on merge.
+            // Bitbucket exposes no per-repository strategy permissions; unsupported strategies fail
+            // at merge time.
             mergeCapabilities: { merge: true, squash: true, rebase: true },
             viewerPermissions: bitbucketViewerPermissions({ canWrite }),
           }),

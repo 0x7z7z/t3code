@@ -47,10 +47,7 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 10;
 /** GitCafe's cap on paths per `/diff-files` read, and so one diff page. */
 const DIFF_FILES_BATCH = 64;
-/**
- * Line totals cost one hunk read per batch, so a pull request larger than this reports none
- * rather than reading every file.
- */
+/** Line totals require hunk reads; omit them for large PRs rather than fetching every file. */
 const LINE_STATS_MAX_FILES = DIFF_FILES_BATCH * 4;
 const MAX_CHANGE_PAGES = 20;
 
@@ -415,8 +412,8 @@ export const make = Effect.gen(function* () {
     if (pull.mergeRoute === "unsupported")
       return yield* failure("merge", "This GitCafe pull request has no supported merge route.");
     const base = yield* repositoryPath("merge", input);
-    // GitCafe observes the base only for merges it routes to the provider; a native merge is
-    // fenced on the target branch's current commit.
+    // Native merges fence on the target's current commit; only provider-routed merges have an
+    // observed base.
     const baseOid =
       pull.mergeRoute === "provider"
         ? pull.observedBaseOid
@@ -470,9 +467,8 @@ export const make = Effect.gen(function* () {
         const involved = input.involvement === "authored" || input.involvement === "reviewing";
         let actorId: string | undefined;
         if (involved) {
-          // A host narrows as far as it can: when the actor list can't be read, the listing comes
-          // back unnarrowed and the page's own involvement filter does the rest. A refused token
-          // or a rate limit still fails, since the service acts on those for the whole host.
+          // If actors cannot be read, leave involvement filtering to the client; auth and
+          // rate-limit errors still fail.
           const options = yield* read(
             "listChangeRequests",
             input,

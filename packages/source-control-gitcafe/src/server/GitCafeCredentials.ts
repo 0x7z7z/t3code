@@ -69,10 +69,7 @@ export class GitCafeCredentials extends Context.Service<
 const normalizeHost = (host: string) => host.trim().toLowerCase();
 const DEFAULT_HOST = "git.cafe";
 
-/**
- * `CAFE_TOKEN`, but only for the host `cafe` itself would send it to (`CAFE_HOST`, git.cafe by
- * default): a remote URL picks the host, and must not steer a production token to staging.
- */
+/** Scope CAFE_TOKEN to CAFE_HOST (default git.cafe) so a remote cannot redirect it to staging. */
 export function environmentToken(
   host: string,
   env: Readonly<Record<string, string | undefined>>,
@@ -100,9 +97,8 @@ export const make = Effect.gen(function* () {
   const workingDirectory = yield* HostProcess.WorkingDirectory;
 
   /**
-   * `cafe` has no `auth token` command; its Git credential helper is the supported way to hand
-   * the stored login to another program, and answers over stdin/stdout so the token never
-   * reaches an argument list or a log.
+   * cafe has no auth-token command; its credential helper exchanges the token over stdin/stdout,
+   * outside argv/logs.
    */
   const fromCafe = (host: string) =>
     process

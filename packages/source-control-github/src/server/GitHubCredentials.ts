@@ -90,15 +90,13 @@ function normalizeHost(host: string): string {
   return host.trim().toLowerCase();
 }
 
-/** Hosts gh treats as GitHub.com-like for `GH_TOKEN`: github.com and GHE.com data residency. */
 function isGitHubDotCom(host: string): boolean {
   return host === "github.com" || host.endsWith(".ghe.com");
 }
 
 /**
- * The environment token for a host, in gh's precedence order. gh hands `GH_ENTERPRISE_TOKEN` to
- * any non-github.com host; here it only goes to the host `GH_HOST` names, because a remote URL
- * picks the host and a hostile one must not receive an enterprise token.
+ * Unlike gh, scope GH_ENTERPRISE_TOKEN to GH_HOST so a remote URL cannot send it to an arbitrary
+ * host.
  */
 export function environmentToken(
   host: string,

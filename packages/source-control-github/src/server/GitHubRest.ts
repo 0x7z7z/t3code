@@ -48,7 +48,6 @@ export class GitHubRest extends Context.Service<
   GitHubRest,
   {
     readonly rest: (input: GitHubRestInput) => Effect.Effect<GitHubRestResponse, GitHubApiError>;
-    /** The credential a request to `host` would carry right now. */
     readonly credential: (
       host: string,
     ) => Effect.Effect<
@@ -58,7 +57,6 @@ export class GitHubRest extends Context.Service<
   }
 >()("@t3tools/source-control-github/server/GitHubRest") {}
 
-/** A REST failure body: `{ message, errors: [{ message } | { resource, field, code }] }`. */
 const decodeRestErrors = Schema.decodeUnknownOption(
   Schema.fromJsonString(
     Schema.Struct({
@@ -121,10 +119,6 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const policy = yield* GitHubRequestPolicy.GitHubRequestPolicy;
 
-  /**
-   * Sends one request through the request policy and fails a refusal with the error that says
-   * why. The answer is returned only once it is known to be one.
-   */
   const send = Effect.fn("GitHubRest.send")(function* (input: {
     readonly host: string;
     readonly operation: string;
@@ -156,15 +150,14 @@ export const make = Effect.gen(function* () {
           const response: HttpClientResponse.HttpClientResponse = yield* httpClient
             .execute(input.request.pipe(HttpClientRequest.setHeaders(headers)))
             .pipe(
-              // `GitHubRest.send` is the request's span. The client's own span would add
-              // `url.full` and `url.query`, which can carry SHAs and branch names, so it is off.
+              // Disable the client's span because url.full/url.query can expose SHAs and branch
+              // names.
               Effect.provideService(HttpClient.TracerDisabledWhen, () => true),
             );
           const collected = yield* collectUint8StreamText({
             stream: response.stream,
             maxBytes: input.maxResponseBytes,
           }).pipe(
-            // 204, 304 and many refusals carry no body at all, which is an empty answer.
             Effect.catchIf(
               (error) => error.reason._tag === "EmptyBodyError",
               () => Effect.succeed({ text: "", truncated: false, invalidUtf8: false }),
@@ -223,19 +216,11 @@ export const make = Effect.gen(function* () {
   return GitHubRest.of({ rest, credential: policy.credential });
 });
 
-/**
- * The REST transport together with the request policy it sends through. The generated GraphQL
- * client sends through the same policy, so REST and GraphQL share one set of request slots.
- */
 export const layer = Layer.effect(GitHubRest, make).pipe(
   Layer.provideMerge(GitHubRequestPolicy.layer),
 );
 
-/**
- * REST and the request policy, with the credential, quota reserve and rate-limit pause the policy
- * reads through: everything both transports need. An application builds this once so every GitHub
- * reader shares one view of each quota per host.
- */
+/** Build once per application so REST and GraphQL share quotas and request slots. */
 export const layerWithDependencies = layer.pipe(
   Layer.provideMerge(GitHubCredentials.layer),
   Layer.provideMerge(GitHubQuota.layer),

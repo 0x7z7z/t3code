@@ -21,12 +21,8 @@ export function parseFetchRemotes(
 }
 
 /**
- * The repository `gh pr list` reads in a checkout, picked the way gh picks one without a prompt: the
- * remote `gh repo set-default` marked, else the first of upstream, github, origin (in any case), else
- * the only remote.
- *
- * Null whenever gh might weigh the remotes differently: a remote on another host or under an SSH alias,
- * more than one mark, or several remotes with none of those names.
+ * Match gh's noninteractive remote selection: marked default, then upstream/github/origin, then the
+ * sole remote. Return null for ambiguous hosts, SSH aliases or defaults.
  */
 export function selectGitHubBaseRepository(input: {
   readonly remotes: string;
@@ -51,8 +47,7 @@ export function selectGitHubBaseRepository(input: {
     const [owner, name, ...rest] = mark[2]!.toLowerCase().split("/");
     return owner && name && rest.length === 0 ? { owner, name } : null;
   }
-  // gh sorts remotes by these names, case-insensitively, and takes the first. A tie for the
-  // top place has no defined winner.
+  // gh ranks these names case-insensitively; a top-ranked tie has no defined winner.
   const score = (remoteName: string) =>
     ["origin", "github", "upstream"].indexOf(remoteName.toLowerCase()) + 1;
   const ranked = [...repositories.entries()].toSorted(
@@ -65,8 +60,8 @@ export function selectGitHubBaseRepository(input: {
 }
 
 /**
- * `host` is the API host it settled on, which a caller names when no repository was
- * found there. GH_REPO is the caller's to check first.
+ * GH_REPO must be checked by the caller first; host remains available even when no repository is
+ * found.
  */
 export function resolveGitHubRepository(input: {
   readonly remotes: string;
@@ -89,8 +84,7 @@ export function resolveGitHubRepository(input: {
     host,
   });
   if (selected !== null) return { host, locator: { host, ...selected } };
-  // gh's own order without its prompt: upstream, github, origin, then the first remote, among
-  // the ones on this host (an SSH alias counts as its API host).
+  // Match gh's host-filtered priority: upstream, github, origin, then the first remote.
   const rank = (name: string) => ["upstream", "github", "origin"].indexOf(name.toLowerCase());
   const candidates = fetchRemotes
     .filter(
@@ -156,11 +150,7 @@ export function parsePullRequestReference(
   return { kind: "branch", headSelector: trimmed };
 }
 
-/**
- * An SSH alias (`git@github-work:owner/repo`) names no API host of its own; it is read
- * through `github.com`, which is what such an alias almost always stands for (issue
- * #6198).
- */
+/** SSH aliases without a domain default to github.com because they do not identify an API host. */
 export function gitHubApiHostForRemote(remoteUrl: string): string | null {
   const provider = detectSourceControlProviderFromRemoteUrl(remoteUrl);
   if (provider === null) return null;

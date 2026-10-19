@@ -213,7 +213,6 @@ it.effect("opens Forgejo Actions check links on the pull request's server", () =
               }
             : input.path.endsWith("page=1")
               ? [
-                  // Forgejo includes any sub-path mount in the relative links it reports.
                   status("actions", "/git/acme/web/actions/runs/7/jobs/2"),
                   status("external", "https://ci.example/build/9"),
                   status("none", null),

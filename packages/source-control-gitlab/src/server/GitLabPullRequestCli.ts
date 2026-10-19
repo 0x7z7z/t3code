@@ -487,9 +487,8 @@ export const make = Effect.gen(function* () {
         "api",
         input.path,
         ...(input.method === undefined ? [] : ["--method", input.method]),
-        // A raw body from stdin: argv is visible in process listings and is echoed back
-        // inside process-runner failure messages. Unlike `gh`, `glab api --input` sends no
-        // Content-Type at all, and GitLab answers a bodyless content type with HTTP 415.
+        // Keep payloads out of argv/logs. glab --input omits Content-Type; GitLab requires it or
+        // returns 415.
         ...(input.stdin === undefined
           ? []
           : ["--input", "-", "--header", "Content-Type: application/json"]),
@@ -512,16 +511,14 @@ export const make = Effect.gen(function* () {
     readonly collected: ReadonlyArray<GitLabMergeRequestListItem>;
     readonly cursorAdvance: number;
   }): Effect.Effect<GitLabMergeRequestListBatch, GitLabPullRequestCliError> => {
-    // A continuation uses GitLab's offset pagination. Its timestamp filter is inclusive and has
-    // no tie-breaker, so a page where many rows share the boundary would otherwise return the
-    // same prefix forever. `delivered` is the stable offset the service has already handed over.
+    // Use offsets: GitLab's inclusive timestamp filter has no tie-breaker and can repeat a page of
+    // equal-time rows forever.
     const delivered = input.cursor?.delivered ?? 0;
     const perPage = Math.min(input.limit + 1, MAX_PAGE_SIZE);
     const firstPage = Math.floor(delivered / perPage) + 1;
     const skipOnFirstPage = input.page === firstPage ? delivered % perPage : 0;
-    // A page made entirely of malformed rows has no item from which the service can build a
-    // continuation. Bound the walk to the raw span this request asked for rather than recursing
-    // forever on a host that keeps returning full unusable pages.
+    // Bound raw pages so entirely malformed results cannot recurse forever without a usable
+    // continuation.
     const lastPage = Math.floor((delivered + input.limit) / perPage) + 1;
     return api({
       cwd: input.cwd,
@@ -644,9 +641,8 @@ export const make = Effect.gen(function* () {
         },
       }),
       Effect.flatMap(({ result, legacy }) => {
-        // A byte-truncated response is a JSON prefix, so this page cannot be read at all.
-        // Answering with no cursor would call the diff whole while silently dropping this page
-        // and every one after it, so the read fails and says which page could not be had.
+        // Fail byte-truncated JSON; returning no cursor would silently drop this and all subsequent
+        // pages.
         if (result.stdoutTruncated) {
           return Effect.fail(
             new GitLabMergeRequestReadError({
@@ -673,12 +669,10 @@ export const make = Effect.gen(function* () {
           );
         }
         const patch = decoded.success.patch;
-        // Counted before decoding, so a page whose files all failed to decode still moves on
-        // rather than pointing the reader back at the page it just read.
+        // Use raw counts so malformed files cannot prematurely end pagination.
         const morePages = !legacy && decoded.success.rawCount >= MAX_PAGE_SIZE;
         return Effect.succeed({
-          // The slice ends on a newline, so a file GitLab gave a header and no hunks for does
-          // not run into the first line of the next slice.
+          // Terminate slices so a hunkless header cannot run into the next slice.
           patch: patch.length === 0 ? patch : patch.replace(/\n?$/, "\n"),
           truncated: decoded.success.truncated,
           nextCursor: morePages ? String(input.page + 1) : null,
@@ -761,8 +755,7 @@ export const make = Effect.gen(function* () {
           );
         }
         const collected = [...input.collected, ...decoded.success.threads];
-        // The raw count again: this endpoint returns the plain notes too, so a full page of
-        // those is not the end of the positioned ones.
+        // Plain notes count toward the page size even when no positioned threads survive decoding.
         if (decoded.success.rawCount < MAX_PAGE_SIZE) {
           return Effect.succeed({ threads: collected, truncated: false });
         }
@@ -971,8 +964,7 @@ export const make = Effect.gen(function* () {
     );
 
   /**
-   * GitLab charges the blobs query by how many paths it is handed, and its connection hands back
-   * one page. A hundred at a time keeps each request inside both.
+   * GitLab charges by path count and returns one connection page; keep batches within both limits.
    */
   const BLOB_PATHS_PER_REQUEST = 100;
 
@@ -1033,10 +1025,8 @@ export const make = Effect.gen(function* () {
               Effect.map((pages) => {
                 const revisions = new Map<string, string>();
                 for (const { paths, page } of pages) {
-                  // A batch GitLab did not answer says nothing about its paths, so they are left
-                  // out and the caller reads them as versions it could not learn, which leaves
-                  // the marks on them alone. Filling them in as removed would report every file
-                  // a reader has cleared as changed over a project the token cannot see.
+                  // An unanswered batch means unknown, not deleted; omit its paths to preserve
+                  // viewed marks.
                   if (page === null) continue;
                   for (const [path, oid] of page) revisions.set(path, oid);
                   for (const path of paths) {
@@ -1097,8 +1087,7 @@ export const make = Effect.gen(function* () {
           });
           return;
         }
-        // GitLab deletes an award by its id and takes no emoji name there, so the reader's own
-        // award of that name is looked up first.
+        // Deleting an award requires its ID, so look up the viewer's award by emoji first.
         const viewer = yield* viewerUsername({ cwd: input.cwd });
         const listed = yield* api({ cwd: input.cwd, path: subject });
         const own = decodeOwnAwardIdJson(listed.stdout.trim(), {
@@ -1242,8 +1231,7 @@ export const make = Effect.gen(function* () {
           const author = mergeRequest.author?.login;
           const requested = new Set(mergeRequest.reviewRequestLogins);
           return {
-            // The author is dropped rather than shown unusable: GitLab refuses to make the person
-            // who opened a merge request its reviewer.
+            // GitLab forbids requesting a review from the MR author.
             candidates: users.candidates.flatMap((candidate) =>
               candidate.login === author
                 ? []
@@ -1257,9 +1245,7 @@ export const make = Effect.gen(function* () {
     setReviewerRequest: (input) =>
       mergeRequestDetail(input).pipe(
         Effect.flatMap((mergeRequest) => {
-          // GitLab has no endpoint that adds or removes one reviewer: `reviewer_ids` replaces the
-          // whole set, so the set that is already there is read first and the change applied to
-          // it.
+          // GitLab replaces reviewer_ids wholesale; preserve reviewers not included in this change.
           const ids = new Set(mergeRequest.reviewerIds);
           for (const reviewer of input.reviewers) {
             const id = Number(reviewer.id);
@@ -1278,9 +1264,7 @@ export const make = Effect.gen(function* () {
       ),
 
     runMergeRequestAction: (input) => {
-      // `glab mr merge` arms auto-merge and never disarms it, so the one direction the CLI has
-      // no flag for is asked of GitLab directly through the same `api` passthrough the rest of
-      // this module writes with.
+      // glab cannot disable auto-merge; use the cancellation endpoint directly.
       if (input.action === "disable-auto-merge") {
         return api({
           cwd: input.cwd,
@@ -1302,9 +1286,7 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}`,
         method: "PUT",
-        // Only the fields the caller asked to change: GitLab leaves out what it is not sent, and
-        // clears what it is sent empty — so a title corrected on its own must carry no
-        // description at all.
+        // Omitted fields remain unchanged; empty values clear them.
         stdin: JSON.stringify({
           ...(input.title === undefined ? {} : { title: input.title }),
           ...(input.description === undefined ? {} : { description: input.description }),
@@ -1316,8 +1298,8 @@ export const make = Effect.gen(function* () {
         cwd: input.cwd,
         path: `projects/${projectPath(input.repository)}/merge_requests/${input.number}/notes`,
         method: "POST",
-        // A JSON body rather than a `--raw-field`: glab coerces a field that reads as a
-        // literal `true` or a number, and a comment body is text either way.
+        // glab coerces raw fields such as true or numbers; JSON preserves comment bodies as
+        // strings.
         stdin: JSON.stringify({ body: input.body }),
       }).pipe(Effect.asVoid),
 
@@ -1337,10 +1319,7 @@ export const make = Effect.gen(function* () {
       Effect.gen(function* () {
         const project = projectPath(input.repository);
         const mergeRequest = `projects/${project}/merge_requests/${input.number}`;
-        // GitLab has no pending review to attach comments to, so a review is replayed as the
-        // requests it is made of: the line comments, then the summary, then the verdict. A
-        // failure part-way therefore leaves what was already posted in place, which is why
-        // the verdict goes last — a half-sent review is never an approval.
+        // Submit the verdict last so a partially failed review cannot leave an approval.
         if (input.comments.length > 0) {
           const refs = yield* getDiffRefs(input);
           yield* Effect.forEach(
@@ -1357,9 +1336,7 @@ export const make = Effect.gen(function* () {
                     head_sha: refs.headSha,
                     start_sha: refs.startSha,
                     position_type: "text",
-                    // Both paths are sent because GitLab resolves a position against both
-                    // sides of the diff. They differ only for a renamed file, which is why the
-                    // draft carries the name the file had before the change.
+                    // GitLab anchors positions against both paths, which differ for renames.
                     old_path: comment.oldPath ?? comment.path,
                     new_path: comment.path,
                     ...gitLabReviewPositionLines(comment.position),

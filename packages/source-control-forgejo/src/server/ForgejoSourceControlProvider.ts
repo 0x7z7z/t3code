@@ -194,8 +194,8 @@ export function repositoryNameFromRemoteUrl(url: string): string | null {
 }
 
 /**
- * A Forgejo remote's URL can't say which server it belongs to (an SSH alias, an installation
- * mount), so the identity's browser URL comes from the login that serves it.
+ * SSH aliases and installation mounts make remote URLs insufficient; resolve the browser URL from
+ * the serving login.
  */
 const refineRepositoryIdentity: NonNullable<
   SourceControlProvider.SourceControlProvider["Service"]["refineRepositoryIdentity"]
@@ -459,8 +459,8 @@ export const make = Effect.gen(function* () {
               detail: "Forgejo reported a pull request head that is not a commit.",
               reason: "invalid-response",
             });
-          // tea leaves an existing PR branch at its old tip. Keep dirty files safe
-          // while bringing the selected branch to the PR revision we fetched.
+          // tea leaves existing PR branches stale; `--keep` updates the tip without discarding
+          // dirty files.
           yield* process.run({
             operation: "ForgejoSourceControlProvider.checkoutChangeRequest",
             command: "git",
