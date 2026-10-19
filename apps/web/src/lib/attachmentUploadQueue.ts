@@ -44,10 +44,7 @@ export const useAttachmentUploadStore = create<AttachmentUploadStore>(() => ({
 interface UploadJob {
   readonly image: ComposerImageAttachment | ComposerFileAttachment;
   readonly environmentId: EnvironmentId;
-  /**
-   * The draft that owned this file when the job started. Completion resolves
-   * the current owner because the file can move while the upload is pending.
-   */
+  /** Original owner; completion resolves the current owner because uploads can outlive draft moves. */
   readonly draftTarget?: ComposerThreadTarget;
   readonly previous?: ReadyAttachmentUpload;
   /**
@@ -115,11 +112,7 @@ function resolveCurrentFileDraftTarget(job: UploadJob): ComposerThreadTarget | u
   return undefined;
 }
 
-/**
- * The mounted composer effect performs the same write for live UI updates, but
- * a background completion (user navigated away, upload finished, reload) must
- * not depend on a mounted composer to survive.
- */
+/** Persist background completions even when no composer is mounted. */
 function stampDraftFileUpload(job: UploadJob, attachmentId: string): void {
   const draftTarget = resolveCurrentFileDraftTarget(job);
   if (draftTarget === undefined) {
@@ -219,10 +212,8 @@ async function runUpload(job: UploadJob): Promise<void> {
       }
     }
     if (verification.status === "failed" || !job.image.file) {
-      // No `attachmentId` here: a failed state's id marks a pending upload
-      // this queue minted, which retry and release then delete. The persisted
-      // id is the only server copy of a hydrated file, so a transient
-      // verification failure must leave it in place for the next retry.
+      // Retry and release delete failed-state ids. A persisted id is a hydrated
+      // file's only server copy, so transient verification failure must not put it here.
       setUploadState(job.image.id, {
         status: "failed",
         environmentId: job.environmentId,
@@ -614,11 +605,7 @@ export function getUploadedAttachments(input: {
   return attachments;
 }
 
-/**
- * The queue-keyed release only sees in-memory state, so after a reload it finds
- * nothing and the pending upload leaks. Every draft discard path must funnel
- * through here.
- */
+/** In-memory queue releases miss uploads after reload; every draft discard must use this path. */
 export function releaseDraftAttachment(
   attachment: ComposerImageAttachment | ComposerFileAttachment,
 ): void {

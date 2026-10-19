@@ -2,13 +2,8 @@ import { closeHistory, isHistoryTransaction } from "@tiptap/pm/history";
 import type { Transaction } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 
-/**
- * ProseMirror's history only starts a new undo step after a pause or when an
- * edit is not next to the last one, so typing, backspacing and typing again
- * without pausing is one step, and a store rewrite of the whole document
- * (autocomplete inserting a chip, list continuation) makes every later edit
- * "adjacent" and joins it.
- */
+/** ProseMirror joins adjacent edits until a pause. Whole-document draft rewrites
+ * make every later edit adjacent, so change kinds need explicit undo boundaries. */
 export const COMPOSER_UNDO_GROUP_DELAY = 1000;
 
 export type ComposerChangeKind = "insert" | "delete" | "other";

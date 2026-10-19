@@ -79,12 +79,8 @@ export function resolveBrowserNavigationTarget(
   return resolveEnvironmentPortTarget(environmentId, target, readEnvironmentUrl(environmentId));
 }
 
-/**
- * The desktop app draws tabs on the machine that runs its primary backend and
- * any desktop-local backend (WSL). Its connection URL can still be a LAN
- * address (WSL NAT mode binds the distro IP), but a dev server bound to
- * loopback only answers on `localhost` there.
- */
+/** Desktop renders primary and WSL tabs locally, even when the backend URL is a
+ * LAN address. A loopback-bound dev server there only answers on localhost. */
 const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   isElectron &&
   (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target));

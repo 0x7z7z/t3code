@@ -75,12 +75,8 @@ export function getDiffLineStat(files: ReadonlyArray<FileDiffMetadata>): DiffLin
 
 interface RenderablePatchOptions {
   ignoreWhitespace?: boolean;
-  /**
-   * Pierre's partial-patch parser keeps hunk render starts in source-file
-   * coordinates. Its virtualizer iterates partial patches as compact rows, so
-   * review diffs need compact render starts while retaining collapsedBefore
-   * for the "N unmodified lines" separator.
-   */
+  /** Pierre stores source-file offsets, but its partial-patch virtualizer needs compact rows.
+   * Retain collapsedBefore for the unmodified-lines separator. */
   compactPartialHunkOffsets?: boolean;
 }
 
@@ -199,10 +195,7 @@ export function getRenderablePatch(
   }
 }
 
-/**
- * The file's own name. Git quotes and escapes a name holding a tab, a newline, a quote or a
- * backslash, and the parser decodes it, so this is the name the host knows the file by.
- */
+/** Uses the parser-decoded filename, including Git's quoted and escaped names. */
 export function resolveFileDiffPath(fileDiff: FileDiffMetadata): string {
   return fileDiff.name ?? fileDiff.prevName ?? "";
 }

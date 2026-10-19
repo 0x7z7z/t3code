@@ -341,13 +341,8 @@ function shellParentThreadId(
     : thread.lineage.parentThreadId;
 }
 
-/**
- * The live shells the panel's immediate relationships can reach: the thread,
- * its parent, its children, and the threads its subagents, workflow members and
- * context transfers name. Keeps its array while those shells are unchanged, so
- * another thread streaming in the same environment does not re-render the panel.
- */
-/** Exported for tests. */
+/** Retain reachable relationship shells while unchanged, so unrelated streaming
+ * threads do not rerender the panel. */
 export function selectThreadRelationshipShells(
   threadId: ThreadId,
   projection: Pick<

@@ -33,8 +33,6 @@ export function useShortcutModifierState(ignoreEditable = false): ShortcutModifi
 
   useEffect(() => {
     const updateState = (next: ShortcutModifierState) => {
-      // Even a no-op state dispatch can cost work in the sidebar's large tree.
-      // Ordinary typing must return before dispatching a React update.
       if (areShortcutModifierStatesEqual(stateRef.current, next)) return;
       stateRef.current = next;
       setState(next);

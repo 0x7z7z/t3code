@@ -30,7 +30,6 @@ vi.mock(import("~/localApi"), async (original) => {
 
 vi.mock(import("./desktopTabLifetime"), { spy: true });
 
-// The Electron desktop bridge; a browser has none.
 vi.mock(import("~/components/preview/previewBridge"), async (original) => ({
   ...(await original()),
   previewBridge: {

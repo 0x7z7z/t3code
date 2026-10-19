@@ -443,9 +443,7 @@ const loadSecondaryConnectionRegistration = Effect.fn(
   };
 });
 
-// Poll cadence for the desktop bootstrap topology. There is no change event on
-// the bridge, so the renderer polls; successful registrations are cached by a
-// signature of their endpoint until bearer credentials approach expiry.
+// The bridge has no topology event. Cache registrations until bearer credentials near expiry.
 const PLATFORM_POLL_INTERVAL = "3 seconds";
 const SECONDARY_BEARER_REFRESH_SKEW_MS = 5_000;
 
@@ -534,13 +532,8 @@ export interface RejectedSecondaryBootstrap {
   readonly delayMs: number;
 }
 
-/**
- * A backend that rejected a bootstrap token will usually keep rejecting it, so
- * the poll backs off on that exact signature instead of re-presenting a dead
- * credential every few seconds. It still retries on a capped backoff: a backend
- * that restarts on the same port seeds a fresh grant for the same token, and
- * nothing in the topology says it restarted.
- */
+/** Back off rejected bootstrap signatures, but retry: a backend can restart on
+ * the same port with a fresh grant, without any topology change. */
 export function isRejectedSecondaryBootstrap(
   rejected: RejectedSecondaryBootstrap | undefined,
   signature: string,
@@ -658,16 +651,13 @@ const layerPlatformConnectionSource = Layer.effect(
         const rejected = yield* Ref.get(rejectedRef);
         const nextRejected = new Map<string, RejectedSecondaryBootstrap>();
         for (const bootstrap of topologyRead.bootstraps) {
-          // The cached bearer belongs to the endpoint, not to the bootstrap
-          // token it was exchanged for: a new token must not drop a live
-          // session (its removal also clears the environment's drafts). The
-          // token only decides whether a rejected exchange is retried.
+          // Bearers belong to endpoints. Dropping a live session on token rotation also
+          // clears drafts; the token only controls retrying rejected exchanges.
           const endpointSignature = `${bootstrap.httpBaseUrl}|${bootstrap.wsBaseUrl}`;
           const signature = `${endpointSignature}|${bootstrap.bootstrapToken ?? ""}`;
           const cached = previous.get(bootstrap.id);
-          // A new token from the desktop means something changed (rotation, a
-          // restarted backend): exchange it rather than reusing a bearer that
-          // may be dead. The old bearer stays registered if that exchange fails.
+          // Rotation may signal a restarted backend. Exchange the new token, retaining
+          // the old bearer if the exchange fails.
           if (
             cached !== undefined &&
             cached.bootstrapToken === bootstrap.bootstrapToken &&

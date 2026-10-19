@@ -244,12 +244,8 @@ interface MergedEnvironmentQueryView<A> {
   readonly observations: ReadonlyArray<readonly [EnvironmentId, A, number]>;
 }
 
-/**
- * React cannot subscribe to a list of atoms whose length changes, so the fan-out happens inside
- * one derived atom keyed by the targets — the same shape the cross-environment thread search uses.
- * An environment that fails contributes nothing rather than blanking the page: the pull request
- * list is a union, and one unreachable machine should not hide the others' rows.
- */
+/** Variable-length fan-out needs one derived atom. Failed environments
+ * contribute no rows so one unreachable machine cannot hide the others. */
 function createMergedEnvironmentQuery<Input, A>(
   label: string,
   atomFor: (

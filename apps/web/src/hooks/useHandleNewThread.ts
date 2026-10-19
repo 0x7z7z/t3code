@@ -206,13 +206,9 @@ export function useNewThreadHandler() {
           if (abandonedSinceRequest()) {
             return null;
           }
-          // If the draft was opened (a concurrent invocation's navigation
-          // landed), promoted to a real thread, remapped away (a concurrent
-          // invocation registered a fresh draft — remapping back would evict
-          // the winner and let the store GC it), or gained content (no longer
-          // a reusable empty draft) in the meantime, this invocation is a
-          // stale loser: resetting context, remapping, or navigating would
-          // all clobber state written after the snapshot above.
+          // A concurrent invocation may have opened, promoted, remapped, or populated
+          // the draft. A stale reset or navigation would clobber that newer state;
+          // remapping could also evict and garbage-collect the winning draft.
           const routeTargetNow = getCurrentRouteTarget();
           const openedMeanwhile =
             routeTargetNow?.kind === "draft" &&
@@ -258,10 +254,8 @@ export function useNewThreadHandler() {
             });
           }
         }
-        // The workspace context must also ride along here: when projectRef
-        // targets a different physical member of the logical project,
-        // createDraftThreadState treats the remap as a project change and
-        // would otherwise wipe branch/worktree, undoing the write above.
+        // A remap to another physical project clears workspace context; pass it
+        // through to preserve the branch and worktree written above.
         setLogicalProjectDraftThreadId(
           logicalProjectKey,
           projectRef,
@@ -329,10 +323,8 @@ export function useNewThreadHandler() {
       if (abandonedSinceRequest()) {
         return null;
       }
-      // The await yields, so a concurrent invocation may have registered a
-      // draft for this logical project in the meantime. Registering ours
-      // too would evict that draft while its navigation is in flight —
-      // reuse the winner instead, like the synchronous path above does.
+      // A concurrent invocation may have registered a draft while awaiting.
+      // Reuse it rather than evicting it while its navigation is in flight.
       const racedDraft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       if (
         racedDraft &&

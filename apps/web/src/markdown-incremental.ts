@@ -30,10 +30,8 @@ function shiftPositions(node: Root | RootContent, offset: number, lines: number)
   }
 }
 
-/** Keep the full document pipeline while avoiding parsing a completed code-heavy
- * prefix on every token. A closed top-level fence followed by a blank line is a
- * parsing boundary. Definitions are document-wide, so they require a full parse.
- */
+/** Cache completed top-level fences followed by a blank line. Document-wide
+ * definitions prevent splitting and require a full parse. */
 function createIncrementalMarkdownParser(parse: Parser): Parser {
   let cached: ParsedPrefix | undefined;
 
@@ -94,9 +92,8 @@ export function createIncrementalMarkdownPlugin(): Plugin<[], Root> {
     if (!original) return;
     parser ??= createIncrementalMarkdownParser((source, file) => original(source, file) as Root);
     const parseDocument = parser;
-    // ReactMarkdown creates a processor per render. Its first parse is the
-    // document; transforms can then parse synthetic recovery text on that same
-    // processor. Those parses must not read or replace the document's cache.
+    // ReactMarkdown parses the document before synthetic recovery text on each
+    // processor; only the first parse may read or replace the document cache.
     let documentParsed = false;
     this.parser = (source, file) => {
       if (documentParsed) return original(source, file);

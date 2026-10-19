@@ -192,11 +192,8 @@ const makeDatabaseHandle = Effect.fn("web.connectionStorage.makeDatabaseHandle")
   return { handle, close };
 });
 
-/**
- * A connection the browser already closed throws InvalidStateError even when no
- * close event reached this tab, so drop it and retry once on a fresh one
- * instead of failing every later operation.
- */
+/** Browsers may close a connection without delivering "close". Retry InvalidStateError
+ * on a fresh connection so subsequent operations are not permanently broken. */
 function withDatabase<A>(
   database: DatabaseHandle,
   use: (opened: IDBDatabase) => Effect.Effect<A, ConnectionTransientError>,
@@ -597,9 +594,8 @@ export function makeBrowserGitHubRoutingPermissions(
   });
 }
 
-// A posted message resumes in a fresh task, so input and rendering get a turn between
-// encoding chunks. A zero-delay timer would not do: browsers clamp nested timers to
-// 4 ms and throttle them to once a second or less in a background tab.
+// MessageChannel yields to input and rendering without nested-timer clamping
+// or background-tab timer throttling.
 const yieldToBrowserTask = Effect.callback<void>((resume) => {
   const { port1, port2 } = new MessageChannel();
   port1.addEventListener(
@@ -624,7 +620,6 @@ export const layer = Layer.effectContext(
     );
     const catalog = yield* makeCatalogStore(makeCatalogBackend(database));
     const githubRoutingPermissions = makeBrowserGitHubRoutingPermissions();
-    // Remembers each thread row's encoding, so a save only encodes rows that changed.
     const encodeStoredShellSnapshot = makeStoredShellSnapshotEncoder({
       yieldToHost: yieldToBrowserTask,
     });

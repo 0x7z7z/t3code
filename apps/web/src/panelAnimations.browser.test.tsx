@@ -20,7 +20,6 @@ beforeEach(() => {
   pendingFrames = [];
   observed = [];
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  // Frames are stepped by hand so each assertion lands between two paints.
   vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
     pendingFrames.push(callback);
     return pendingFrames.length;

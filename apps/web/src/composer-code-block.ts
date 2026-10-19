@@ -163,10 +163,7 @@ export function indentCodeBlock(
   return true;
 }
 
-/**
- * Tiptap's own input rules only fire on a space, so without this the gesture every markdown editor
- * has — ```` ```ts ```` then Enter — leaves the fence as literal text.
- */
+/** Tiptap's input rules only fire on a space, leaving a fence followed by Enter literal. */
 export function convertCodeFenceOnEnter(
   state: EditorState,
   dispatch?: (transaction: Transaction) => void,

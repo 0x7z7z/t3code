@@ -55,12 +55,8 @@ function deliver(entries: readonly ResizeObserverEntry[]) {
   });
 }
 
-/**
- * Its callbacks run after layout and before paint, but React commits state set
- * there after the paint, so layout derived from an observed size would land one
- * frame late. Every resize delivered in a frame runs inside one flushSync, so
- * all size-derived state commits in a single render before that paint.
- */
+/** ResizeObserver fires before paint, but ordinary React updates commit after it.
+ * Batch all callbacks in one flushSync to avoid a stale frame and repeated renders. */
 export function observeResize(
   elements: Element | readonly Element[],
   callback: ResizeCallback,

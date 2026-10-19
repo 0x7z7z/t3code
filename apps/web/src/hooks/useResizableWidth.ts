@@ -27,10 +27,7 @@ export interface ResizableWidthHandlers {
   readonly onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
 }
 
-/**
- * Width is read on mount or storage-key changes and persisted on drag-end (not on every rAF tick
- * — would otherwise be ~60 writes/sec).
- */
+/** Persist on drag end to avoid a storage write on every animation frame. */
 export function useResizableWidth(options: UseResizableWidthOptions): {
   readonly width: number;
   readonly handlers: ResizableWidthHandlers;

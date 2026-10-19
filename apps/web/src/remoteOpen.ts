@@ -88,9 +88,8 @@ function remoteOpenStatesEqual(previous: RemoteOpenState, next: RemoteOpenState)
   return previous.host.kind === next.host.kind && previous.host.host === next.host.host;
 }
 
-// The presentation changes with every server config push and reconnect. This
-// keeps the previous resolution while it is equal, so subscribers re-render only
-// when where files open actually changes.
+// Config pushes recreate presentations; retain equal resolutions to avoid
+// rerendering file links when their destination has not changed.
 const remoteOpenResolutionAtom = Atom.family((environmentId: EnvironmentId) =>
   Atom.make((get): RemoteOpenResolution => {
     const presentation = get(environmentPresentations.presentationAtom(environmentId));
@@ -169,11 +168,7 @@ export function useRemoteCapableEditors(): ReadonlyArray<EditorId> {
   return editors;
 }
 
-/**
- * Resolves false when the desktop shell refused the URL (e.g. an older build whose protocol
- * allowlist predates editor schemes) so callers do not record a successful open that never
- * happened.
- */
+/** Resolves false when the desktop refuses the URL, including unsupported editor schemes. */
 export async function openRemoteEditorUrl(url: string): Promise<boolean> {
   const bridge = window.desktopBridge;
   if (bridge !== undefined) {

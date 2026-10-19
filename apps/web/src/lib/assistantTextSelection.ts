@@ -75,11 +75,7 @@ export function createAssistantTextSelector(
   };
 }
 
-/**
- * All positions and context lengths use UTF-16 units in that normalized stream,
- * not markdown offsets or Unicode code points. Even matching saved offsets cannot
- * break a context tie, since those offsets may have drifted.
- */
+/** Offsets use normalized UTF-16 units. Saved offsets may drift, so they cannot break context ties. */
 export function findAssistantCitationText(
   text: string,
   selector: AssistantTextSelector,

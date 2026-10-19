@@ -51,13 +51,8 @@ export const ComposerCodeExtension = Code.extend({
   exitable: false,
 });
 
-/**
- * Tiptap's block extensions each bind a chord that turns the current block into
- * their node (Mod-Shift-8 for a list, Mod-Alt-c for a fence, and so on). The
- * composer does not offer them, and they are not harmless: run inside a quote
- * they nest a block the quote serializer cannot write, and the text in it drops
- * out of the stored draft.
- */
+/** Block shortcuts can nest blocks in quotes that the serializer cannot write,
+ * silently dropping their text from the stored draft. */
 function withoutBlockChords<Shortcuts extends Record<string, unknown>>(
   shortcuts: Shortcuts | undefined,
   drop: readonly string[],
@@ -67,11 +62,7 @@ function withoutBlockChords<Shortcuts extends Record<string, unknown>>(
   ) as Shortcuts;
 }
 
-/**
- * What a list item may hold: its own line, then nested lists. That is all the
- * Markdown can write, so ProseMirror refuses any join, wrap or paste that
- * would put a second line or another block into an item.
- */
+/** Markdown can only serialize one paragraph followed by nested lists per item. */
 const LIST_ITEM_CONTENT = "paragraph list*";
 
 /** Task lists come from `- [ ]` alone; Mod-Shift-9 would nest one in a quote. */
@@ -81,11 +72,7 @@ export const ComposerTaskListExtension = TaskList.extend({
   },
 });
 
-/**
- * Tiptap's Tab and Shift-Tab sink and lift an item without touching its
- * `indent`, so the stored draft keeps the old nesting and the next rebuild
- * undoes the move.
- */
+/** Tiptap's nesting shortcuts leave indent unchanged, so rebuilding the draft undoes them. */
 const LIST_NESTING_KEYS = ["Tab", "Shift-Tab"];
 
 export const ComposerTaskItemExtension = TaskItem.extend({
@@ -308,11 +295,6 @@ type ListLinePrefix =
   | ({ kind: "task" } & TaskLinePrefix)
   | { kind: "bullet" | "ordered"; indent: string; marker: string; space: string };
 
-/**
- * The same grammar the literal continuation uses, so plain and rich mode agree
- * on what a list line is: a task first (it also looks like a bullet), then an
- * ordered marker, then a bullet.
- */
 function parseListPrefix(line: string): { prefix: ListLinePrefix; markerLength: number } | null {
   const task = parseTaskPrefix(line);
   if (task) return { prefix: { kind: "task", ...task.prefix }, markerLength: task.markerLength };
@@ -1123,12 +1105,8 @@ function walkList(list: ProseMirrorNode, listStart: number, acc: RichAccumulator
   });
 }
 
-/**
- * The code is literal text in the editor, but the draft store still counts a
- * chip's source in it as one cursor position, as it does everywhere. So the
- * run splits at each chip source, which spans its characters in the document
- * and one position in the collapsed space.
- */
+/** Code is literal in the editor, but the draft counts each chip's source as
+ * one cursor position. Split runs at chip sources to map both spaces. */
 function appendCodeBlockRun(
   block: ProseMirrorNode,
   pmPos: number,
@@ -1386,10 +1364,8 @@ export function pmToFlat(map: RichDocMap, pmPos: number): number {
   return Math.max(0, Math.min(best, map.docLength));
 }
 
-// Markers are decorations, not text, so the position where styled text meets
-// unstyled text (or a paragraph edge) is a single document position. The caret
-// gets two stops there: one that types with the marks before the edge and one
-// that types with the marks after it.
+// A styled boundary is one document position but needs two caret stops:
+// one typing with the preceding marks and one with the following marks.
 
 function styledEdge(state: EditorState) {
   const { selection } = state;
@@ -1407,10 +1383,6 @@ export function caretTakesMarksBefore(state: EditorState): boolean {
   return edge !== null && Mark.sameSet(edge.current, edge.before);
 }
 
-/**
- * Returns null when there is no stop to take, so the arrow key moves the caret
- * as usual.
- */
 export function stepCaretAcrossStyledEdge(
   state: EditorState,
   direction: -1 | 1,

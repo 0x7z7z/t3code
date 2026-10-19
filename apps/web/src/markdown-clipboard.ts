@@ -261,9 +261,8 @@ function scanForSoleCodeBlock(node: Node, scan: SoleCodeBlockScan): void {
     }
     if (child.nodeType !== Node.ELEMENT_NODE) continue;
     const element = child as Element;
-    // Mirrors serializeNode's order: an element carrying markdown of its own
-    // still contributes it even when its tag is otherwise skipped, as a file
-    // chip rendered as a button does.
+    // Elements with their own markdown still contribute it when their tag is
+    // otherwise skipped, such as a file chip rendered as a button.
     if (element.hasAttribute("data-markdown-details")) {
       scan.other = true;
       continue;

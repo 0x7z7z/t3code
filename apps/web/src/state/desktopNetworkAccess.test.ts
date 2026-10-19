@@ -140,7 +140,6 @@ describe("desktopNetworkAccessState", () => {
         now.mockReturnValue(1_030_000);
 
         unmount = registry.mount(atom);
-        // SWR schedules stale revalidation after the initial cached read.
         yield* Effect.promise(() => refreshStarted);
         const refreshed = yield* AtomRegistry.getResult(registry, atom, { suspendOnWaiting: true });
         expect(refreshed.advertisedEndpoints).toEqual(after);

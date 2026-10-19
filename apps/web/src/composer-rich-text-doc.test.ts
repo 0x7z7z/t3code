@@ -531,8 +531,6 @@ describe("composer rich text document model", () => {
       for (let flat = 0; flat <= map.docLength; flat += 1) {
         expect(collapsedToFlat(map, flatToCollapsed(map, flat))).toBe(flat);
       }
-      // The caret on the end of the quote stays on it, and the blank line is
-      // not a place to type: it clamps to the start of the comment.
       expect(flatToCollapsed(map, "quoted".length)).toBe("> quoted".length);
       expect(collapsedToFlat(map, "> quoted\n".length)).toBe("quoted".length + 1);
       expect(flatToCollapsed(map, "quoted".length + 1)).toBe("> quoted\n\n".length);

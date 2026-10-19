@@ -83,8 +83,6 @@ const unitTestProject = {
   },
 } satisfies TestProjectInlineConfiguration;
 
-// Anything that renders React or touches the DOM is named *.browser.test.{ts,tsx} and runs
-// in headless Chromium through the same plugins as the app, so it exercises compiled code.
 // Vitest's fixed browser API port (63315) collides when two checkouts run
 // browser tests at once, and `server.strictPort` above is inherited, so the
 // second run fails instead of moving on. Hash the checkout path like

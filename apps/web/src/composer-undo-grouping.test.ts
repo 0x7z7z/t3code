@@ -47,11 +47,8 @@ function composer(text = "") {
       }
       return api;
     },
-    /**
-     * The transaction the composer's `handlePaste` dispatches: a plain insert,
-     * tagged by `markAsClipboardEdit`. ProseMirror's own paste path would tag
-     * it, but the composer takes every text paste before that path runs.
-     */
+    /** Composer handles paste before ProseMirror's built-in path, so it must tag
+     * the insert itself to keep clipboard edits out of adjacent undo groups. */
     paste: (s: string) => {
       clock += 80;
       dispatch(markAsClipboardEdit(state.tr.insertText(s), "paste"));

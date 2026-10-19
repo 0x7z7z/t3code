@@ -246,11 +246,7 @@ const SORT_OPTIONS = [
 
 const SEARCH_DEBOUNCE_MS = 250;
 const MATCHED_ELSEWHERE_SCORE = 10;
-/**
- * One whole page from the host and no more: every provider asks for one row beyond the page as
- * its "is there more" probe, and GitHub serves a hundred per request — so asking for ninety-nine
- * costs one round trip where a hundred costs two.
- */
+/** Providers probe with one extra row. GitHub pages at 100, so 99 costs one request instead of two. */
 const PAGE_SIZE = 99;
 const MAX_PAGE_SIZE = 500;
 const EMPTY_VIEWERS: PullRequestListResult["viewers"] = {};
@@ -471,11 +467,7 @@ function PullRequestsRouteView() {
     key: string;
     size: number;
     cursors: Readonly<Record<string, PullRequestListCursors>> | null;
-    /**
-     * An environment can say it has more without saying where to carry on from — its provider has
-     * no cursor to give — and a continuation naming only the others would strand its rows on the
-     * host forever.
-     */
+    /** A host without cursors needs a larger page; continuing only other hosts would strand its rows. */
     regrown: ReadonlyArray<string>;
   }>({ key: filterKey, size: PAGE_SIZE, cursors: null, regrown: [] });
   const pageSize = page.key === filterKey ? page.size : PAGE_SIZE;
@@ -510,11 +502,8 @@ function PullRequestsRouteView() {
   });
   const listQuery = usePullRequestList(listTargets);
 
-  /**
-   * Kept as its own read rather than remembered from an earlier answer because an answer cannot
-   * say which question it belongs to: mid-switch the text has already changed and the data has
-   * not, and a search's answer would file itself under the workspace.
-   */
+  /** Keep a separate baseline query: an answer cannot identify its question,
+   * so mid-switch search data could otherwise be stored under the workspace. */
   const baselineTargets = environmentQueries.map(({ environmentId, projectIds }) => ({
     environmentId,
     input: {
@@ -586,7 +575,6 @@ function PullRequestsRouteView() {
     environmentKey: string;
     scope: string;
     query: string;
-    /** The answer this was built from, so a re-render with the same answer leaves it alone. */
     source: MergedPullRequestList | null;
     data: MergedPullRequestList;
     partitions?: PullRequestPartitionsSnapshot;
@@ -727,9 +715,8 @@ function PullRequestsRouteView() {
     });
     return entries.length === 0 ? null : { ...loaded.data, entries };
   })();
-  // A grown page is read by the list and nothing else: the baseline always asks for one page, so
-  // a host with no cursor to continue from — where "more" means asking for a longer page — would
-  // have its extra rows thrown away for the ninety-nine the baseline keeps answering with.
+  // Baseline queries stay at one page; using their answer for grown pages
+  // would discard extra rows from hosts without cursors.
   const answered =
     (sentQuery.length === 0 && sentCursors === null && pageSize === PAGE_SIZE
       ? baselineQuery.data
@@ -781,9 +768,8 @@ function PullRequestsRouteView() {
     );
   }
 
-  // From this question's own answer, never from the rows being held while it travels: a
-  // continuation is a boundary in one listing, and carrying one across a search would ask the new
-  // question to start where the old one stopped — skipping its newest matches entirely.
+  // Use this query's answer, not held rows: a cursor from a prior search
+  // would skip the new search's newest matches.
   const nextCursors = answered?.nextCursors ?? {};
   const regrown = (answered?.truncatedEnvironments ?? []).filter(
     (environmentId) => nextCursors[environmentId] === undefined,
@@ -914,7 +900,6 @@ function PullRequestsRouteView() {
   const statsQuery = usePullRequestListStats(statsTargets);
   const statsObserver = useRef<IntersectionObserver | null>(null);
   const statsRows = useRef(new Set<HTMLDivElement>());
-  // Called from a row's ref cleanup, which keeps the render it attached in; this reads the latest.
   const releaseStatsRow = useStableCallback((key: string | undefined) => {
     const visible = visibleStatsKeys.current;
     if (
@@ -931,7 +916,6 @@ function PullRequestsRouteView() {
       return batches.length === current.batches.length ? current : { key: current.key, batches };
     });
   });
-  // Every row takes this as its ref, so a new identity would detach and reattach them all.
   const registerStatsRow = useStableCallback((node: HTMLDivElement | null) => {
     if (node === null || typeof IntersectionObserver === "undefined") return;
     statsRows.current.add(node);
@@ -942,7 +926,6 @@ function PullRequestsRouteView() {
       releaseStatsRow(node.dataset.pullRequestStatsKey);
     };
   });
-  // Arriving stats must not re-run the effects that ask for them.
   const readStatsProgress = useEffectEvent(() => ({
     statsByRow,
     pending: statsQuery.isPending,
@@ -964,7 +947,6 @@ function PullRequestsRouteView() {
       return { key: filterKey, batches: [...batches, ...added] };
     });
   }, [filterKey, entriesByStatsKey, statsPolicy]);
-  // The observer outlives the rows it watches, so it reads the rows held at the time it fires.
   const readStatsRows = useEffectEvent(() => entriesByStatsKey);
   useEffect(() => {
     if (statsPolicy !== "visible" || typeof IntersectionObserver === "undefined") return;
@@ -1061,7 +1043,6 @@ function PullRequestsRouteView() {
   const refreshFromHost = async () => {
     const requestedStatsScope = statsScope;
     setInvalidating(true);
-    // Atom commands settle into results rather than throwing.
     await Promise.all(
       queryEnvironmentIds.map((environmentId) => invalidate({ environmentId, input: {} })),
     );
@@ -1093,7 +1074,6 @@ function PullRequestsRouteView() {
   const showProvider = hosts.length > 1;
   const [closeSweepKeys, setCloseSweepKeys] = useState<ReadonlySet<string>>(() => new Set());
   const closeSensorRef = useRef<SidebarPointerSensor | null>(null);
-  // A sweep spans many renders; each step reads the rows on screen at that moment.
   const readCloseSweep = useStableCallback(() => ({
     displayGroups,
     closeSweepRows,
@@ -1765,7 +1745,6 @@ function PullRequestsRouteView() {
   );
 }
 
-/** Which servers and projects the page reads, from the URL and what this client knows. */
 function usePullRequestScope(search: PullRequestsSearch) {
   const { environments } = useEnvironments();
   const allProjects = useProjects();
@@ -1933,7 +1912,6 @@ function usePullRequestQueryFilters(search: PullRequestsSearch, typedQuery: stri
   };
 }
 
-/** The held rows narrowed to what the reader asked for, in the groups the list shows. */
 function pullRequestGroups({
   known,
   providers,
@@ -1969,11 +1947,9 @@ function pullRequestGroups({
 
   const entries = (() => {
     const involvementEntries = filterPullRequestsByInvolvement(known, viewers, involvement);
-    // The hosts search more than the row shows — a body, a review, a commit message — so once
-    // their answer is in, narrowing it again here would throw away matches the reader asked for.
-    // The local pass stands in for the answer that has not arrived yet, and for the hosts that
-    // answered without searching at all: Azure DevOps has no text filter, so its rows arrive
-    // whole and would otherwise sit under a search that never touched them.
+    // Host searches also match bodies, reviews, and commits; local narrowing
+    // would discard valid matches. Use local filters only while waiting or
+    // for hosts such as Azure DevOps that cannot search text.
     const narrowedEntries = hasLocalFilters
       ? involvementEntries.filter((entry) =>
           matchesPullRequestFilters(entry, localFilters, pullRequestEntryViewer(entry, viewers)),
@@ -2038,10 +2014,6 @@ function pullRequestGroups({
   };
 }
 
-/**
- * The hosts the list has answered for (kept while a host filter narrows the answer), and the
- * groups as shown with measured sizes, optimistic actions, and the reader's sort.
- */
 function usePullRequestDisplayGroups({
   answered,
   host,

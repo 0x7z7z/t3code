@@ -114,7 +114,6 @@ const EMPTY_VCS_REF_PAGES_ATOM = Atom.make<
   ReadonlyArray<Atom.Type<ReturnType<typeof vcsRefPageAtom>>>
 >([]).pipe(Atom.withLabel("web:vcs-ref-pages:empty"));
 
-// Keyed by target and cursors so every render of the same pages reads the same atom.
 const vcsRefPagesAtom = Atom.family((pagesKey: string) => {
   const [targetKey, cursors] = JSON.parse(pagesKey) as [string, Array<number | null>];
   const pageAtoms = cursors.map((cursor) => vcsRefPageAtom(targetKey, cursor ?? undefined));

@@ -737,10 +737,8 @@ const finalizeBrowserRecording = async (
   }
 
   if (result._tag === "Failure" && isStartupWaitTimeout(result.error)) {
-    // Do not clear `active` yet. The renderer-side start promise can still
-    // resolve later, and its cancellation path will call `stopScreencast`.
-    // Keeping the slot reserved prevents a newer recording for this tab from
-    // being started and then accidentally stopped by the older late cleanup.
+    // Reserve the slot until the late start's cancellation calls stopScreencast,
+    // or that cleanup could stop a newer recording for this tab.
     throw result.error;
   }
 

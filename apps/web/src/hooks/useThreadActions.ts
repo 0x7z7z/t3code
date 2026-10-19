@@ -644,8 +644,7 @@ export function useThreadActions() {
         ),
       );
     }
-    // orderKey rides only to servers that decode it; pre-reorder servers get the bare pin they
-    // understand and the thread stays keyless.
+    // Older servers cannot decode orderKey, so send only the pin to them.
     const orderKey = readEnvironmentSupportsPinReorder(target.environmentId)
       ? (opts.orderKey ?? topOfPinnedRunOrderKey())
       : undefined;

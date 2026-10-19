@@ -225,7 +225,6 @@ export function relativeTimeElapsedMs(isoDate: string, nowMs: number = Date.now(
   return Math.floor(elapsedMs / unitMs) * unitMs;
 }
 
-/** Milliseconds until the `formatRelativeTime` label for `isoDate` next changes. */
 export function msUntilRelativeTimeChange(
   isoDate: string,
   nowMs: number = Date.now(),

@@ -277,17 +277,11 @@ describe("relative time boundaries", () => {
   const nowMs = Date.parse("2026-04-07T12:00:00.000Z");
 
   it("waits for the label to change instead of the next second", () => {
-    // "just now" turns into "1m ago" at the one-minute mark.
     expect(msUntilRelativeTimeChange("2026-04-07T11:59:40.000Z", nowMs)).toBe(40_000);
-    // "2m ago" turns into "3m ago" a minute after the 2m mark.
     expect(msUntilRelativeTimeChange("2026-04-07T11:57:30.000Z", nowMs)).toBe(30_000);
-    // "3h ago" holds until the 4h mark.
     expect(msUntilRelativeTimeChange("2026-04-07T08:30:00.000Z", nowMs)).toBe(30 * 60_000);
-    // "2d ago" holds until the 3d mark.
     expect(msUntilRelativeTimeChange("2026-04-05T00:00:00.000Z", nowMs)).toBe(12 * 3_600_000);
-    // A future timestamp reads "just now" until a minute after it.
     expect(msUntilRelativeTimeChange("2026-04-07T12:00:10.000Z", nowMs)).toBe(70_000);
-    // A far-future timestamp stays within setTimeout's range.
     expect(msUntilRelativeTimeChange("2026-06-01T00:00:00.000Z", nowMs)).toBe(86_400_000);
   });
 

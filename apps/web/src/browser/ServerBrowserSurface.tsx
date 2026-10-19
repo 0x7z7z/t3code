@@ -215,8 +215,7 @@ export function ServerBrowserSurface(props: {
   const popupOpened = useEffectEvent((popupTabId: string) => onPopup?.(popupTabId));
   const [cap, setCap] = useState<{ width: number; height: number } | null>(null);
 
-  // These read only refs, so each is cached once. The stream effect keys on
-  // clearInput and would reconnect if it changed.
+  // Keep clearInput stable: a new identity reconnects the stream.
   const send = (input: PreviewStreamInput) => {
     clientRef.current?.send(input);
   };

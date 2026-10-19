@@ -194,11 +194,7 @@ export const PersistedComposerFileAttachment = Schema.Struct({
 });
 export type PersistedComposerFileAttachment = typeof PersistedComposerFileAttachment.Type;
 
-/**
- * Its `File` handle cannot serialize, so it persists as a metadata-only marker
- * (no `attachmentId`) and hydrates as a needs-reattach row instead of
- * vanishing.
- */
+/** File handles cannot serialize; metadata-only markers hydrate as needs-reattach rows. */
 export const PersistedComposerDraftFileAttachment = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
@@ -231,10 +227,7 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
   threadContexts: Schema.optionalKey(Schema.Array(ThreadContextRecord)),
-  // The record's value schema is NOT wrapped in `Schema.optionalKey`: that
-  // helper is only meaningful on property signatures with a known key set, and
-  // `Schema.Record(<branded string>, …)` produces an index signature at runtime
-  // (Schema rejects the combination).
+  // Schema.optionalKey only accepts known property keys, not a Record's index signature.
   modelSelectionByProvider: Schema.optionalKey(Schema.Record(ProviderInstanceId, ModelSelection)),
   activeProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
   modelSelectionExplicit: Schema.optionalKey(Schema.Boolean),
@@ -689,11 +682,7 @@ function compactStickyOptionsByModel(
   return result as NonNullable<PersistedComposerDraftStoreState["stickyOptionsByModelByProvider"]>;
 }
 
-/**
- * Storage written before per-model memory existed carries the last sticky
- * selection only. Seed the map from it so an upgrade keeps that model's
- * remembered options instead of clearing them on the first switch.
- */
+/** Seed per-model options from the legacy sticky selection to preserve saved traits. */
 function seedStickyOptionsByModel(
   stickySelections: Partial<Record<ProviderInstanceId, ModelSelection>>,
 ): NonNullable<PersistedComposerDraftStoreState["stickyOptionsByModelByProvider"]> {
@@ -875,11 +864,7 @@ function normalizeProviderDriverKind(value: unknown): ProviderDriverKind | null 
   return isProviderDriverKind(value) ? value : null;
 }
 
-/**
- * Permissive validator — the schema layer owns authoritative validation; this
- * is used inline to gate typed writes to the draft's instance-keyed maps
- * without pulling the full Effect Schema runtime into the hot path.
- */
+/** The schema owns validation; this permissive pattern keeps Effect Schema off the hot path. */
 const PROVIDER_INSTANCE_ID_PATTERN = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 
 function normalizeProviderInstanceId(value: unknown): ProviderInstanceId | null {
@@ -1406,9 +1391,7 @@ function createDraftThreadState(
     loadBalancedEnvironmentId?: EnvironmentId | null;
   },
 ): DraftThreadState {
-  // A project change (including switching environments within a logical
-  // project) invalidates machine-specific context: the branch may not exist
-  // there and the worktree path certainly doesn't.
+  // A project or environment change invalidates machine-specific branch and worktree context.
   const projectChanged =
     existingThread !== undefined &&
     (existingThread.environmentId !== projectRef.environmentId ||
@@ -1671,9 +1654,7 @@ function normalizePersistedDraftThreads(
       if (parsedThreadRef) {
         environmentIdByThreadId.set(parsedThreadRef.threadId, parsedThreadRef.environmentId);
       }
-      // Logical project keys may contain a workspace path after the
-      // environment prefix. When the persisted draft already names that
-      // logical key, its concrete project id remains authoritative.
+      // Logical keys may contain workspace paths; a matching draft's concrete project id wins.
       if (existingDraftThread?.logicalProjectKey === logicalProjectKey) {
         continue;
       }
@@ -2565,10 +2546,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               previousThreadKeyForLogicalProject === undefined
                 ? undefined
                 : nextDraftThreadsByThreadKey[previousThreadKeyForLogicalProject];
-            // A draft with typed text or attachments stays alive unmapped — the
-            // sidebar draft rows list every such session, so "new thread" can
-            // mint a fresh draft without destroying the one the user walked
-            // away from.
+            // Keep populated drafts unmapped: sidebar rows still expose them when a new draft is opened.
             if (
               previousThreadKeyForLogicalProject &&
               previousThreadKeyForLogicalProject !== draftId &&
@@ -2802,9 +2780,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               return state;
             }
             const current = state.stickyModelSelectionByProvider[normalized.instanceId];
-            // Model-only picker updates omit options (same contract as
-            // setModelSelection). Keep the last sticky traits so Fast/Normal
-            // survives Composer 2 → 2.5 and new chats.
+            // Model-only updates omit options; preserve sticky traits across model switches and new chats.
             const nextSelection =
               normalized.options !== undefined
                 ? normalized
@@ -4032,10 +4008,8 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const movedFiles = transferableFiles
               .slice(0, remainingAttachmentSlots - movedImages.length)
               .map((file) => {
-                // A byte-backed file moving across environments re-uploads at
-                // the destination. Keeping the source-environment upload id
-                // would mark it uploaded after a reload with no local bytes and
-                // no valid upload anywhere the destination can reach.
+                // Cross-environment moves must re-upload local bytes. A source upload id would
+                // falsely mark the file uploaded after reload with no bytes the destination can reach.
                 if (
                   file.file === null ||
                   file.uploadEnvironmentId === undefined ||
@@ -4068,9 +4042,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
                 ),
               ],
             };
-            // Same clearing shape as clearComposerPromptAndImages, but the
-            // preview URLs are NOT revoked: the images moved and their blobs
-            // are still referenced from the destination.
+            // Moved images still use these blob URLs at the destination; do not revoke them.
             const nextSource: ComposerThreadDraftState = {
               ...source,
               prompt: ensureInlineContextReferences(

@@ -36,7 +36,6 @@ export function windowControlsOverlayHeight(): number {
   return overlay?.visible ? overlay.getTitlebarAreaRect().height : 0;
 }
 
-/** Calls `listener` when the native caption strip appears, disappears, or changes size. */
 export function onWindowControlsOverlayGeometryChange(listener: () => void): () => void {
   const overlay = getWindowControlsOverlay();
   if (!overlay) {

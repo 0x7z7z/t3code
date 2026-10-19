@@ -330,8 +330,6 @@ export function reconcilePreviewServerSessions(
       ),
     );
     const desktopOverlay = activeTabId ? (desktopByTabId[activeTabId] ?? null) : null;
-    // The list is refetched whenever a thread is opened. Keeping the state
-    // object when nothing moved spares every subscriber a re-render.
     if (
       sameServer &&
       current.listLoaded &&

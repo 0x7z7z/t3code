@@ -16,12 +16,7 @@ import {
   shouldRetargetThreadPullRequestPanel,
 } from "../components/ChatView.logic";
 
-/**
- * Opens the right panel on its own when there is something new to look at: a
- * change request linked to the thread, or the diff of a turn that just
- * completed. A panel the user opened or closed since wins; see
- * observeProactivePanelUserChoice.
- */
+/** New linked PRs or completed-turn diffs may open the panel; later user choices win. */
 export function useProactivePanels(input: {
   // Null for drafts and while the thread is unavailable.
   readonly threadRef: ScopedThreadRef | null;
@@ -35,7 +30,6 @@ export function useProactivePanels(input: {
   readonly isGitRepo: boolean | undefined;
   readonly linkedPullRequest: ThreadLinkedPullRequest | null;
   readonly hasLinkedPullRequestDetail: boolean;
-  // Identifies the change requests the thread shows, so a new one can open the panel.
   readonly pullRequestsKey: string | null;
   readonly pullRequestsCapabilityKnown: boolean;
   readonly supportsPullRequests: boolean;

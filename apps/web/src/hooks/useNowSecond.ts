@@ -35,8 +35,6 @@ function subscribe(listener: () => void): () => void {
 }
 
 function getSnapshot(): number {
-  // While the timer runs the cached value is returned untouched, as
-  // useSyncExternalStore requires between change notifications.
   if (timerId === null) nowSecond = currentSecond();
   return nowSecond;
 }

@@ -370,11 +370,7 @@ export function isOpenFavoriteEditorShortcut(
   );
 }
 
-/**
- * Whether the keypress is the rich-text bold chord (Mod+B without extra
- * modifiers). Tiptap binds the same chord, so app shortcuts captured ahead
- * of the editor must yield when the rich-text composer is focused.
- */
+/** App shortcuts run before Tiptap and must yield its Mod+B chord in the rich-text composer. */
 export function isRichTextBoldShortcut(event: ShortcutEventLike): boolean {
   if (event.type !== undefined && event.type !== "keydown") {
     return false;
