@@ -1,7 +1,6 @@
 const { withMainActivity } = require("expo/config-plugins");
 
-// RN 0.85 only registers its back-dispatch callback on Android 16 with targetSdk 36.
-// On Android 13-15, predictive back otherwise bypasses JS and backgrounds the app.
+// RN 0.85 registers back dispatch only on Android 16 with targetSdk 36; Android 13-15 otherwise bypass JS.
 
 const CALLBACK_PROPERTY = `
   // Routes predictive-back gestures to JS on Android 13-15, where react-native
@@ -21,10 +20,7 @@ const CALLBACK_REGISTRATION = `
       onBackPressedDispatcher.addCallback(this, predictiveBackCompatCallback)
     }`;
 
-// Wraps the template's invokeDefaultOnBackPressed: the default action ends in
-// ComponentActivity.onBackPressed(), which re-enters the dispatcher — with the
-// compat callback still enabled that would bounce back into JS forever instead
-// of backgrounding the app.
+// Disable the compat callback during default back handling to prevent dispatcher recursion.
 const INVOKE_DEFAULT_WRAPPER = `override fun invokeDefaultOnBackPressed() {
     predictiveBackCompatCallback.isEnabled = false
     try {

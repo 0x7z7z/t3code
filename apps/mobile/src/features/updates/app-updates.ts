@@ -32,15 +32,9 @@ export interface AppUpdateClient {
 export interface AppUpdateEnvironment {
   readonly confirmInstallNow: () => Promise<boolean>;
   readonly flushPendingWrites: () => Promise<void>;
-  /**
-   * Re-check that the app is still backgrounded after flushing, and exclude app-initiated handoffs
-   * such as Android's image picker.
-   */
+  /** Re-check background state after flushing; exclude app-initiated handoffs such as image pickers. */
   readonly isSafeToRestartInBackground: () => Promise<boolean>;
-  /**
-   * includeCurrent catches backgrounding during module load. Omit it after a failed install so
-   * the same background session cannot retry in a tight loop.
-   */
+  /** includeCurrent covers module-load backgrounding; omit after failure to prevent tight same-session retries. */
   readonly onNextBackground: (apply: () => void, includeCurrent: boolean) => void;
   readonly onForegroundStay: (apply: () => void) => void;
 }
@@ -182,8 +176,7 @@ function createDeferred(): Deferred {
 }
 
 function notifyListeners<A>(listeners: ReadonlySet<(value: A) => void>, value: A): void {
-  // A listener can synchronously subscribe another caller. Snapshot so that
-  // caller receives only observeAppUpdateCheck's explicit current-value replay.
+  // Snapshot listeners so reentrant subscribers receive only observeAppUpdateCheck's explicit replay.
   const snapshot = Array.from(listeners);
   for (const listener of snapshot) listener(value);
 }
@@ -232,8 +225,7 @@ async function performAppUpdateCheck(
     setState("idle");
     return;
   }
-  // A rollback directive (`eas update:rollback`) arrives as isAvailable: false
-  // with isRollBackToEmbedded: true. The running OTA still has to be dropped.
+  // Rollback directives report isAvailable: false and isRollBackToEmbedded: true; still drop the running OTA.
   if (!check.value.isAvailable && !check.value.isRollBackToEmbedded) {
     setState("current");
     return;
@@ -273,7 +265,7 @@ async function performAppUpdateCheck(
 
 type AppUpdateInstallOutcome = "installed" | "flush-failed" | "restart-failed";
 
-/** Flush persistence and defer restart until backgrounded to avoid tearing down mounted native surfaces. */
+/** Flush persistence and wait for backgrounding before restarting mounted native surfaces. */
 async function installAppUpdate(
   client: AppUpdateClient,
   environment: AppUpdateEnvironment,
@@ -336,8 +328,7 @@ async function promptDeferredAppUpdateInstall(
   if (!deferral.pendingInstall || deferral.installInProgress) return;
   const installNow = await settlePromise(() => environment.confirmInstallNow());
   if (installNow._tag !== "Success" || !installNow.value) return;
-  // A backgrounding while the alert was up may have started the deferred
-  // restart already; the stale accept must not start a second one.
+  // Backgrounding may already have started deferred restart while the alert was open; ignore stale acceptance.
   if (!deferral.pendingInstall || deferral.installInProgress) return;
   await installPendingAppUpdate(client, environment, deferral, {});
 }
@@ -367,8 +358,7 @@ async function applyDeferredAppUpdateInstall(
       reportUpdateFailure(flushed, "Could not save pending state.", undefined);
     }
     deferral.installInProgress = false;
-    // This attempt already ran in the current background session; retrying
-    // before a fresh transition would just loop over the same failure.
+    // Wait for a fresh background transition after failure to avoid same-session retry loops.
     scheduleDeferredAppUpdateInstall(client, environment, deferral, false);
     return;
   }
@@ -429,10 +419,7 @@ function defaultOnNextBackground(apply: () => void, includeCurrent: boolean): vo
 
 export const DEFERRED_INSTALL_PROMPT_AFTER_MS = 30 * 60 * 1000;
 
-/**
- * iOS "inactive" blips (app switcher, a pulled-down notification shade) leave
- * the timer running.
- */
+/** iOS inactive blips, including the app switcher, leave this timer running. */
 function defaultOnForegroundStay(apply: () => void): void {
   void import("react-native").then(({ AppState }) => {
     let timer: ReturnType<typeof setTimeout> | undefined;

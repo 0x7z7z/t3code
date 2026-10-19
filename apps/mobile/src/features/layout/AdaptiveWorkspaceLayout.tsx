@@ -128,10 +128,7 @@ export function useAdaptiveWorkspacePaneRole(role: WorkspaceAuxiliaryPaneRole) {
   useFocusEffect(() => activateAuxiliaryPaneRole(role));
 }
 
-/**
- * Capture navigation contexts for the inspector rendered outside the navigator.
- * Scope registration to focus events: frozen blurred screens may never re-render to run cleanup.
- */
+/** Capture inspector navigation contexts. Register on focus events because frozen blurred screens may never clean up. */
 export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefined) {
   const { registerWorkspaceInspector } = useAdaptiveWorkspaceLayout();
   const navigation = use(NavigationContext);
@@ -305,8 +302,7 @@ function AdaptiveWorkspaceLayoutContent(
     setWorkspaceInspector({ render, active: true });
 
     return () => {
-      // During a push/replace the outgoing screen deactivates AFTER the
-      // incoming screen registered — only the current owner may deactivate.
+      // Outgoing screens deactivate after incoming registration; only the current owner may deactivate.
       if (workspaceInspectorOwner.current !== owner) {
         return;
       }
@@ -399,8 +395,7 @@ function AdaptiveWorkspaceLayoutContent(
     navigation.navigate("NewTaskSheet", { screen: "NewTask" });
   };
 
-  // Minted here (root stack navigation) so the sidebar pane stays free of
-  // navigation hooks — on iOS it renders inside an independent nav tree.
+  // Create at root: the iOS sidebar renders in an independent navigation tree.
   const handleOpenEnvironmentSettings = () => {
     navigation.navigate("SettingsSheet", {
       screen: "SettingsContent",
@@ -473,14 +468,12 @@ function AdaptiveWorkspaceLayoutContent(
       viewportWidth,
       target: contentTargetWidth,
       sidebarVisible: panes.primarySidebarVisible,
-      // Clip the wide navigator while the sidebar opens or widens, then reflow once at the
-      // end. Narrowing it first exposes an empty strip before the sidebar arrives.
+      // Clip while widening, then reflow once; narrowing first exposes an empty strip.
       width: keepWide
         ? Math.max(contentSizing.width ?? 0, contentTargetWidth ?? 0)
         : contentTargetWidth,
       listPaneTarget: layout.listPaneWidth,
-      // While a hinge resizes the list, its width follows the pane edge within this span. A
-      // retarget mid-animation widens the span, since the edge is still somewhere inside it.
+      // Retargets widen the list-width span because the animated hinge edge may still be inside it.
       listPaneFloor: resizingSidebar
         ? Math.min(contentSizing.listPaneFloor ?? 0, layout.listPaneWidth ?? 0)
         : layout.listPaneWidth,
@@ -530,8 +523,7 @@ function AdaptiveWorkspaceLayoutContent(
     settleContentWidth,
     contentRevision,
   ]);
-  // Showing or hiding the sidebar clips a fixed-width list. A hinge resize instead tracks the
-  // animated edge, so the header actions slide with it rather than jumping or being covered.
+  // Sidebar toggles clip a fixed-width list; hinge resizing tracks the edge to keep header actions aligned.
   const listPaneGap = layout.listPaneGap ?? 0;
   const listPaneAnimatedStyle = useAnimatedStyle(() => ({
     width: Math.min(

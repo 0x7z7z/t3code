@@ -226,8 +226,7 @@ function createHighlighterHandle(
       while (start < lines.length) {
         if (signal?.aborted) return [];
 
-        // An oversized line leaves grammar state unknown. Restart rather than caching a plain tail
-        // whose extent depends on the first visible window.
+        // Oversized lines invalidate grammar state; restarting avoids caching a tail tied to the first visible window.
         if (lines[start]!.length > NATIVE_REVIEW_DIFF_TOKENIZE_MAX_LINE_LENGTH) {
           highlighted.push([{ content: lines[start] || " ", color: null, fontStyle: null }]);
           grammarState = undefined;

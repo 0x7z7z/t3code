@@ -1,7 +1,6 @@
 "use strict";
 
-// Must precede expo-widgets: its reverse-ordered mods create the target and wipe its directory
-// before this plugin adds the asset catalog and compile phase.
+// Precede expo-widgets so its reverse-ordered mods create and wipe the target before assets are added.
 
 const path = require("path");
 const fs = require("fs");

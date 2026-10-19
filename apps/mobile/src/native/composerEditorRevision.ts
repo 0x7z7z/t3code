@@ -36,9 +36,7 @@ export function resolveComposerControlledEventCount(
     }
   }
 
-  // A value emitted by native paired with a different selection is an
-  // intermediate React render. Keep it behind the native revision so it
-  // cannot move the caret while newer keystrokes are being processed.
+  // Mismatched native text/selection pairs are intermediate renders; keep their revision behind to avoid moving the caret.
   if (newestValueEventCount !== null && mostRecentEventCount > 0) {
     return Math.min(newestValueEventCount, mostRecentEventCount - 1);
   }
@@ -46,8 +44,7 @@ export function resolveComposerControlledEventCount(
   return mostRecentEventCount;
 }
 
-// Selection-less snapshots describe assumed native state, including a possibly bounded caret.
-// Do not reuse that wildcard for echoes: selection:null would drop the caret move.
+// Null-selection snapshots allow assumed bounded carets; echoes must not use that wildcard or drop caret moves.
 function snapshotSelectionMatches(
   snapshot: ComposerNativeEventSnapshot,
   selection: ComposerEditorSelection,
@@ -79,10 +76,7 @@ export function isComposerNativeEcho(
   return false;
 }
 
-/**
- * Replace acknowledged history with assumed controlled state so returning to an older native value
- * is recognized as a fresh parent edit rather than an echo to discard.
- */
+/** Replace history with assumed controlled state so returning to old native values counts as fresh parent edits. */
 export function assumeComposerControlledState(
   snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
   eventCount: number,
@@ -98,8 +92,7 @@ export function pruneAcknowledgedComposerNativeEvents(
   snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
   acknowledgedEventCount: number,
 ): ComposerNativeEventSnapshot[] {
-  // Keep the latest acknowledged snapshot so unrelated renders remain native echoes instead of
-  // re-controlling the caret and resetting iOS autocorrect.
+  // Retain the latest acknowledgement so unrelated renders stay echoes and do not reset caret or iOS autocorrect.
   let latestAcknowledgedIndex = -1;
   for (let index = snapshots.length - 1; index >= 0; index -= 1) {
     const snapshot = snapshots[index];

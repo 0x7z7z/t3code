@@ -1,9 +1,6 @@
 import type { NativeLayoutMetrics } from "./reserved-regions";
 
-/**
- * Hardware type does not imply column count: iPad Slide Over and narrow Duo windows may lack sidebar space.
- * Android has no metrics observer and reports phone.
- */
+/** Hardware type does not imply column space. Android lacks metrics and reports phone. */
 export type DeviceType = "phone" | "duo-folded" | "duo-unfolded" | "pad";
 
 export function deriveDeviceType(input: {
@@ -11,8 +8,7 @@ export function deriveDeviceType(input: {
   readonly metrics: NativeLayoutMetrics | null;
 }): DeviceType {
   if (input.isPad) return "pad";
-  // The hinge arrives with the first native layout pass, so a Duo reads as a
-  // phone until then. Compact width also covers a narrow inner-display window.
+  // Duo reads as phone until the first native hinge layout; compact width includes narrow inner windows.
   if (input.metrics?.hasHinge !== true) return "phone";
   return input.metrics.horizontalSizeClass === "regular" ? "duo-unfolded" : "duo-folded";
 }

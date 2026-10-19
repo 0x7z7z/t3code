@@ -82,10 +82,7 @@ const layerConnectivity = Connectivity.layer({
   ),
 });
 
-/**
- * Online/offline status misses Wi-Fi-to-cellular moves; wake connections on path changes
- * rather than waiting for the old LAN socket to time out.
- */
+/** Wake connections on network path changes; online/offline misses Wi-Fi-to-cellular moves. */
 const networkPathChanges = Stream.callback<"network-changed">((queue) =>
   Effect.acquireRelease(
     Effect.sync(() => {
@@ -98,8 +95,7 @@ const networkPathChanges = Stream.callback<"network-changed">((queue) =>
         }
         previous = type ?? previous;
       };
-      // The listener reports changes only, so seed the current type; without
-      // it the first Wi-Fi to cellular move would go unnoticed.
+      // Seed the current type: the listener reports only changes and would miss the first move.
       void Network.getNetworkStateAsync()
         .then((state) => {
           if (active && previous === undefined && state.isConnected === true) {

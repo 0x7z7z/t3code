@@ -60,7 +60,7 @@ function mount(enabled: boolean) {
   act(() => root!.render(<Probe enabled={enabled} />));
 }
 
-// One act per second, so each tick commits its own render as it would on device.
+// Commit each second separately to match device rendering.
 function advance(ms: number) {
   for (let elapsed = 0; elapsed < ms; elapsed += 1_000) {
     act(() => vi.advanceTimersByTime(Math.min(1_000, ms - elapsed)));

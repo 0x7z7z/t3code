@@ -35,10 +35,7 @@ export function applyCtrlModifier(input: string): string {
   return input;
 }
 
-/**
- * Paste from the device clipboard for the host's paste chord. Forwarding Ctrl+V to PowerShell
- * would paste the host's clipboard instead of the phone's.
- */
+/** Use the device clipboard for host paste chords; forwarding Ctrl+V to PowerShell pastes the host clipboard. */
 export function resolveModifiedTerminalInput(input: {
   readonly data: string;
   readonly modifier: PendingModifier;
@@ -55,10 +52,7 @@ export function resolveModifiedTerminalInput(input: {
   };
 }
 
-/**
- * Mobile has no DECSET 2004 state, so paste without bracket markers. Strip unsafe controls
- * (including embedded end markers) and use CR for line breaks; raw-mode TUIs read LF as Ctrl+J.
- */
+/** No DECSET 2004 state, so omit bracket markers. Strip unsafe controls and use CR; raw-mode TUIs read LF as Ctrl+J. */
 export function encodeTerminalPaste(text: string): string {
   return text.replace(UNSAFE_PASTE_BYTES, " ").replace(/\r\n|\n/g, "\r");
 }
@@ -78,9 +72,7 @@ export function chunkTerminalWrite(data: string): ReadonlyArray<string> {
   return chunks;
 }
 
-/**
- * Returns null for "unknown" so callers can fall back to a weaker signal.
- */
+/** Returns null for unknown OSes so callers can try weaker signals. */
 export function hostPlatformFromOs(os: ExecutionEnvironmentPlatformOs | null): HostPlatform | null {
   if (os === "darwin") return "mac";
   if (os === "linux") return "linux";

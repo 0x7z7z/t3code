@@ -124,8 +124,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
     };
   });
 
-  // Keep the iOS card mounted so its expansion starts on the UI thread with the host timing,
-  // without waiting for a React mount and layout.
+  // Keep the iOS card mounted so expansion starts on the UI thread without waiting for React layout.
   const renderCard = EXPANDED_CARD_IS_OVERLAY || !props.collapsed;
   const showBar = props.collapsed || EXPANDED_CARD_IS_OVERLAY;
   const bar = showBar ? (

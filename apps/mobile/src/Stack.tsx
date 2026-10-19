@@ -380,8 +380,7 @@ const SettingsContentStack = createV5SheetStackNavigator({
         title: "Diagnostics",
       },
     }),
-    // These params contain a tap-time timestamp, filters, and aggregated pool ids.
-    // A linking path would serialize them into query strings and restore stale usage state.
+    // Linking these transient params would restore stale usage state from query strings.
     SettingsUsageAccount: createNativeStackScreen({
       screen: UsageLimitAccountScreen,
       options: { title: "Account" },
@@ -446,8 +445,7 @@ const NewTaskSheetStack = createNativeStackNavigator({
   screenOptions: {
     ...SHEET_GLASS_HEADER_OPTIONS,
     contentStyle: Platform.OS === "ios" ? { backgroundColor: "transparent" } : undefined,
-    // UIKit's default push adds a dimming shadow and independently transitions
-    // the navigation bar. Both read as mismatched sheet backgrounds here.
+    // UIKit's default push shadow and separate bar transition mismatch the sheet background.
     animation: Platform.OS === "ios" ? "simple_push" : undefined,
     animationDuration: Platform.OS === "ios" ? 350 : undefined,
   },
@@ -567,8 +565,7 @@ function workspaceLocationFromState(state: NavigationState) {
   };
 }
 
-// Keep outbox and shell subscriptions in a null-rendering leaf so each update cannot
-// re-render RootStackLayout and every screen.
+// Isolate subscriptions so streaming updates cannot re-render RootStackLayout and every screen.
 function ThreadOutboxDrainWorker() {
   useThreadOutboxDrain();
   useComposerAttachmentUploadWorker();
@@ -665,8 +662,7 @@ function NotFoundScreen() {
 
 const RootStackConfig = createWorkspaceStackNavigator({
   initialRouteName: "Home",
-  // React Navigation calls layouts as plain functions inside its own render. Passing a
-  // compiled component directly would put its memo cache among the navigator's hooks.
+  // React Navigation calls layouts inline; compiled components would share the navigator's memo cache.
   layout: (props) => <RootStackLayout {...props} />,
   screenOptions: {
     headerShown: false,
@@ -789,8 +785,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ReviewCommentComposerSheet,
       linking: `${THREAD_LINKING_PREFIX}/review-comment`,
       options: {
-        // Android cannot host the keyboard-driven comment composer inside a
-        // formSheet; use a full-screen modal there instead.
+        // Android formSheets cannot host the keyboard-driven comment composer.
         ...(Platform.OS === "android"
           ? { presentation: "fullScreenModal" as const }
           : FORM_SHEET_PRESENTATION_OPTIONS),
@@ -923,8 +918,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ConnectOnboardingRouteScreen,
       linking: "connect-onboarding",
       options: {
-        // A root-level Android formSheet does not host the native stack bar;
-        // the route renders an embedded AndroidSheetHeader instead.
+        // Android root formSheets lack a native stack bar; the route provides AndroidSheetHeader.
         ...(Platform.OS === "android" ? { headerShown: false } : SHEET_SOLID_HEADER_OPTIONS),
         title: "Set up T3 Connect",
         gestureEnabled: true,
@@ -951,8 +945,7 @@ const RootStackConfig = createWorkspaceStackNavigator({
       screen: ConnectionsNewRouteScreen,
       linking: "connections/new",
       options: {
-        // Keep the iOS header visible from the first render so the sheet's
-        // native header stack mounts without remounting the pairing form.
+        // Mount the iOS header immediately to avoid remounting the pairing form.
         ...(Platform.OS === "ios" ? SHEET_GLASS_HEADER_OPTIONS : undefined),
         title: "Add Environment",
         ...FORM_SHEET_PRESENTATION_OPTIONS,

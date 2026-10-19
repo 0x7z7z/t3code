@@ -44,10 +44,7 @@ export function androidWorkspaceNavigationState(
   };
 }
 
-/**
- * Always target the root navigator: container dispatch otherwise reaches the deepest focused stack,
- * and nested Settings or New task stacks reject the workspace reset.
- */
+/** Target root; container dispatch otherwise reaches nested stacks that reject workspace resets. */
 export function resetAndroidWorkspace(
   navigation: WorkspaceNavigation,
   destination?: AndroidWorkspaceDestination,
@@ -65,8 +62,7 @@ export function resetAndroidWorkspace(
   });
 }
 
-// In the split view these destinations swap the detail pane beside the sidebar instead of
-// stacking over Home, so the default slide-in would show a layer that is not there.
+// Split destinations replace the detail pane; slide-in would imply a nonexistent layer over Home.
 export function androidWorkspaceDestinationAnimation(routeName: string, usesSplitView: boolean) {
   return usesSplitView && (routeName === "Thread" || routeName === "PullRequest")
     ? ("none" as const)

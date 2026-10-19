@@ -25,8 +25,7 @@ export function BranchNamingSettings(props: {
   disabled: boolean;
   onChange: (patch: ServerSettingsPatch) => void;
 }) {
-  // Typed text waits here until it saves. Android's Back closes the keyboard
-  // without ending editing, so leaving the screen saves it too.
+  // Save on exit too: Android Back hides the keyboard without ending editing.
   type Field = "branchNamePrefix" | "branchNameInstructions";
   const drafts = useRef<Partial<Record<Field, { text: string; over: string | null }>>>({});
   const savedValue = (field: Field) =>
@@ -39,8 +38,7 @@ export function BranchNamingSettings(props: {
     const draft = drafts.current[field];
     delete drafts.current[field];
     const saved = savedValue(field);
-    // Not gated on `disabled`: a pending write disables the inputs, and the
-    // route queues this save behind it and checks write access itself.
+    // Save even while disabled; the route queues behind pending writes and checks access.
     if (draft === undefined || draft.over !== saved) return {};
     const value = draft.text.trim();
     return saved === null || value !== saved ? { [field]: value } : {};

@@ -102,8 +102,7 @@ vi.mock("./agentLiveActivity", () => ({
   startAgentLiveActivity: widgetMocks.start,
 }));
 
-// The state modules pull the whole connection stack (and native expo modules)
-// into the import graph; the arming gate only needs the configs map.
+// Avoid importing the native connection stack; this gate only needs configs.
 vi.mock("../../state/atom-registry", () => ({
   appAtomRegistry: {
     get: () => environmentConfigsMock.configs,
@@ -805,8 +804,7 @@ describe("makeRelayDeviceRegistrationRequest", () => {
   });
 
   it.effect("dedupes rapid activity-token re-registrations within the replay window", () => {
-    // The module's relay layer captures the first test's fetch. Check registration via device-id
-    // loads instead; deduped attempts skip them.
+    // The relay layer captures the first fetch mock; device-id loads reveal deduped registrations.
     const fetchMock = vi.fn((request: RequestInfo | URL) => {
       const url = request instanceof Request ? request.url : String(request);
       return Promise.resolve(

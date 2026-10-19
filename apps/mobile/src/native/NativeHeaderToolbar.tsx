@@ -210,8 +210,7 @@ function collectToolbarItems(children: ReactNode): NativeToolbarItem[] {
     const item = convertToolbarChild(child);
     if (item) {
       if (item.type === "spacing") {
-        // Native inserts spacing items at `index`, treating a missing index
-        // as 0 — which would move the spacer in front of earlier siblings.
+        // Native defaults missing spacing-item indices to zero, moving spacers before earlier siblings.
         (item as { index?: number }).index = items.length;
       }
       items.push(item);
@@ -230,8 +229,7 @@ function NativeHeaderToolbarRoot(props: {
   const isTabActive = tabActivity?.isActive;
   const items = useMemo(() => collectToolbarItems(props.children), [props.children]);
 
-  // Update items in place. Clearing them on every render causes UIKit to run a
-  // second transition and detach custom views while the stack is animating.
+  // Update in place; clearing items during stack animation triggers a second UIKit transition and detaches custom views.
   useLayoutEffect(() => {
     if (!navigation || !tabActive) {
       return;

@@ -77,10 +77,7 @@ export async function createPastedTextComposerAttachment(input: {
 
 export type DraftComposerAttachment = DraftComposerImageAttachment | DraftComposerFileAttachment;
 
-/**
- * Every non-media attachment requires a chip reference; its absence means the draft lost the file
- * rather than that the strip should replace the chip.
- */
+/** Non-media attachments require chip references; missing references mean lost draft files. */
 export function composerStripAttachments(
   attachments: ReadonlyArray<DraftComposerAttachment>,
 ): ReadonlyArray<DraftComposerAttachment> {
@@ -89,10 +86,7 @@ export function composerStripAttachments(
   );
 }
 
-/**
- * The document picker types every pick as a plain file, so the answer comes from the
- * attachment itself rather than from which picker made it.
- */
+/** Detect from the attachment; the document picker labels images as plain files. */
 export function isComposerImageAttachment(
   attachment: DraftComposerAttachment,
 ): attachment is DraftComposerImageAttachment {
@@ -107,10 +101,7 @@ export function isFileBackedComposerAttachment(
   return attachment.fileUri !== undefined;
 }
 
-/**
- * Inline library and clipboard images own no file; their local attachment ids cannot resolve
- * to server assets.
- */
+/** Inline library/clipboard images own no file; local ids cannot resolve server assets. */
 export function composerAttachmentInlineUri(
   attachment: DraftComposerAttachment | undefined,
 ): string | undefined {
@@ -181,8 +172,7 @@ export async function persistComposerAttachmentFile(
   try {
     await source.copy(destination);
   } catch (error) {
-    // A failed copy can leave a partial destination file behind with no URI
-    // returned to release it later; delete it before surfacing the failure.
+    // Failed copies may leave untracked partial files; delete before surfacing failure.
     try {
       if (destination.exists) {
         destination.delete();
@@ -192,9 +182,7 @@ export async function persistComposerAttachmentFile(
     }
     throw error;
   }
-  // An Android content: stream can deliver more bytes than the size it
-  // reported before the copy. Validate the persisted copy so an oversized
-  // file is never retained under a stale recorded size.
+  // Android content streams may exceed reported size; validate the persisted copy.
   const copiedSize = destination.size;
   if (maxBytes !== undefined && copiedSize !== null && copiedSize > maxBytes) {
     try {
@@ -278,8 +266,7 @@ export async function pickComposerFiles(input: {
   const endHandoff = beginForegroundHandoff();
   let result: DocumentPickerResult;
   try {
-    // File providers may expose a URI that FileSystem cannot read directly.
-    // Import a readable cache copy before persisting the draft's owned file.
+    // Import a readable cache copy because FileSystem may not read provider URIs directly.
     result = await getDocumentAsync({ multiple: true, copyToCacheDirectory: true });
   } catch (cause) {
     return {
@@ -378,8 +365,7 @@ export async function pickComposerMedia(input: {
     };
   }
 
-  // The picker covers the Android activity, which reports the app as
-  // backgrounded; the guard keeps background-triggered restarts away mid-pick.
+  // Android pickers report background state; guard against deferred restarts mid-pick.
   const endHandoff = beginForegroundHandoff();
   let result: Awaited<ReturnType<typeof imagePicker.launchImageLibraryAsync>>;
   try {
@@ -387,8 +373,7 @@ export async function pickComposerMedia(input: {
       mediaTypes: input.maxVideoBytes === undefined ? ["images"] : ["images", "videos"],
       allowsMultipleSelection: true,
       selectionLimit: remainingSlots,
-      // Requesting base64 makes iOS decode every full-size photo and send 10 MB+ strings to JS,
-      // stalling the composer. Read bytes only after deciding what is needed.
+      // Base64 makes iOS decode all full-size photos and stalls JS with large strings; read bytes only as needed.
       base64: false,
       quality: 1,
       shouldDownloadFromNetwork: true,
@@ -455,8 +440,7 @@ export async function pickComposerMedia(input: {
     } catch {
       sourceBytes = null;
     }
-    // Originals the provider can read and that fit the cap pass through byte for byte so
-    // transparency and animation survive.
+    // Pass through supported, under-cap originals unchanged to preserve transparency and animation.
     const originalMimeType =
       mimeType !== undefined &&
       isProviderSendTurnSupportedImageMimeType(mimeType) &&

@@ -146,8 +146,7 @@ export function useThreadHeaderOptions(props: {
   const { environmentId, threadId, gitStatus } = props.gitControls;
   return {
     options,
-    // Stable header factories are re-read only when this version changes. Include both displayed items
-    // and hidden callback state, such as the default ref that decides push versus commit_push.
+    // Factories re-read only on version changes; include displayed items and hidden callback state such as default refs.
     optionsVersion: [
       splitLeftHeaderItems,
       threadCenterHeaderItems,

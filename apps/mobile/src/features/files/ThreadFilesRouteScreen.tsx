@@ -694,8 +694,7 @@ export function ThreadFileScreen(props: ThreadFileRouteScreenProps) {
 
   const handleSelectFile = (path: string) => {
     const segments = path.split("/").filter(Boolean);
-    // A draft has no thread. `ThreadFile` would stringify null and then wait forever for a
-    // thread to resolve, so a draft stays on its own route and carries its workspace along.
+    // Drafts need their own route: ThreadFile would stringify null and wait forever for a thread.
     if (threadId === null) {
       navigation.dispatch(
         StackActions.push("NewTaskFile", {

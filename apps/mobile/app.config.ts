@@ -124,8 +124,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
     groupIdentifier: `group.${iosBundleIdentifier}`,
     enablePushNotifications: true,
-    // Agent activity can update many times an hour; without the
-    // frequent-updates entitlement iOS throttles the update budget sooner.
+    // Frequent updates need the iOS entitlement to avoid early throttling.
     frequentUpdates: true,
     enableAndroid: true,
     widgets: [
@@ -175,8 +174,7 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
           targetCellWidth: 4,
           targetCellHeight: 3,
           resizeMode: "both",
-          // Embeds the layout in the APK so the widget renders before the app
-          // has run once; the app replaces it with stored props on publish.
+          // The embedded layout renders before first launch; publishing replaces it with stored props.
           initialLayout: "./src/widgets/SubscriptionUsage.android.tsx",
         },
       },
@@ -215,8 +213,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   },
 ];
 
-// Match iOS PostScript names on Android so RN and the native composer share font families
-// without waiting for runtime loading.
+// Match iOS PostScript names on Android so RN and the native composer share fonts before runtime loading.
 
 const config: ExpoConfig = {
   name: variant.appName,
@@ -225,9 +222,7 @@ const config: ExpoConfig = {
   scheme: variant.scheme,
   version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.0.0",
   runtimeVersion: {
-    // Development manifests resolve on every launch, so avoid fingerprint's
-    // expensive native-project calculation there. Preview and production stay
-    // fingerprinted so OTAs only reach binaries with matching native projects.
+    // Skip costly fingerprinting on dev launches; preview and production OTAs require matching native projects.
     policy: runtimeVersionPolicy,
   },
   orientation: "portrait",
@@ -244,9 +239,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.T3_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
-    // does not fall back to a personal team (which cannot sign app groups,
-    // Sign in with Apple, or push notification entitlements).
+    // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
     appleTeamId: "ARK85ZXQ4Z",
     associatedDomains: [
       `applinks:${variant.relyingParty}`,
@@ -267,12 +260,10 @@ const config: ExpoConfig = {
       NSLocalNetworkUsageDescription:
         "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",
       NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",
-      // "Audio, AirPlay, and Picture in Picture": the browser screen's system
-      // picture in picture needs it to start and to stay up outside the app.
+      // System picture in picture needs background audio to start and survive outside the app.
       UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
-      // CI cannot script Simulator rotation, and iPadOS ignores programmatic orientation requests
-      // for multitasking-capable apps. Capture builds must opt out of multitasking.
+      // Capture builds disable multitasking because iPadOS otherwise ignores orientation requests.
       ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
         ? {
             "UISupportedInterfaceOrientations~ipad": [
@@ -299,9 +290,7 @@ const config: ExpoConfig = {
       foregroundImage: variant.assets.androidAdaptiveForeground,
       monochromeImage: variant.assets.androidMonochromeIcon,
     },
-    // Opts into OnBackInvokedCallback-based back dispatch (Android 13+).
-    // JS back handling survives it via react-native's Android 16 shim plus
-    // withAndroidPredictiveBackCompat on Android 13-15.
+    // JS back dispatch needs RN's Android 16 shim and withAndroidPredictiveBackCompat on Android 13-15.
     predictiveBackGestureEnabled: true,
     // expo-sensors declares this for its pedometer, which the app does not use.
     blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
@@ -348,8 +337,7 @@ const config: ExpoConfig = {
         mode: APP_VARIANT === "development" ? "development" : "production",
       },
     ],
-    // appleSignIn must be gated here: withoutIosPersonalTeamCapabilities.cjs runs before
-    // plugins earlier in this array, so it cannot strip the entitlement Clerk would add.
+    // Gate Clerk here: withoutIosPersonalTeamCapabilities runs too early to strip its entitlement.
     ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],
     "expo-web-browser",
     [
@@ -397,8 +385,7 @@ const config: ExpoConfig = {
           backgroundColor: "#0a0a0a",
         },
         android: {
-          // Android 12+ masks the central two thirds of the 288dp canvas to a circle; the composed
-          // adaptive layers avoid clipping the iOS export's corners.
+          // Android 12+ masks the central two thirds of the 288dp canvas; adaptive layers avoid clipped corners.
           image: variant.assets.androidSplashIcon,
           imageWidth: 288,
           dark: { image: variant.assets.androidSplashIcon },
@@ -410,12 +397,7 @@ const config: ExpoConfig = {
       {
         android: {
           minSdkVersion: 24,
-          // kotlinx-io uses Kotlin 2.3's return-value checker annotation, while
-          // SDK 58 builds with Kotlin 2.2. It has no runtime behavior.
-          // WorkManager 2.9 keeps InputMerger classes but not their constructors,
-          // and R8 full mode no longer keeps a default constructor implicitly.
-          // Without it no work request can start, so the Glance session behind
-          // the widget never renders and it stays on "Loading widget".
+          // SDK 58 lacks Kotlin 2.3's runtime-inert annotation. R8 needs explicit InputMerger constructors for widgets.
           extraProguardRules: [
             "-dontwarn kotlin.MustUseReturnValues",
             "-keep class * extends androidx.work.InputMerger { <init>(); }",
@@ -432,11 +414,9 @@ const config: ExpoConfig = {
       },
     ],
     "./plugins/withIosCocoaPodsUuidCache.cjs",
-    // Only the accelerometer is used (device viewer shake). Compile out the
-    // pedometer so iOS needs no motion purpose string.
+    // Compile out the unused pedometer to avoid an iOS motion purpose string.
     ["expo-sensors", { motionPermission: false }],
-    // Same-type mods run last-registered-first: this must precede expo-widgets so its target
-    // exists and its directory wipe finishes before the asset catalog and compile phase are added.
+    // Mods run in reverse order; expo-widgets must create and wipe the target before assets are added.
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
@@ -458,8 +438,7 @@ const config: ExpoConfig = {
       publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
       jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
     },
-    // Clerk requires these exact top-level env-var names and reads the URL scheme at prebuild.
-    // Omit unset values: manifest serialization turns null into truthy {}, defeating its fallback.
+    // Clerk reads these exact names at prebuild. Omit unset values: manifest null becomes truthy {}.
     EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
     EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
     EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,

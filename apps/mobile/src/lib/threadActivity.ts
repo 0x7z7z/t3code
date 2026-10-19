@@ -119,10 +119,7 @@ export interface ThreadFeedActivity {
   readonly workEntry: WorkLogPresentationEntry;
   readonly groupedToolDetail?: boolean;
   readonly live?: boolean;
-  /**
-   * Set on a lone call shown in place of its group header. Carries the header's
-   * label and the group that takes over once a second call joins it.
-   */
+  /** Lone calls carry the group header's label and id until a second call joins. */
   readonly groupStandIn?: { readonly groupId: string; readonly label: string };
   readonly projectedItem: OrchestrationV2ProjectedTurnItem;
 }
@@ -256,10 +253,7 @@ export interface AgentSpawnSummary {
   }>;
 }
 
-/**
- * Android lays out and hit-tests the full header string even at one line; long heredocs can ANR.
- * Cap only the label; expanded content and copy retain the full text.
- */
+/** Long Android headers can ANR despite one-line display; cap labels only, preserving expanded and copied text. */
 const WORK_LOG_LABEL_MAX_LENGTH = 200;
 
 function compactWorkEntryText(value: string): string {
@@ -1097,9 +1091,7 @@ function deriveThreadFeedRunFolds(
           ? (entry.runId ?? runlessKey)
           : null;
     if (!ownRunId) continue;
-    // Resuming a subagent moves its item to the resuming run, but the item
-    // keeps its place in the turn that started it. It folds with that turn,
-    // so the later run's fold still opens under its own prompt.
+    // Resumed subagents keep their original turn position and fold, leaving later run folds under their own prompts.
     const runId =
       responseKey !== null && (promptIndexByRunId.get(ownRunId) ?? -1) > index
         ? responseKey
@@ -1542,9 +1534,7 @@ function appendToolGroupRows(
         ? singleActivity.workEntry.label
         : groupSummary.summary;
   const id = shimmer ? LIVE_ACTIVITY_ROW_ID : `${live ? "work-live" : "work-toggle"}:${groupId}`;
-  // A lone call needs no header. Its own row takes the header's place, label
-  // and identity, and discloses its details directly. A lone thought keeps the
-  // header, whose expansion already shows the text itself.
+  // Lone calls replace the header and disclose directly; lone thoughts retain the header to show text on expansion.
   if (singleActivity !== null && singleActivity.workEntry.itemType !== "reasoning") {
     result.push({
       type: "activity-group",
@@ -1552,8 +1542,7 @@ function appendToolGroupRows(
       createdAt: singleActivity.createdAt,
       runId: singleActivity.runId,
       activities: [{ ...singleActivity, live: shimmer, groupStandIn: { groupId, label: summary } }],
-      // Like the header, the row has no trailing margin, so the Thinking
-      // fallback and a growing group swap in without shifting the feed.
+      // No trailing margin lets Thinking or a growing group replace the row without shifting the feed.
       continuesWorkLog: true,
     });
     return;

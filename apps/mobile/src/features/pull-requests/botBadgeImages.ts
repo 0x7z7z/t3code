@@ -1,7 +1,4 @@
-/**
- * Match asset-only paths so bot badges are omitted from the Attachments strip without hiding
- * screenshots hosted on the same service. Inline markdown keeps rendering both.
- */
+/** Only asset paths are bot badges; keep same-host screenshots and all inline markdown images. */
 const BOT_BADGE_PREFIXES = [
   "static.devin.ai/assets/",
   "cursor.com/assets/images/",

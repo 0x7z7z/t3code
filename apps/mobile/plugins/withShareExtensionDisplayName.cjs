@@ -1,7 +1,6 @@
 "use strict";
 
-// Expo uses the empty signing team to select appleTeamId and provision profiles. Same-type
-// mods run in reverse registration order, so this runs after the extension exists.
+// Expo replaces the empty signing team with appleTeamId. Reverse-ordered mods run after extension creation.
 
 const fs = require("fs");
 const path = require("path");

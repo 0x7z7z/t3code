@@ -44,9 +44,7 @@ import { MCP_APP_INLINE_MAX_HEIGHT, mcpAppInlineHeight } from "./mcpAppSizing";
 
 const ROW_BOTTOM_MARGIN = 8;
 
-// Android exposes `ReactNativeWebView` to every frame, so a frame nested in the
-// app could post to React Native directly. The outer page therefore wraps what
-// it relays with a secret only it holds, and React Native drops anything else.
+// Android exposes the native bridge to nested frames; accept only messages carrying the outer page's secret.
 function outerDocument(src: string, allow: string, secret: string) {
   const attribute = (value: string) =>
     value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -79,19 +77,14 @@ const confirm = (title: string, message: string, action: string) =>
         { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
         { text: action, onPress: () => resolve(true) },
       ],
-      // Android dismisses an open alert when the next one shows; a dismissed
-      // request is declined rather than left holding an in-flight slot.
+      // Android dismisses earlier alerts when showing another; decline dismissed requests to release their slots.
       { cancelable: true, onDismiss: () => resolve(false) },
     );
   });
 
 const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
-/**
- * A WebView cannot move between the two without reloading, so each is its own
- * view of the app: the inline one is torn down before full screen opens, and
- * comes back when it closes.
- */
+/** WebViews reload when moved; tear down inline before opening fullscreen and recreate it on return. */
 export function ThreadMcpApp(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -104,8 +97,7 @@ export function ThreadMcpApp(props: {
   readonly onExitFullscreen?: () => void;
   readonly height?: number;
 }) {
-  // One reference per app: a new object with the same content (a refetch, a
-  // rerender) must not rebuild the host of a document that is already live.
+  // Equal app content must retain its reference to preserve the live document host.
   const [height, setHeight] = useState(MCP_APP_INLINE_MAX_HEIGHT);
   const [app, setApp] = useState(props.app);
   if (!mcpAppReferencesEqual(app, props.app)) {
@@ -158,8 +150,7 @@ export function ThreadMcpApp(props: {
     }
     setLoaded(false);
     setHeight(MCP_APP_INLINE_MAX_HEIGHT);
-    // The first URL's token may have expired by now; the asset query keeps
-    // a refreshed one, which this new view can load.
+    // Use the asset query's refreshed token when creating a replacement view.
     if (asset._tag === "Success") setUri(asset.url);
     setGeneration(1);
   };
@@ -207,8 +198,7 @@ export function ThreadMcpApp(props: {
     reportFailure: false,
   });
   const [toolDefinition, setToolDefinition] = useState<unknown>(undefined);
-  // Read by the host on every message, so it always sees current values
-  // without being rebuilt (which would drop the app's session).
+  // Read current context per message without rebuilding the host and losing its session.
   const conversation = useThreadShell(
     scopeThreadRef(props.environmentId, props.conversationThreadId),
   );
@@ -322,8 +312,7 @@ export function ThreadMcpApp(props: {
         return result.value;
       },
       openLink: async (url) => {
-        // A WebView cannot tell whether the reader just tapped the app, so it
-        // asks, rather than letting an app leave T3 on a timer.
+        // WebViews cannot prove user activation; confirm links to prevent timer-driven navigation out of T3.
         if (!(await confirm(`Open a link from ${app.server}?`, url, "Open"))) {
           throw new McpAppHostRefusal("Declined by the user.");
         }
@@ -368,8 +357,7 @@ export function ThreadMcpApp(props: {
         }
         if (mode === "fullscreen" && current.displayMode !== "fullscreen") {
           await hostRef.current?.teardown();
-          // The wait may have let an approval arrive, or the user moved to
-          // another screen; either way the view reloads inline.
+          // Approval arrival or navigation during the wait requires reloading inline.
           if (latest.current.awaitingUser || !latest.current.navigation.isFocused()) {
             openNewDocument.current((value) => value + 1);
             return "inline";
@@ -517,8 +505,7 @@ export function ThreadMcpApp(props: {
           style={{ flex: 1, backgroundColor: "transparent" }}
           nestedScrollEnabled
           originWhitelist={["*"]}
-          // Android reports nested frames as top-level, so navigation cannot be gated there; the app iframe's
-          // sandbox forbids top navigation and popups. Other platforms gate navigation to the outer document.
+          // Android misreports nested frames as top-level; rely on iframe sandboxing there and gate navigation elsewhere.
           onShouldStartLoadWithRequest={(request) =>
             Platform.OS === "android" ||
             request.isTopFrame === false ||

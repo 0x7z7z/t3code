@@ -22,10 +22,7 @@ import {
   resolveSvgImageSize,
 } from "./markdownImageSize";
 
-/**
- * Use the feed's known width on first render; an image's later onLayout would resize its row
- * after the list has positioned the rows below it.
- */
+/** Use known feed width immediately; later image measurement would move already-positioned rows. */
 export const MarkdownImageAvailableWidthContext = createContext(0);
 
 export function ThreadMarkdownImageView(props: {

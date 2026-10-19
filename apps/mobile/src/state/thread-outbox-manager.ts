@@ -69,8 +69,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
     options.registry.set(queuedMessagesByThreadKeyAtom, groupQueuedThreadMessages(messages));
   };
 
-  // Readable messages can be used after a partial load. Only a complete load
-  // returns true, so cleanup cannot delete files owned by unreadable records.
+  // Partial loads expose readable messages; return true only on complete loads to protect unreadable records' files.
   const load = (): Promise<boolean> => {
     if (loadPromise !== null) {
       return loadPromise;
@@ -116,8 +115,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
       } catch (cause) {
         // Rollback by reference: a retry with the same id may already own a newer optimistic entry.
         setMessages(currentMessages().filter((candidate) => candidate !== message));
-        // A concurrent update may persist a compensating copy before rollback. Remove it if no same-id
-        // entry survives, or restart would resurrect a message the queue rejected.
+        // Remove compensating persisted copies after rollback unless a same-id entry survives, or restart resurrects rejected messages.
         if (!currentMessages().some((candidate) => candidate.messageId === message.messageId)) {
           try {
             await options.storage.remove(message);
@@ -134,13 +132,11 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
     });
   };
 
-  // The drain awaits this before dispatching so a message whose durable write later fails can
-  // never have been delivered first.
+  // Confirm durability before dispatch so a failed write cannot follow successful delivery.
   const confirmQueued = (message: QueuedThreadMessage): Promise<boolean> =>
     serialize(async () => currentMessages().some((candidate) => candidate === message));
 
-  // Enqueue can publish during the durable write. Re-check revision and persist the winning payload
-  // before this mutation settles so a crash cannot preserve stale data.
+  // Enqueue may publish during writes; persist the winning revision before settling to avoid stale crash recovery.
   const update = (message: QueuedThreadMessage, expectedRevision?: number): Promise<boolean> =>
     serialize(async () => {
       const staleOrMissing = (): boolean =>
@@ -180,8 +176,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
       return true;
     });
 
-  // `canRemove` adds a live ownership check for state such as an open editor,
-  // which can change without writing a new message revision.
+  // Check live ownership too; editor locks can change without message revision updates.
   const remove = (
     message: QueuedThreadMessage,
     expectedRevision?: number,
@@ -209,9 +204,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
         });
       }
       if (removalCanceled()) {
-        // An enqueue or editor lock can win while storage removal is in
-        // flight. Restore the live payload here, before any queued mutation
-        // gets its turn, so this canceled removal is durable on its own.
+        // Enqueue or editor locks can win during removal; persist the live winner before the next queued mutation.
         const winner = currentMessages().find(
           (candidate) => candidate.messageId === message.messageId,
         );
@@ -233,9 +226,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
       setMessages(
         currentMessages().filter((candidate) => candidate.messageId !== message.messageId),
       );
-      // Tombstone, not delete: a same-id retry restarting at revision 1 would
-      // otherwise match a stale writer's expectedRevision from before the
-      // removal (ABA).
+      // Tombstone revisions: restarting a same-id retry at one would match stale pre-removal writers (ABA).
       bumpRevision(message.messageId);
       return removed;
     });
@@ -243,9 +234,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
   const clearEnvironment = (
     environmentId: EnvironmentId,
   ): Promise<ReadonlyArray<QueuedThreadMessage>> => {
-    // Enqueues publish before their serialized writes. Capture revisions now,
-    // but wait for earlier mutations before reading messages: a message that
-    // changes after this request must not enter the clear set.
+    // Capture revisions now but read messages after prior mutations; later changes must escape this clear request.
     const revisionsAtRequest = new Map(revisions);
     return serialize(async () => {
       const persisted = await options.storage

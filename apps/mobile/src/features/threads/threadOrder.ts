@@ -112,10 +112,7 @@ export interface ThreadMoveAvailability {
   readonly canMoveDown: boolean;
 }
 
-/**
- * Compute all row move availability in one section pass; per-card planner probes make minute-tick
- * list construction quadratic.
- */
+/** Compute per section; per-card planner probes make minute ticks quadratic. */
 export function computeThreadMoveAvailability(input: {
   readonly ordered: readonly OrderRow[];
   readonly allThreads?: readonly OrderRow[];
@@ -148,8 +145,7 @@ export function computeThreadMoveAvailability(input: {
   keysById.forEach((key, id) => {
     if (key != null && !indexById.has(id)) reservedKeys.add(key);
   });
-  // A swap changes at most two positions. Precomputed mismatch and writability totals therefore
-  // answer each row with a constant-size delta.
+  // Swaps affect at most two positions; precomputed totals allow constant-size availability checks.
   const midpoints = new Map<string, string | null>();
   const fastPathKey = (beforeKey: string | null, afterKey: string | null): string | null => {
     const memoKey = `${beforeKey ?? ""}\u0000${afterKey ?? ""}`;

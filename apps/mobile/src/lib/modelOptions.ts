@@ -123,10 +123,7 @@ function normalizeSelectionOptions(
       };
 }
 
-/**
- * Require an explicit projectId, or null outside a project, so a forgotten argument cannot miss
- * project-level provider disablement.
- */
+/** Require explicit projectId or null so omissions cannot bypass project provider disablement. */
 export function isModelSelectionUnavailable(
   config: T3ServerConfig | null | undefined,
   selection: ModelSelection | null | undefined,

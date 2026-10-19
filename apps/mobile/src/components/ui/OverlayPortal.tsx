@@ -23,8 +23,7 @@ function emit() {
 export function OverlayPortal(props: { readonly children: ReactNode }) {
   const [key] = useState(allocateKey);
 
-  // No dependency array: re-project after every render so the host always
-  // shows the current content (menus re-render while open — drill-in, theme).
+  // Re-project every render so open menus reflect content and theme changes.
   useEffect(() => {
     entries.set(key, props.children);
     emit();

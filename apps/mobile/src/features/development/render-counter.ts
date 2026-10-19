@@ -1,6 +1,4 @@
-// Load before React renders so the DevTools commit hook is wrapped (see render-counter-entry.ts).
-// Skip fibers with child === alternate.child: bailed-out subtrees retain stale flags.
-// PerformedWork is cleared on cloning, so a reached fiber with that flag rendered this commit.
+// Load before React to wrap commits. Skip bailed-out child === alternate.child subtrees; PerformedWork marks rendered fibers.
 
 interface Fiber {
   readonly tag: number;
@@ -67,8 +65,7 @@ function changedStateSlot(alternate: Fiber, node: Fiber): number {
   for (let index = 0; a && b && index < 800; index++) {
     const before = a.memoizedState;
     const after = b.memoizedState;
-    // Memo, callback and ref slots change because something upstream did; only a
-    // state update is a cause of its own.
+    // Only state updates cause renders; memo, callback and ref changes are consequences.
     if (b.queue !== null && !isEffect(after) && !Object.is(before, after)) return index;
     a = a.next;
     b = b.next;

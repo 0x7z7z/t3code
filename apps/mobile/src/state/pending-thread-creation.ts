@@ -51,8 +51,7 @@ export function resolvePendingThreadCreation(input: {
     terminalStatus === "interrupted"
   )
     return null;
-  // Message delivery and turn startup are separate events. The prompt alone
-  // cannot replace the preparing pill; wait for the turn's timing too.
+  // Message delivery can precede startup; wait for turn timing before replacing the preparing pill.
   if (
     detail !== null &&
     (latestRun !== undefined || detail.latestTurn != null) &&
@@ -102,8 +101,7 @@ export function pendingThreadCreationMessage(message: QueuedThreadMessage): Loca
     role: "user",
     text: message.text,
     context: message.context,
-    // Local draft attachment ids cannot resolve on the server; showing them would spin indefinitely
-    // if thread creation is rejected.
+    // Local draft ids cannot resolve server-side and would spin forever on rejected creation.
     streaming: false,
     createdAt: message.createdAt,
     updatedAt: message.createdAt,

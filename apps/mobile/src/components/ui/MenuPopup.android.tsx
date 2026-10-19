@@ -16,8 +16,7 @@ import { useAppearancePreferences } from "../../features/settings/appearance/App
 import type { MenuPopupProps } from "./MenuPopup";
 import { isAppSymbolName, SymbolView, type AppSymbolName } from "./AppSymbol";
 
-// The RN glyph's Compose host consumes its touches, so it must run the row action itself.
-// Keep accessibility on the row.
+// The Compose glyph host consumes touches; run the action here and keep accessibility on the row.
 function MenuIcon(props: {
   readonly name: AppSymbolName;
   readonly onPress: () => void;

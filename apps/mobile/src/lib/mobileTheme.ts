@@ -142,10 +142,7 @@ function rgbChannels(color: string): readonly [number, number, number] | null {
   return [Number.parseInt(red, 16), Number.parseInt(green, 16), Number.parseInt(blue, 16)];
 }
 
-/**
- * Native chip parsers accept only opaque hex; flatten translucent roles instead of falling back
- * to an unrelated default color.
- */
+/** Native chips require opaque hex; flatten translucent roles. */
 export function flattenThemeColor(color: string, surface: string): string {
   const alphaHex = /^#([\da-f]{6})([\da-f]{2})$/i.exec(color);
   if (alphaHex) {

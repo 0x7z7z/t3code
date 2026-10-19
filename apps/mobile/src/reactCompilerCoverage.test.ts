@@ -12,8 +12,7 @@ const babel: {
 const metroConfig: Promise<{ transformer: { babelTransformerPath: string } }> =
   requireFromMobile("./metro.config.js");
 
-// Skipped files ship unmemoized. Remove entries and manual memoization when they start compiling;
-// the test rejects newly compiling entries.
+// Remove bailout entries and manual memoization when compilation starts; this check rejects stale entries.
 const KNOWN_BAILOUTS: Record<string, string> = {
   "src/components/ComposerAttachmentStrip.tsx": "unsupported syntax",
   "src/components/ui/AndroidAnchoredMenu.tsx": "ref read during render",
@@ -30,8 +29,7 @@ const KNOWN_BAILOUTS: Record<string, string> = {
   "src/native/T3ComposerEditor.native.tsx": "ref read during render",
 };
 
-// Caller flags Metro passes for an iOS release bundle. supportsReactCompiler is
-// what `experiments.reactCompiler` in app.config.ts turns on.
+// Use Metro's iOS release flags; experiments.reactCompiler enables supportsReactCompiler.
 const metroCaller = {
   name: "metro",
   bundler: "metro",
@@ -63,8 +61,7 @@ interface CompilerEvent {
   };
 }
 
-// babel.config.js is the file Metro loads; the logger rides on the preset's
-// own react-compiler option so the plugin runs with Metro's exact settings.
+// Load Metro's babel.config.js and attach logging through its preset for identical compiler settings.
 function compilerBailouts(file: string): string[] {
   const events: CompilerEvent[] = [];
   const babelConfig = requireFromMobile("./babel.config.js")({ cache: () => {} });

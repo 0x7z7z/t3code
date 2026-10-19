@@ -267,8 +267,7 @@ function JavaScriptSourceFileSurface(props: SourceFileSurfaceProps) {
     />
   );
 
-  // Keep the file in one selectable native text view; virtualized rows form separate selection scopes
-  // and cannot support select all across the document.
+  // One native text view permits document-wide selection; virtualized rows cannot.
   const selectableBlock = props.selectable ? (
     <SourceText
       selectable

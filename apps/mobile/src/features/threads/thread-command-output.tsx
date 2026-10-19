@@ -17,11 +17,7 @@ export function useCommandOutputStreaming(environmentId: EnvironmentId): boolean
   );
 }
 
-/**
- * Output of one expanded command row: streams while the command runs, then
- * shows its final output. Mount it only when `useCommandOutputStreaming` holds.
- * It subscribes only while mounted, so collapsed rows and other threads receive nothing.
- */
+/** Mount only while useCommandOutputStreaming holds; unmount to stop subscriptions for collapsed rows or other threads. */
 export function ThreadCommandOutput(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;

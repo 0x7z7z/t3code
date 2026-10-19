@@ -97,9 +97,7 @@ export function useComposerAttachmentUploadWorker() {
                 }
               }
               if (!retained) return "abandon";
-              // The reference is already in the in-memory draft, and Send copies it into the
-              // outbox, which saves on its own. A failed draft save only costs a re-upload after
-              // a restart, so it must not fail an upload the server already accepted.
+              // Draft-save failure only costs re-upload after restart; the outbox saves references independently, so preserve accepted uploads.
               await flushComposerDrafts().catch((error: unknown) => {
                 if (!(error instanceof ComposerDraftPersistenceError)) throw error;
                 console.warn("[composer-attachments] could not save the uploaded reference", error);

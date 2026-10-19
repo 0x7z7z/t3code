@@ -1,7 +1,6 @@
 const { withMainActivity } = require("expo/config-plugins");
 
-// FULL_USER respects auto-rotate lock. Foldables update smallestScreenWidthDp without
-// recreating the activity, so re-evaluate the tablet policy in onConfigurationChanged.
+// FULL_USER respects rotation lock. Foldables change smallestScreenWidthDp without recreating the activity.
 
 const ORIENTATION_METHODS = `
   // Applied in onCreate and re-applied on fold/unfold; added by

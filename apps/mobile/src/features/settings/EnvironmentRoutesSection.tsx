@@ -73,8 +73,7 @@ export function EnvironmentRoutesSection({
     null,
   );
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
-  // Remount dropped rows so reordered data and cleared drag offsets land in the same frame;
-  // retained offsets otherwise flash in their new slots.
+  // Remount dropped rows so data order and cleared drag offsets change together without flashing.
   const [drops, setDrops] = useState(0);
   if (entry === undefined) return null;
 

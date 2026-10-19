@@ -26,9 +26,7 @@ function useShortcutNavigation(): void {
   const handledInitialAction = useRef(false);
 
   useEffect(() => {
-    // Cold start: the tapped shortcut arrives as the launch action, before
-    // any listener can fire. Navigating from here pushes the target over the
-    // initial Home route, so back returns home instead of exiting the app.
+    // Handle the launch action before listeners; push over Home so Back returns there.
     if (!handledInitialAction.current) {
       handledInitialAction.current = true;
       const initialHref = QuickActions.initial ? shortcutHref(QuickActions.initial) : null;
@@ -48,21 +46,17 @@ function useShortcutNavigation(): void {
 }
 
 function useRecentThreadShortcutSync(state: NavigationState): void {
-  // Avoid iOS shell subscriptions for Android-only launcher shortcuts: they would re-render
-  // every screen on each active-thread update.
+  // iOS subscriptions for Android-only shortcuts would re-render every screen on active-thread updates.
   const threadRef = useMemo(
     () => (Platform.OS === "android" ? activeThreadRef(state) : null),
     [state],
   );
   const threadShell = useThreadShell(threadRef);
-  // null until the persisted list loads; recording waits on it so the first
-  // thread opened after a cold start cannot clobber older entries.
+  // Wait for persisted recents before recording visits, or cold starts overwrite older entries.
   const [recents, setRecents] = useState<ReadonlyArray<RecentThreadShortcut> | null>(null);
-  // Do not persist a failed-load fallback: a transient read error must not erase valid history.
-  // A real thread visit makes the in-memory list authoritative.
+  // Do not persist failed-load fallbacks; only a real visit makes the list authoritative.
   const persistableRef = useRef(false);
-  // Saves are fire-and-forget; chaining them keeps an older list from
-  // finishing after (and overwriting) a newer one.
+  // Serialize saves so older lists cannot overwrite newer ones.
   const saveQueueRef = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {

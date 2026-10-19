@@ -87,10 +87,7 @@ export function showcaseAgentAlert(activity: AgentActivityProps) {
   };
 }
 
-/**
- * The FCM data map Android's native receiver renders, mirroring the relay's
- * androidActivityData so the shade shows exactly what a real push produces.
- */
+/** Matches the relay's androidActivityData FCM map for native rendering. */
 export function showcaseAndroidActivityData(
   activity: AgentActivityProps,
   now: number,

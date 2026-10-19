@@ -1,8 +1,6 @@
 const { withProjectBuildGradle } = require("expo/config-plugins");
 
-// react-native-shiki-engine's fbjni:+ can resolve to NDK 28 builds incompatible with RN's
-// NDK 27.1 libc++, crashing before JS with __cxa_init_primary_exception missing.
-// Keep this equal to fbjni in react-native/gradle/libs.versions.toml.
+// Match fbjni in react-native/gradle/libs.versions.toml; newer NDK builds can crash RN's libc++ before JS.
 const FBJNI_VERSION = "0.7.0";
 const MARKER = "withAndroidFbjniVersion";
 

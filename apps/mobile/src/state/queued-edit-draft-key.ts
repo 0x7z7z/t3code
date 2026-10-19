@@ -1,7 +1,4 @@
-/**
- * The marker must contain no colon: composerDraftEnvironmentId parses before the last colon.
- * Keep queued edits under separate keys so the user's original draft survives.
- */
+/** Keep edit keys separate to preserve original drafts; the marker cannot contain colons because environment parsing uses the last one. */
 const QUEUED_EDIT_DRAFT_MARKER = "~queued-edit~";
 
 export function queuedEditDraftKey(threadKey: string, runId: string): string {

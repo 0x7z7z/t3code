@@ -1,7 +1,4 @@
-/**
- * Android lays out shrink-to-fit children before maxWidth clamps them and never repositions them.
- * Wide blocks and ordered-list flex columns therefore need a definite bubble width.
- */
+/** Android never repositions children after maxWidth clamps; wide blocks and ordered lists need definite width. */
 
 const FENCED_CODE_BLOCK = /^ {0,3}(?:```|~~~)/m;
 const ORDERED_LIST_ITEM = /^ {0,3}\d{1,9}[.)](?:[ \t]+|$)/;

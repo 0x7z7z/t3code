@@ -1,7 +1,6 @@
 "use strict";
 
-// Uniwind declares type:module over CommonJS output and leaves build-only @/ aliases in dist/common.
-// Use a loader to resolve those aliases while executing the exact compiled bytes Metro bundles.
+// Uniwind labels CommonJS as module and leaves @/ aliases; resolve them in a loader while executing Metro's compiled bytes.
 const fs = require("node:fs");
 const path = require("node:path");
 const { createRequire } = require("node:module");

@@ -207,7 +207,6 @@ describe("uniwind keeps selector and transformer behavior", () => {
       expect(styles?.["data-x:underline"]?.every((style) => style.dataAttributes?.["data-x"])).toBe(
         true,
       );
-      // aria-disabled is not expressible at runtime; emitting it unconditionally always applies the style.
       expect(styles).not.toHaveProperty("aria-disabled:text-red-500");
     }
   });

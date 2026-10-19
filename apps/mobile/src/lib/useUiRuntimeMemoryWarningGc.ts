@@ -8,10 +8,7 @@ function collectUiRuntimeGarbage() {
   if (typeof gc === "function") gc();
 }
 
-/**
- * iOS memory warnings collect only RN's JS heap. Collect the separate worklet heap too, or its
- * shadow nodes and serializables stay alive.
- */
+/** iOS memory warnings collect only RN's heap; collect worklets too to release shadow nodes and serializables. */
 export function useUiRuntimeMemoryWarningGc() {
   useEffect(() => {
     const subscription = AppState.addEventListener("memoryWarning", () => {

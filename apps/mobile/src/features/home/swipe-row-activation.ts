@@ -1,14 +1,9 @@
 import { createContext, use, useSyncExternalStore } from "react";
 
-/**
- * Keep swipe gestures and hidden action views near the viewport; dormant frames make offscreen
- * row rebuilds cheap during scrolling.
- */
+/** Keep swipe gestures near the viewport; dormant frames make offscreen rebuilds cheap. */
 export function createSwipeRowActivation() {
   let activeKeys = new Set<string>();
-  // Swapping a row's frame remounts it, which would cancel a press or long
-  // press in progress, so changes wait until every finger that started on the
-  // list has lifted.
+  // Frame swaps remount rows and cancel presses; wait until all list touches end.
   const listTouches = new Set<string>();
   let pendingKeys: ReadonlyArray<string> | null = null;
   const listeners = new Set<() => void>();

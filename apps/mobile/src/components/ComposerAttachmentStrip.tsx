@@ -95,10 +95,7 @@ export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailPr
 
 const PREVIEW_CACHE_DIRECTORY = "t3-composer-previews";
 
-/**
- * Fabric re-parses image URLs on every layout pass. Multi-megabyte data URLs can stall
- * commits until concurrent UI-thread commits cause the renderer to abort.
- */
+/** Fabric re-parses URLs each layout; large data URLs can stall and abort commits. */
 const INLINE_PREVIEW_FALLBACK_MAX_CHARS = 256_000;
 
 async function materializeDataUrlPreview(id: string, dataUrl: string): Promise<string | null> {

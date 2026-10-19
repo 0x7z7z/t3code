@@ -599,8 +599,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
-  // Recycling can change thread identity without remounting; dismiss row-local UI when that happens
-  // because list equality can prevent the render closure from running.
+  // Recycling changes identity without remounting; clear local UI directly because equality may skip the render closure.
   const rowIdentity = `${thread.environmentId}:${thread.id}`;
   const [boundIdentity, setBoundIdentity] = useState(rowIdentity);
   if (boundIdentity !== rowIdentity) {
@@ -624,8 +623,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
 
   const canUnsettle = variant === "slim";
-  // Use clock state: the compiler can cache render-time reads until thread changes, freezing the gate
-  // and making its expiry timer fire every 50ms.
+  // Keep time in state; cached render-time reads freeze the gate and trigger 50ms expiry loops.
   const [snoozeGateClock, setSnoozeGateClock] = useState(() => ({ thread, now: Date.now() }));
   if (snoozeGateClock.thread !== thread) setSnoozeGateClock({ thread, now: Date.now() });
   const snoozeGateNow = new Date(snoozeGateClock.now).toISOString();
@@ -1072,8 +1070,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             accessibilityRole="button"
             accessibilityLabel={prBadgeLabel ?? undefined}
             onPress={handleOpenPullRequests}
-            // Without a long-press handler a hold that opens the row's iOS
-            // context menu would also open the pull request on release.
+            // Handle long-press so opening the iOS row menu cannot also open the PR on release.
             onLongPress={() => undefined}
             style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
           >

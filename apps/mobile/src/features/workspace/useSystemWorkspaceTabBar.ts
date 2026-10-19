@@ -8,8 +8,7 @@ export function useSidebarWorkspaceTabs(): "picker" | "toolbar" | null {
   const metrics = useNativeLayoutMetrics();
   if (Platform.OS !== "ios" || !layout.usesSplitView) return null;
   if (deviceType === "pad") return "picker";
-  // The Duo's side rail carries UIKit's tabs. Unfolded in portrait it has no
-  // rail, so the tabs sit in the thread list's own toolbar.
+  // Duo tabs use the side rail; unfolded portrait lacks one and uses the list toolbar.
   return (metrics?.verticalBarEdge ?? "none") === "none" ? "toolbar" : null;
 }
 

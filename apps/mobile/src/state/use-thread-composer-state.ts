@@ -147,10 +147,7 @@ export function appendReviewCommentToDraft(input: {
   }
 }
 
-/**
- * Resolved per call rather than captured, so a callback created before the
- * edit began still writes to the right place.
- */
+/** Resolve per call so callbacks created before editing still target the current draft. */
 function activeComposerDraftKey(thread: {
   readonly environmentId: EnvironmentId;
   readonly id: ThreadId;
@@ -240,8 +237,7 @@ export function useThreadComposerState() {
   const selectedThreadMessages = selectedThreadProjection?.projection.messages;
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
   const selectedThreadNodes = selectedThreadProjection?.projection.nodes;
-  // Pending creation prompts exist only in the outbox while worktree setup leaves server detail empty.
-  // Append them to server messages rather than choosing one source.
+  // Include outbox creation prompts alongside server messages while worktree setup leaves detail empty.
   const pendingCreationMessage = selectedThreadCreation?.message ?? null;
   const selectedThreadFeed = (() => {
     const pendingCreation =
@@ -538,8 +534,7 @@ export function useThreadComposerState() {
     if (text.length === 0 && attachments.length === 0) {
       return null;
     }
-    // Failure recovery preserves attachments above the cap. Block send until trimmed, or the outbox
-    // would reject the restored payload indefinitely.
+    // Recovery preserves over-cap attachments; require trimming or outbox delivery would reject indefinitely.
     if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
       Dialog.alert(
         "Too many attachments",
@@ -611,8 +606,7 @@ export function useThreadComposerState() {
       return null;
     }
 
-    // Capture dispatch mode on send, before a delayed drain. Send steering as auto so a turn that ends
-    // in the meantime falls back to a queued run instead of rejecting delivery.
+    // Capture dispatch mode on send; auto lets steering fall back to a queued run if the turn ends before drain.
     const followUpAction = resolveComposerDispatchMode({
       running: activeThreadBusy && canSteerActiveTurn,
       alternateModifier: followUpOverride !== undefined && followUpOverride !== followUpBehavior,
@@ -653,8 +647,7 @@ export function useThreadComposerState() {
     enqueuePromise.then(
       () => scheduleUnusedComposerAttachmentCleanup(attachments),
       (error: unknown) => {
-        // Restore attachments through uncapped append; merge truncates at the send limit and could drop
-        // files when the user added attachments during the failed write.
+        // Restore with uncapped append; capped merge could drop attachments added during the failed write.
         void mergeComposerDraftContent(threadKey, {
           text,
           context: draft.context,

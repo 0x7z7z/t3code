@@ -4,8 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
-// Native header item factories are only read when options are applied, so the fake
-// navigation snapshots the right items at each setOptions, as native-stack does.
+// Native factories are read at setOptions; snapshot there to match native-stack.
 const harness = vi.hoisted(() => ({
   setOptionsCalls: 0,
   renderedRightItems: [] as Array<ReadonlyArray<Record<string, unknown>>>,

@@ -1,7 +1,6 @@
 "use strict";
 
-// xcodebuild ignores a manually added Resources phase on expo-widgets' target. Run actool
-// in a shell phase and copy Assets.car into the extension bundle instead.
+// xcodebuild ignores Resources phases on expo-widgets targets; compile assets in a shell phase.
 
 const PHASE_NAME = "Compile Widget Assets";
 
@@ -33,10 +32,8 @@ function findByName(map, name) {
   return null;
 }
 
-/**
- * @param {import('xcode').XcodeProject} proj
- * @param {{ targetName: string }} opts
- */
+/** @param {import('xcode').XcodeProject} proj
+ * @param {{ targetName: string }} opts */
 function addWidgetAssetCatalog(proj, opts) {
   const objects = proj.hash.project.objects;
   const target = findByName(objects.PBXNativeTarget, opts.targetName);

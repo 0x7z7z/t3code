@@ -263,9 +263,7 @@ export async function completeQueuedMessageDelivery(
         error,
       });
     });
-    // The editor may have taken the entry while startTurn was in flight; its
-    // unsaved edits have not bumped the revision yet, so the CAS alone would
-    // let removal win and the editor would lose them once it saves.
+    // Editors can acquire entries during startTurn without bumping revisions; CAS alone would lose unsaved edits.
     if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[queuedMessage.messageId]) {
       return "edited";
     }
@@ -339,8 +337,7 @@ export async function recoverEditedCreationAfterDelivery(
   }
   const draftKey = scopedThreadKey(kept.environmentId, kept.threadId);
   try {
-    // Merge before removing so the draft retains file ownership. Allow overflow to keep recovery lossless;
-    // the send guard requires trimming before dispatch.
+    // Merge before removal to retain file ownership; allow overflow and let send guards require trimming.
     await mergeComposerDraftContent(draftKey, {
       text: kept.text,
       context: kept.context,
@@ -365,8 +362,7 @@ export async function recoverEditedCreationAfterDelivery(
       ...(kept.runtimeMode !== undefined ? { runtimeMode: kept.runtimeMode } : {}),
       ...(kept.interactionMode !== undefined ? { interactionMode: kept.interactionMode } : {}),
     });
-    // The append only schedules a debounced write; the queue entry is the
-    // only durable copy until the draft lands, so flush before removing.
+    // Flush before removal: append only schedules persistence, leaving the queue as the sole durable copy.
     await flushComposerDrafts();
   } catch (error) {
     console.warn("[thread-outbox] could not hand an edited pending task to the composer", error);
@@ -437,8 +433,7 @@ export async function restoreRejectedQueuedMessage(
         attachments: queuedMessage.attachments,
       });
     } finally {
-      // Capture rollback state in finally: merge publishes even if persistence fails. Undo restores untouched
-      // drafts exactly and removes only inserted content when the user edited during awaits.
+      // Capture rollback in finally because merge publishes even on persistence failure; undo must preserve concurrent edits.
       mergedDraft = getComposerDraftSnapshot(draftKey);
       rollback = { snapshot: originalDraft, merged: mergedDraft };
     }
@@ -488,8 +483,7 @@ export async function restoreRejectedQueuedMessage(
       await undoComposerDraftMerge(draftKey, originalDraft, restoredDraft);
       return "deferred";
     }
-    // The queued message is gone; from here the draft owns the content and
-    // must never be rolled back.
+    // After queue removal, the draft owns content and must never roll back.
     rollback = null;
     if (queuedMessage.creation) {
       withdrawError();
@@ -518,10 +512,7 @@ export async function restoreRejectedQueuedMessage(
   }
 }
 
-/**
- * The key derives from the message id so a retry after a mid-recovery failure lands on the same
- * draft instead of minting another.
- */
+/** Derive keys from message ids so failed recovery retries reuse the same draft. */
 function recoveryDraftKey(queuedMessage: QueuedThreadMessage): string {
   return queuedMessage.creation
     ? restoredNewTaskDraftKey(queuedMessage.messageId)
@@ -1054,8 +1045,7 @@ export function useThreadOutboxDrain(): void {
     [makeDeliveryHelpers, preparePullRequest, restoreQueuedMessage, startTurn],
   );
 
-  // Subscribed, not read once: the shell often lands before the outcome is recorded, and a
-  // non-reactive read would leave that entry uncollected because `threads` never changes again.
+  // Subscribe to outcomes; they may arrive after the last shell update, leaving read-once entries uncollected.
   useEffect(() => {
     for (const [threadKey, outcome] of Object.entries(creationOutcomes)) {
       if (
@@ -1230,15 +1220,12 @@ export function useThreadOutboxDrain(): void {
             return false;
           },
         );
-      // Enqueues publish optimistically before their durable write settles.
-      // Confirm the write landed (and the message wasn't rolled back) before
-      // sending, so a failed write can never chase an already-delivered turn.
+      // Confirm durability before sending; optimistic enqueue can still roll back on write failure.
       const delivery = confirmThreadOutboxMessageQueued(nextQueuedMessage).then((queued) => {
         if (!queued) {
           return true;
         }
-        // Re-check edit ownership after confirmation awaits. Return true to defer an editor-owned message
-        // without triggering failure backoff.
+        // Re-check editor ownership after confirmation; return true to defer without failure backoff.
         if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[nextQueuedMessage.messageId]) {
           return true;
         }
@@ -1261,9 +1248,7 @@ export function useThreadOutboxDrain(): void {
         }
         return deliveryAction === "remove"
           ? creation !== undefined
-            ? // A creation entry that survived its delivery cleanup either
-              // After restart, a delivered creation may contain unsaved edits or a duplicate payload; always recover
-              // because the in-memory distinction is lost and discarding edits is worse.
+            ? // After restart, always recover delivered creations; lost in-memory state cannot distinguish edits from duplicate payloads.
               recoverEditedCreationAfterDelivery(nextQueuedMessage)
             : removeQueuedMessage("[thread-outbox] failed to remove message for a missing thread")
           : creation !== undefined

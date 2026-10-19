@@ -2,8 +2,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-// Expo ignores the app version in its fingerprint. Include the major so production OTAs
-// cannot reach older store binaries with unchanged native code.
+// Include the major version, which Expo ignores, to prevent OTAs reaching older store binaries.
 const appConfig = fs.readFileSync(path.join(__dirname, "app.config.ts"), "utf8");
 const version =
   process.env.T3CODE_MOBILE_VERSION ??

@@ -494,8 +494,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
     revision: diffPreviewRevision,
     draftMessage,
   });
-  // Expo can return null before view registration or when the binary lacks the module;
-  // render the fallback rather than a null component type.
+  // Expo may return null before registration or in older binaries; use the fallback.
   const NativeReviewDiffView = resolveNativeReviewDiffView();
   const nativeReviewDiffViewRef = useRef<NativeReviewDiffViewHandle>(null);
   const showcasedReviewDrawRef = useRef<string | null>(null);
@@ -777,8 +776,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
               showsVerticalScrollIndicator={false}
               className="flex-1"
               refreshControl={
-                // The native diff handles refresh itself. Its fallback and empty states need a control because
-                // the explicit refresh menu exists only on Android.
+                // Fallback and empty states need refresh controls; only Android has an explicit refresh menu.
                 <RefreshControl
                   refreshing={isPullRefreshing || isSelectedSectionPending || areFilePatchesPending}
                   onRefresh={() => void handlePullToRefresh()}

@@ -16,10 +16,7 @@ export interface ThreadRowProviderInstance {
   readonly showBadge: boolean;
 }
 
-/**
- * Scope by environment: a default instance id is only a driver slug and names different accounts
- * on different servers.
- */
+/** Scope by environment; default instance ids name different accounts on different servers. */
 export function resolveThreadProviderInstance(
   providers: ReadonlyArray<ThreadListProvider> | undefined,
   thread: EnvironmentThreadShell,

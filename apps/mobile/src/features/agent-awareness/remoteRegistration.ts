@@ -73,16 +73,11 @@ export class AgentAwarenessOperationError extends Schema.TaggedError<AgentAwaren
 }
 
 const environmentConnections = new Map<EnvironmentId, SavedRemoteConnection>();
-// ActivityKit returns new wrappers for the same native id. Serialize token reads and registrations
-// by id so an old token cannot register after its replacement.
+// ActivityKit returns new wrappers per id; serialize by id to prevent stale-token registration.
 const activityPushTokenLocks = new Map<string, Semaphore.Semaphore>();
-// But the registration is not a pure no-op: the relay replays the current
-// aggregate to this device on every accepted registration, and that replay is
-// the foreground reconciliation that repairs drifted or orphaned activities.
+// Each accepted registration replays the relay aggregate, repairing drifted or orphaned activities.
 const ACTIVITY_TOKEN_REREGISTER_INTERVAL_MS = 60_000;
-// Locally started activities carry the same stale window the relay puts on
-// every push (STALE_AFTER_SECONDS in ApnsClient.ts), so a card whose relay
-// registration never lands still degrades instead of looking alive forever.
+// Match the relay's STALE_AFTER_SECONDS so activities expire even if registration fails.
 const LIVE_ACTIVITY_STALE_AFTER_MS = 10 * 60_000;
 const liveActivityStaleDate = () => new Date(Date.now() + LIVE_ACTIVITY_STALE_AFTER_MS);
 const registeredActivityPushTokens = new Map<string, number>();
@@ -175,8 +170,7 @@ export function setAgentAwarenessRelayTokenProvider(
     provider !== null &&
     !shouldRegisterAgentAwarenessDeviceForProvider(relayTokenProviderIdentity, identity);
   if (!isExistingIdentity) {
-    // Native configure compares the persisted account on cold start. An
-    // unset JS identity is a remount, not evidence of a different account.
+    // An unset JS identity may mean remount; native configure checks the persisted account on cold start.
     if (relayTokenProviderIdentity && identity !== relayTokenProviderIdentity) {
       clearAndroidAgentNotifications();
     }
@@ -198,8 +192,7 @@ export function setAgentAwarenessRelayTokenProvider(
       clearTimeout(activeLiveActivityRegistrationRetry);
       activeLiveActivityRegistrationRetry = null;
     }
-    // Without a signed-in user the relay can no longer update or end these
-    // activities, so they would sit orphaned on the lock screen.
+    // Signed-out activities would be orphaned because the relay can no longer update or end them.
     endLocalLiveActivities("live activity cleanup after cloud sign-out failed");
     setRegistrationStatus("unknown");
     void clearAgentAwarenessRegistrationRecord().catch((error: unknown) => {
@@ -362,8 +355,7 @@ function registerDeviceWithRelay(
       catch: (cause) => cause,
     }).pipe(Effect.orElseSucceed(() => null));
     if (expectedGeneration !== deviceRegistrationGeneration) {
-      // Signed out while the record loaded — do not resurrect the cleared
-      // record or report the previous account's registration as current.
+      // Sign-out during lookup must not resurrect the previous account's registration.
       logRegistrationDebug("device registration cancelled after record lookup", {
         expectedGeneration,
         currentGeneration: deviceRegistrationGeneration,
@@ -372,9 +364,7 @@ function registerDeviceWithRelay(
     }
     const payload = body;
     const signature = `${relayConfig.url}|${registrationSignature(payload)}`;
-    // Android registration also silently replays the current card. Collapse
-    // foreground bursts, but repair missed pushes on cold start or a return
-    // after time away, just like re-registering an iOS activity token.
+    // Android registration replays the card; collapse foreground bursts but replay after time away.
     const needsAndroidReplay =
       body.platform === "android" &&
       (androidDeviceReplayedAt === null ||
@@ -401,9 +391,7 @@ function registerDeviceWithRelay(
       payload,
     });
     if (expectedGeneration !== deviceRegistrationGeneration) {
-      // Signed out while the request was in flight: the sign-out path already
-      // reset the status and cleared the record for the next account, so a
-      // stale success must not overwrite either.
+      // Stale request success must not overwrite sign-out's cleared record or status.
       logRegistrationDebug("device registration completed after sign-out; result discarded", {
         expectedGeneration,
         currentGeneration: deviceRegistrationGeneration,
@@ -645,10 +633,7 @@ function startPendingDeviceRegistration(): void {
       runtime.runPromiseExit(registerDevice(next.input, generation)),
     );
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-      // A transient failure on a later refresh (e.g. token rotation) leaves
-      // the prior accepted registration intact on the relay, so an already
-      // registered device stays "registered" rather than flipping the
-      // settings toggles off.
+      // Refresh failures leave the relay's accepted registration intact; preserve registered status.
       if (registrationStatus !== "registered") {
         setRegistrationStatus("failed");
       }
@@ -954,9 +939,7 @@ export function registerLiveActivityPushToken(input: {
   });
 }
 
-// iOS can replace an activity's push token while it runs, not only deliver a
-// late first one. The relay keeps pushing to the old token until APNs rejects
-// it, so every activity needs a listener that registers each new token.
+// Observe every token replacement: the relay otherwise keeps pushing to the old token until APNs rejects it.
 function observeLiveActivityPushTokens(
   activity: LiveActivity<AgentActivityProps>,
 ): Semaphore.Semaphore {
@@ -1051,8 +1034,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       ),
     );
 
-    // The relay tracks exactly one card per device; if concurrent arming ever
-    // produced extras, end them so only one keeps receiving updates.
+    // The relay tracks one card per device; end extras created by concurrent arming.
     if (activities.length > 1) {
       for (const extra of activities.slice(1)) {
         extra.end("immediate").catch((error: unknown) => {
@@ -1062,8 +1044,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       activities = activities.slice(0, 1);
     }
 
-    // Create activities only in the foreground, where their update tokens can be registered immediately;
-    // background push-to-start wakes cannot reliably hand the token over.
+    // Background push-to-start cannot reliably register tokens; create activities only in the foreground.
     if (activities.length === 0) {
       const preferences = yield* Effect.tryPromise({
         try: () => loadPreferences(),
@@ -1075,8 +1056,7 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       }).pipe(Effect.orElseSucceed(() => null));
       if (preferences?.liveActivitiesEnabled !== false) {
         const snapshot = yield* readAgentActivitySnapshot();
-        // The snapshot request yields; an arm-on-send may have created the
-        // card in the meantime. Re-check so two cards are never started.
+        // Snapshot loading yields; re-check for a card created by arm-on-send.
         const armedMeanwhile = yield* Effect.try({
           try: () => getAgentLiveActivities(),
           catch: () => [] as ReadonlyArray<LiveActivity<AgentActivityProps>>,

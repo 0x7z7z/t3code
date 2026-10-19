@@ -426,16 +426,14 @@ function workRowSymbolName(icon: ThreadFeedActivity["icon"]): WorkContentIcon {
   }
 }
 
-// Entering fades only for rows created moments ago: rows remount whenever the
-// list scrolls them back into view, and old rows must not replay an entrance.
+// Animate only fresh rows; virtualization remounts old rows during scrolling.
 const FRESH_ROW_WINDOW_MS = 3_000;
 function isFreshRow(createdAt: string): boolean {
   const timestamp = Date.parse(createdAt);
   return Number.isFinite(timestamp) && Date.now() - timestamp < FRESH_ROW_WINDOW_MS;
 }
 
-// The minimum matches min-h-8 below. Exact sizing is disabled when native
-// accessibility scaling can make the single-line text taller than that minimum.
+// Match min-h-8; disable exact sizing when native accessibility scaling can exceed it.
 const WORK_ROW_HEIGHT = THREAD_WORK_ROW_MIN_HEIGHT;
 const WORK_ROW_GAP = 1;
 const WORK_LOG_BOTTOM_MARGIN = 3.5;
@@ -659,8 +657,7 @@ function ThreadWorkGroupList(props: {
     finishPendingAppend();
     rememberPosition();
   };
-  // Native content-size events lag LegendList layout by a frame, leaving expanded groups at stale
-  // heights. Use LegendList's JS measurements, which commit with the row layout.
+  // Use LegendList's JS measurements; native size events lag row layout by a frame.
   const onContentSizeChangeRef = useRef(onContentSizeChange);
   useLayoutEffect(() => {
     onContentSizeChangeRef.current = onContentSizeChange;
@@ -693,8 +690,7 @@ function ThreadWorkGroupList(props: {
         estimatedItemSize={props.rowSizing.estimatedRowHeight + WORK_ROW_GAP}
         getFixedItemSize={getFixedItemSize}
         initialScrollIndex={initialScrollIndex}
-        // Bootstrap overscan is only 50px. An offset inside expanded detail can
-        // otherwise leave its own row unmeasured until after scroll restoration.
+        // 50px bootstrap overscan may leave expanded details unmeasured until after scroll restoration.
         alwaysRender={
           restoringPosition && initialPosition ? { keys: [initialPosition.rowId] } : undefined
         }

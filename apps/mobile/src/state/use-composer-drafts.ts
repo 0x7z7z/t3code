@@ -123,8 +123,7 @@ function contextInsertionRange(
 ) {
   const captured =
     target ?? (lastComposerSelection?.draftKey === draftKey ? lastComposerSelection : null);
-  // Edits made during a file write must not be replaced using stale offsets. A changed
-  // draft receives the file at its end; moving only the caret preserves the captured range.
+  // Append after text edits during writes; caret-only moves preserve the captured insertion range.
   const selection = captured?.text === draft.text ? captured : null;
   const start = Math.max(0, Math.min(selection?.start ?? draft.text.length, draft.text.length));
   return { start, end: Math.max(start, Math.min(selection?.end ?? start, draft.text.length)) };
@@ -371,8 +370,7 @@ const ComposerDraftProjectSchema = Schema.Struct({
   createdAt: Schema.String,
 });
 
-// Recovery can merge two individually valid drafts beyond the send limit, just like
-// attachments. Keep every payload reloadable; send guards ask the user to trim the draft.
+// Recovery can exceed send limits; keep payloads reloadable and let send guards request trimming.
 const PersistedComposerContextSchema = Schema.Struct({
   version: Schema.Literal(1),
   records: ForwardCompatibleArray(ComposerContextRecord),
@@ -478,8 +476,7 @@ function attachmentContextRecord(
     mimeType: attachment.mimeType,
     sizeBytes: attachment.sizeBytes,
   };
-  // A picture picked through the document picker is typed as a plain file, but the
-  // record has to say what it is or no client will offer to open it as an image.
+  // Document pickers label images as files; promote the record so every client can open them as images.
   return attachment.type === "image" || imageMimeType(attachment) !== null
     ? { ...common, kind: "image" as const }
     : { ...common, kind: "file" as const };
@@ -624,13 +621,9 @@ export function decodePersistedComposerState(value: unknown): {
             now,
           ),
         )
-        // importedShareIds are share-import receipts: a contentless draft
-        // carrying one is not empty, or the same native share would be
-        // re-imported after restart.
+        // Retain contentless drafts with import receipts to prevent re-importing native shares after restart.
         .filter(([, draft]) => !isEmptyDraft(draft) || (draft.importedShareIds?.length ?? 0) > 0)
-        // Queued-message edits are in-memory sessions. Their draft outlives a
-        // restart on disk, but the edit record that says which run it belongs
-        // to does not, so the draft would be unreachable and invisible.
+        // Queued-edit sessions are memory-only; persisted drafts would outlive their run association and become unreachable.
         .filter(([key]) => !isQueuedEditDraftKey(key)),
     ),
     stickyModelSelection: parsed.stickyModelSelection ?? null,
@@ -736,19 +729,14 @@ async function writePersistedComposerState(
   }
 }
 
-/**
- * A write failure propagates so the caller can decide whether the restart may
- * proceed.
- */
+/** Propagates write failures so callers can decide whether to restart. */
 export async function flushComposerDrafts(): Promise<void> {
-  // Never land a pre-hydration snapshot: persisted state must merge into the
-  // atoms first, or this write would clobber disk with partial data.
+  // Hydrate before writing or partial atom state would clobber persisted drafts.
   ensureComposerDraftsLoaded();
   if (loadPromise !== null) {
     await loadPromise;
   }
-  // An edit during an awaited write schedules another debounced write, so
-  // keep landing snapshots until no debounce is pending after a queue drain.
+  // Edits during writes schedule more debounces; drain until none remain.
   do {
     while (persistTimer !== null || persistRetryNeeded) {
       if (persistTimer !== null) clearTimeout(persistTimer);
@@ -766,8 +754,7 @@ export async function flushComposerDrafts(): Promise<void> {
         throw error;
       }
     }
-    // Draining also waits for an already-fired debounce whose write is still
-    // gated behind its own hydration await inside the queue.
+    // Draining includes fired debounce writes still awaiting hydration inside the queue.
     await persistenceQueue.run(() => Promise.resolve());
   } while (persistTimer !== null || persistRetryNeeded);
 }
@@ -856,14 +843,11 @@ export async function releaseUnusedComposerAttachmentFiles(
     return;
   }
 
-  // Persisted drafts must hydrate before the reference scan. On a cold start
-  // the atom is still empty, and every file a persisted draft owns would look
-  // unused.
+  // Hydrate before scanning references; cold-start atoms would otherwise mark owned files unused.
   await waitForComposerDraftsLoaded();
   await flushComposerDrafts();
   if (!(await threadOutboxManager.load())) {
-    // An unreadable outbox store must not look like an empty queue: deleting
-    // now would take bytes a persisted queued message still needs.
+    // Unreadable outbox stores may still own files; do not treat them as empty.
     return;
   }
   await flushThreadOutbox();
@@ -898,8 +882,7 @@ export async function releaseUnusedComposerAttachmentFiles(
 
   const { removePersistedComposerAttachmentFile } = await import("../lib/composerImages");
   for (const fileUri of candidates) {
-    // Re-check ownership immediately before each deletion: a restore or edit
-    // can re-own a file after an earlier scan decided it was unused.
+    // Re-check immediately before deletion; restores or edits can acquire ownership after scanning.
     if (
       isComposerAttachmentFileReferenced(fileUri) ||
       incomingShareFileUris.has(composerAttachmentFileReferenceKey(fileUri))
@@ -919,8 +902,7 @@ export async function releaseUnusedComposerAttachmentFiles(
         try {
           await releasePendingAttachmentUploads(environmentId, [attachmentId]);
         } catch (error) {
-          // The server expires stale pending uploads. Local discard must still
-          // complete when the environment is disconnected or deletion fails.
+          // The server expires pending uploads; local discard must survive disconnection or deletion failure.
           console.warn("[composer-attachments] could not remove pending upload", {
             environmentId,
             attachmentId,
@@ -958,8 +940,7 @@ export function schedulePersistComposerState(): void {
   }
   persistTimer = setTimeout(() => {
     persistTimer = null;
-    // The write enters the serialization queue before waiting on hydration,
-    // so flushComposerDrafts' queue drain cannot resolve ahead of it.
+    // Enqueue before awaiting hydration so flushComposerDrafts cannot drain ahead of this write.
     void persistenceQueue.run(async () => {
       try {
         await waitForComposerDraftsLoaded();
@@ -969,8 +950,7 @@ export function schedulePersistComposerState(): void {
         );
         persistRetryNeeded = false;
       } catch (error) {
-        // A failed debounce has no timer left. A later final flush must retry
-        // these edits after persisted ownership can be read safely.
+        // Failed debounces leave no timer; final flush must retry after reading persisted ownership.
         persistRetryNeeded = true;
         console.warn("[composer-drafts] failed to persist drafts", error);
       }
@@ -1070,8 +1050,7 @@ export async function archiveCloudComposerDrafts(
   }
   appAtomRegistry.set(composerDraftsAtom, remaining);
   appAtomRegistry.set(composerCloudDraftsAtom, {
-    // Keep the owner through removal. A crash or failed cleanup can retry it
-    // on cold start before a different account activates.
+    // Retain the owner through removal so cold-start cleanup can retry before another account activates.
     accountId: owner,
     signedOut: {
       ...cloud.signedOut,
@@ -1164,8 +1143,7 @@ export async function removeDeliveredCloudQueuedMessage(
   try {
     await flushComposerDrafts();
   } catch (error) {
-    // The live outbox can still remove this acknowledged message. Keep the
-    // archive update pending so a later successful flush lands it too.
+    // Keep archive updates pending after failure; live outbox removal can still require a later successful flush.
     schedulePersistComposerState();
     throw error;
   }
@@ -1281,10 +1259,7 @@ export function appendComposerDraftText(draftKey: string, value: string): void {
   });
 }
 
-/**
- * Restore paths pass allowOverflow so a failed send never drops the message's
- * own attachments.
- */
+/** Restore with allowOverflow to preserve every attachment after failed sends. */
 export function appendComposerDraftAttachments(
   draftKey: string,
   attachments: ReadonlyArray<DraftComposerAttachment>,
@@ -1584,9 +1559,7 @@ export function mergeComposerDraftContentState(
   };
 }
 
-/**
- * The durable write happens before the share inbox item can be acknowledged.
- */
+/** Persists before the share inbox item can be acknowledged. */
 export async function mergeComposerDraftContent(
   draftKey: string,
   content: ComposerDraftContent,
@@ -1611,9 +1584,7 @@ export async function mergeComposerDraftContent(
     (attachment) =>
       !currentAttachmentIds.has(attachment.id) && !nextAttachmentIds.has(attachment.id),
   ).length;
-  // Publish the content and its import receipt together before the filesystem
-  // await. Typing during persistence then builds on the receipt-bearing state,
-  // and its debounced write is serialized after this transaction.
+  // Publish content and receipt before awaiting disk; concurrent typing then preserves the receipt in later serialized writes.
   if (next !== current) {
     appAtomRegistry.set(composerDraftsAtom, next);
   }
@@ -1659,10 +1630,7 @@ export function sameComposerDraftState(a: ComposerDraft, b: ComposerDraft): bool
   );
 }
 
-/**
- * Restore untouched drafts exactly. If edits landed during merge awaits, remove only the merge's
- * inserted text and attachments so rollback preserves those edits.
- */
+/** Restore untouched drafts exactly; after concurrent edits, remove only merged text and attachments. */
 export function undoComposerDraftMergeState(
   current: Record<string, ComposerDraft>,
   draftKey: string,
@@ -1738,8 +1706,7 @@ export function clearComposerDraftContent(
   options?: {
     readonly clearModelSelection?: boolean;
     readonly clearWorkspaceSelection?: boolean;
-    // Defer sweeping while enqueue persists: a failed write can temporarily remove the outbox owner
-    // before the failure handler restores its attachments.
+    // Defer sweeping during enqueue; rollback can briefly remove ownership before restoring attachments.
     readonly deferAttachmentCleanup?: boolean;
   },
 ): void {
@@ -1813,8 +1780,7 @@ export function retargetNewTaskDraft(
       return current;
     }
     const { workspaceSelection: _workspaceSelection, ...retained } = normalizeDraft(existing);
-    // Pending uploads belong to one server. Keep local bytes across an environment move but drop
-    // the upload stamp so it cannot retain the old server's pending upload.
+    // Keep bytes across environment moves but drop server-specific upload stamps.
     const attachments = retained.attachments.map((attachment) =>
       attachment.uploadEnvironmentId !== undefined &&
       attachment.uploadEnvironmentId !== project.environmentId

@@ -170,8 +170,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
             <Pressable accessible={false} className="absolute inset-0" onPress={close} />
             {!placeable || local === null ? null : !anchor.keyboardWasVisible ? (
               <MenuPopup
-                // Compose aligns its dropdown to the trigger's start whenever it fits, so a
-                // trigger at the hinge-safe position keeps the menu on the anchor's side.
+                // Compose aligns to the trigger's start if it fits; hinge-safe triggers keep menus on their side.
                 anchor={windowHinge ? { ...local, x: left, width: menuWidth } : local}
                 menuWidth={menuWidth}
                 actions={levelActions}
@@ -195,12 +194,9 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                     : { bottom: (rootHeight ?? 0) - local.y + ANCHOR_GAP }),
                 }}
               >
-                {/* Compose DropdownMenu takes popup focus in the pinned Expo UI version.
-                    Keep editor menus in-window so opening one preserves the keyboard. */}
+                {/* Compose DropdownMenu takes focus; in-window editor menus preserve the keyboard. */}
 
-                {/* keyboardShouldPersistTaps: the menu often opens over an
-                  active editor; the first item tap must act, not just
-                  dismiss the keyboard. */}
+                {/* The first item tap must act while the keyboard is open. */}
                 <ScrollView
                   contentContainerStyle={{ paddingVertical: 7 * scale }}
                   bounces={false}

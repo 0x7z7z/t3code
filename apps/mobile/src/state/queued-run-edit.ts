@@ -87,10 +87,7 @@ export function endQueuedRunEdit(
   setQueuedRunEdit(threadKey, null);
 }
 
-/**
- * Attachments replace the message's list wholesale, so kept server attachments
- * are resent alongside the newly uploaded ones, in composer order.
- */
+/** Attachments replace wholesale; resend kept server attachments with uploads in composer order. */
 export function resolveQueuedEditPayload(input: {
   readonly edit: QueuedRunEdit;
   readonly draftContext: OrchestrationMessageContext | undefined;

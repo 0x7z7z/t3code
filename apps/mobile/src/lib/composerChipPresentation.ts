@@ -1,10 +1,7 @@
 import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
 import { imageMimeType } from "@t3tools/shared/image";
 import { videoMimeType } from "@t3tools/shared/video";
-/**
- * These are the sRGB form of the same OKLCH set web uses, so a chip looks the same on every
- * surface. See `composerInlineChip.ts`.
- */
+/** sRGB equivalents of web's OKLCH chip colors; see composerInlineChip.ts. */
 const CONTEXT_CHIP_PRESENTATIONS = {
   image: { accent: "#d55665", symbol: "photo" },
   video: { accent: "#d06217", symbol: "play.rectangle" },

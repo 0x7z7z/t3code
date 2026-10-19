@@ -134,10 +134,7 @@ export function SwipeableScrollGateProvider(props: {
   );
 }
 
-/**
- * Trackpad scrolling can start fresh pan sessions mid-momentum, bypassing failOffsetY.
- * Disable row swipes throughout any active vertical scroll session.
- */
+/** Trackpads can start pans mid-momentum, bypassing failOffsetY; disable swipes during vertical scrolls. */
 export function useSwipeableScrollGate(options?: {
   readonly onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   readonly onScrollBeginDrag?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -225,10 +222,7 @@ interface ThreadSwipeableProps {
   readonly onSwipeableWillOpen?: (methods: SwipeableMethods) => void;
   readonly primaryAction: ThreadSwipeAction;
   readonly threadKey: string;
-  /**
-   * Omitted defaults to Delete. Explicit null removes the secondary action so a gated Snooze
-   * cannot silently fall back to Delete.
-   */
+  /** Omitted defaults to Delete; null removes it so gated Snooze cannot fall back to Delete. */
   readonly secondaryAction?: ThreadSwipeAction | null;
   readonly resetKey?: string;
   readonly dormant?: boolean;
@@ -253,8 +247,7 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
       </View>
     );
   }
-  // Recycled content gets fresh native and animation state. Late callbacks
-  // from the previous row retain its action, never the replacement's action.
+  // Remount recycled rows; late callbacks retain the old action.
   return <ThreadSwipeableRow key={props.resetKey} {...props} />;
 }
 
@@ -397,10 +390,7 @@ function ThreadSwipeableRow(props: ThreadSwipeableProps) {
           dragOffsetFromRight={-8}
           enabled={!isDismissing && props.enabled !== false && gateEnabled}
           enableTrackpadTwoFingerGesture={props.enableTrackpadSwipe ?? true}
-          // Fail the swipe once the pan is vertically dominant (patched-in RNGH
-          // prop) — otherwise trackpad scrolls with ~8px of horizontal drift
-          // start opening rows because the swipe pan runs simultaneously with
-          // the list scroll gesture and never gets disqualified by Y movement.
+          // Reject vertical pans via patched RNGH failOffsetY; simultaneous trackpad scrolls otherwise open rows on horizontal drift.
           failOffsetY={[-10, 10]}
           friction={1}
           onSwipeableClose={() => {

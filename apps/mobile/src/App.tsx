@@ -83,10 +83,7 @@ function AppContent() {
           <SafeAreaProvider>
             <VoiceInputProvider>
               <StatusBar barStyle={themeAppearance === "dark" ? "light-content" : "dark-content"} />
-              {/*
-               * native-stack maps the navigation theme's dark flag to the native bar appearance;
-               * without it, headers remain light even in dark mode.
-               */}
+              {/* native-stack needs the theme's dark flag to select dark native headers. */}
               <GlobalVoiceInputControl>
                 <NativeLayoutMetricsProvider>
                   <IncomingShareProvider>

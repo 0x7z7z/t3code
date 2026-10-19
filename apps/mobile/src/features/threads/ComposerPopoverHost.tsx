@@ -14,10 +14,7 @@ export function useComposerPopoverHost() {
   return useContext(ComposerPopoverHostContext);
 }
 
-/**
- * Mount inside KeyboardStickyView so Android can deliver gestures within the host's bounds.
- * Hide with the composer explicitly: portal content lives outside its subtree.
- */
+/** Mount inside KeyboardStickyView for Android gestures. Hide explicitly because portal content outlives its subtree. */
 export function ComposerPopoverHost(props: {
   readonly hidden: boolean;
   readonly children: ReactNode;

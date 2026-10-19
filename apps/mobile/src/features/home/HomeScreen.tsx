@@ -137,9 +137,7 @@ interface HomeScreenProps {
 }
 
 const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
-// Rows away from the viewport are cheap dormant frames (see
-// swipe-row-activation), so render further ahead: a fast fling then reaches
-// rows that are already built instead of rows still being rebuilt.
+// Offscreen rows are cheap dormant frames; rendering ahead avoids rebuilding during fast flings.
 const THREAD_LIST_V2_DRAW_DISTANCE = 1_000;
 
 function deriveEmptyState(props: {
@@ -218,8 +216,7 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
   const primaryColumn = use(NativePrimaryColumnContext);
   if (Platform.OS !== "ios") return <ScrollView {...props} />;
 
-  // v5 needs the actual content scroll view registered with its screen controller.
-  // The layout observer and header siblings prevent UIKit from finding it implicitly.
+  // Register the scroll view explicitly; layout and header siblings hide it from UIKit.
   return (
     <ScrollViewMarker
       style={{ flex: 1 }}
@@ -232,9 +229,7 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
         {...props}
         // UIKit's scroll-edge material needs the scroll view's own surface color.
         className={cn(props.className, primaryColumn ? "bg-drawer" : "bg-screen")}
-        // Use the column's measured inset so UIKit recognizes the resting top.
-        // Padding visually clears the bar but leaves the native scroll offset
-        // past its edge, activating scroll-edge protection before any scroll.
+        // Use measured insets; padding leaves the native offset past the resting edge and activates scroll-edge protection.
         automaticallyAdjustContentInsets={false}
         contentInsetAdjustmentBehavior="never"
         contentOffset={props.contentOffset ?? { x: 0, y: -insets.top }}
@@ -244,8 +239,7 @@ function HomeScrollView(props: ComponentProps<typeof ScrollView>) {
 }
 
 function renderHomeScrollView(props: ScrollViewProps) {
-  // FlatList clones this element with its cells and ref. Keep the marker inside
-  // the component so those cells remain children of the actual ScrollView.
+  // FlatList clones this with cells and ref; keep the marker inside their actual ScrollView.
   return <HomeScrollView {...props} />;
 }
 
@@ -271,8 +265,7 @@ export function HomeScreen(props: HomeScreenProps) {
   const contentSideInsets = usesNativeWorkspaceColumns
     ? (columnMetrics ?? screenMetrics)?.safeArea
     : undefined;
-  // Android lists that span a wide window (foldables in portrait) keep the
-  // reading width, so rows stay clear of the edges and the camera cutout.
+  // Wide Android lists need reading-width gutters to clear edges and camera cutouts.
   const { width: windowWidth } = useWindowDimensions();
   const androidListGutter =
     Platform.OS === "android"
@@ -353,8 +346,7 @@ export function HomeScreen(props: HomeScreenProps) {
       rows.slice(Math.max(0, state.start - 2), state.end + 3).map((row) => row.key),
     );
   };
-  // Status-bar, accessibility and programmatic scrolls never arm the scroll
-  // gate, so every scroll also activates the visible rows once it settles.
+  // Status-bar, accessibility and programmatic scrolls bypass the gate; activate visible rows after settling.
   const activationTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(activationTimerRef.current), []);
   const handleListScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -446,9 +438,7 @@ export function HomeScreen(props: HomeScreenProps) {
     toggleSnoozedShelf,
     toggleWorkingShelf,
   } = useThreadListV2ShelfPreferences();
-  // The list's clock is state: the compiler caches anything computed from it on
-  // its other inputs, so a render-time `new Date()` would stop moving. The minute
-  // interval and the snooze-wake timer below both advance it.
+  // Keep time in state; the compiler would cache a render-time new Date().
   const [now, setNow] = useState(() => new Date().toISOString());
   const nowMinute = now.slice(0, 16);
   const [snoozeWakeTick, bumpSnoozeWakeTick] = useState(0);
@@ -528,9 +518,7 @@ export function HomeScreen(props: HomeScreenProps) {
       bumpSnoozeWakeTick((tick) => tick + 1);
     }, delayMs);
     return () => clearTimeout(id);
-    // snoozeWakeTick must re-arm the timer even when nextSnoozeWakeAt is
-    // unchanged: after a clamped fire (wake beyond the 32-bit setTimeout
-    // range) the boundary string is identical and the chain would die.
+    // snoozeWakeTick re-arms clamped timers even when the wake date exceeds 32-bit setTimeout and stays unchanged.
   }, [nextSnoozeWakeAt, snoozeWakeTick]);
   const v2SearchQuery = props.searchQuery.trim().toLocaleLowerCase();
   const v2PendingTasks = props.pendingTasks.filter(
@@ -692,8 +680,7 @@ export function HomeScreen(props: HomeScreenProps) {
   };
   const v2KeyExtractor = (item: ThreadListV2ListItem) => item.key;
 
-  // A changed extraData identity invalidates every visible row. Keep the minute clock on items
-  // so ticks update only rows whose displayed text changes.
+  // extraData changes invalidate every visible row; put the minute clock on items to limit updates.
   const v2ExtraData = {
     projectByKey,
     projectTitleByProjectKey: v2ProjectTitleByProjectKey,
