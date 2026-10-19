@@ -832,7 +832,6 @@ function readWindowsEnvironmentSafely(
   }
 }
 
-/** Keep one PATH spelling in copied Windows environment records. */
 export function setWindowsPath(env: NodeJS.ProcessEnv, value: string): void {
   for (const key of Object.keys(env)) {
     if (key.toUpperCase() === "PATH") {

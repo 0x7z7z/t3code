@@ -26,7 +26,6 @@ describe("appendTerminalOutput", () => {
     expect(normalizeTerminalOutput("\u001b[1;32mPASS\u001b[0m ok\u001b]0;title\u0007\n").text).toBe(
       "\u001b[0;1;32mPASS\u001b[0m ok\n",
     );
-    // A colour left on across a newline is restated on the next line.
     expect(normalizeTerminalOutput("\u001b[31mone\ntwo").text).toBe(
       "\u001b[0;31mone\u001b[0m\n\u001b[0;31mtwo\u001b[0m",
     );
@@ -37,7 +36,6 @@ describe("appendTerminalOutput", () => {
   });
 
   it("redraws several lines in place when the cursor moves up", () => {
-    // docker pull / pnpm style: print two bars, move up two lines, redraw both.
     const frames = [
       "layer a: 10%\nlayer b: 10%\n",
       "\u001b[2A\u001b[2Klayer a: 60%\n\u001b[2Klayer b: 40%\n",
@@ -47,7 +45,6 @@ describe("appendTerminalOutput", () => {
   });
 
   it("erases from the cursor to the end of the screen", () => {
-    // log-update style: move up, clear everything below, print the new frame.
     expect(plain("status 1\ndetail 1\n\u001b[2A\u001b[Jstatus 2\n")).toBe("status 2\n");
   });
 
@@ -182,7 +179,6 @@ describe("appendTerminalOutput under adversarial output", () => {
 
 describe("terminalOutputResumeText", () => {
   it("lets a viewer that starts from it apply later chunks exactly as the source does", () => {
-    // Mid-redraw: cursor two lines up, a colour on, and half an escape pending.
     const chunks = [
       "a: 1%\nb: 1%\n",
       "\u001b[2A\u001b[2K\u001b[33ma: 5",
@@ -255,7 +251,6 @@ describe("terminalOutputSpans", () => {
   });
 
   it("keeps text on a coloured background readable on either palette", () => {
-    // "PASS" badge: black on green; "FAIL" badge: grey-white on red.
     const text = normalizeTerminalOutput(
       "\u001b[30;42m PASS \u001b[0m\u001b[1;37;41m FAIL \u001b[0m",
     ).text;

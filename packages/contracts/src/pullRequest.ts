@@ -329,10 +329,7 @@ export const PullRequestListEntry = Schema.Struct({
   state: PullRequestState,
   isDraft: Schema.Boolean,
   mergeability: PullRequestMergeability,
-  /**
-   * Zero where the host has not been asked for the counts yet, which on GitHub is every row a
-   * listing hands over: they are read afterwards, through `PullRequestListStatsInput`.
-   */
+  /** Zero until fetched through `PullRequestListStatsInput`; GitHub listings omit counts. */
   additions: NonNegativeInt,
   deletions: NonNegativeInt,
   createdAt: IsoDateTime,
@@ -574,11 +571,7 @@ export const PullRequestDetail = Schema.Struct({
   viewer: Schema.optional(TrimmedNonEmptyString),
   baseComparison: Schema.optional(PullRequestBaseComparison),
   behindBy: Schema.optional(NonNegativeInt),
-  /**
-   * Whether the host is already armed to merge this on its own. Absent where the host does not
-   * report it, which is not the same as off: a page that reads silence as "not armed" offers to
-   * arm something that is already armed, and a second arming is a write nobody asked for.
-   */
+  /** Absent means the host does not report auto-merge state, not that it is off. */
   autoMergeEnabled: Schema.optional(Schema.Boolean),
   autoMergeMethod: Schema.optional(PullRequestMergeMethod),
   workflowApprovalsRequired: Schema.optional(NonNegativeInt),
@@ -612,11 +605,7 @@ export const PullRequestDetailView = Schema.Struct({
 });
 export type PullRequestDetailView = typeof PullRequestDetailView.Type;
 
-/**
- * A diff arrives a slice at a time, because a large change is more than any host will hand over
- * at once — GitHub refuses outright past 300 files — and more than a viewer can lay out in one
- * go.
- */
+/** GitHub refuses diffs past 300 files, so callers must page large changes. */
 export const PullRequestDiffInput = Schema.Struct({
   ...PullRequestRef.fields,
   cursor: Schema.optional(TrimmedNonEmptyString),

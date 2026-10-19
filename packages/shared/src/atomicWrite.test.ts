@@ -206,7 +206,6 @@ it.layer(NodeServices.layer)("writeFileStringAtomically", (it) => {
         Effect.forkChild,
       );
       yield* Deferred.await(firstAttempt);
-      // Another process saves once the lock clears, before the waiting write retries.
       yield* writeFileStringAtomically({ filePath, contents: "newer" });
 
       assert.isTrue(Exit.isFailure(yield* advanceUntilDone(stale)));
