@@ -105,7 +105,6 @@ it.runIf(hasDbus)("captures through real D-Bus marshalling on a private bus", as
         const options = message.body[1] as Record<string, Variant<unknown>>;
         target = options.target?.value;
         const path = `/org/freedesktop/portal/desktop/request/${message.sender.slice(1).replaceAll(".", "_")}/${options.handle_token?.value}`;
-        // The real transport also has to handle Response before the method reply.
         const signal = Message.newSignal(
           path,
           "org.freedesktop.portal.Request",

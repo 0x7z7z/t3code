@@ -11,11 +11,7 @@ import * as HookInboxStore from "./HookInboxStore.ts";
 import { sendUpstream, TUNNEL_OFFLINE_STATUS } from "./upstream.ts";
 
 const UNREACHABLE_STATUSES = new Set([502, 503, 504, TUNNEL_OFFLINE_STATUS]);
-/**
- * Statuses that mean the environment is there but did not take this request
- * yet: its task's queue is full (429) or it failed while handling it (500).
- * The environment drops a delivery id it has already run, so retrying is safe.
- */
+/** Retry queue-full (429) and handling failures (500); the environment deduplicates delivery ids. */
 const BUSY_STATUSES = new Set([429, 500]);
 const RUN_FAILURE_RETRY_MS = 60_000;
 

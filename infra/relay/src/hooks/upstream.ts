@@ -69,10 +69,7 @@ const readCapped = (response: HttpClientResponse.HttpClientResponse) =>
     );
   });
 
-/**
- * Sends a webhook request through the environment's tunnel. Fails when the
- * environment cannot be reached, and succeeds with None on timeout.
- */
+/** Fails when unreachable; timeout succeeds with None. */
 export const sendUpstream = (baseUrl: string, hook: UpstreamHook) =>
   Effect.gen(function* () {
     const httpClient = yield* HttpClient.HttpClient;

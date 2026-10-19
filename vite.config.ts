@@ -318,9 +318,7 @@ export default defineConfig({
               allow: ["layout"],
               contracts: [
                 {
-                  // CollapsibleTrigger is a bare button with no styled counterpart
-                  // (a disclosure row is not a Button), so its className is the API.
-                  // Every other trigger has one: style them with render={<Button …/>}.
+                  // CollapsibleTrigger has no styled counterpart; other triggers use render={<Button …/>}.
                   pattern: "^CollapsibleTrigger$",
                   allow: ["layout", "color", "typography", "spacing", "shape", "effects", "motion"],
                 },
@@ -330,9 +328,7 @@ export default defineConfig({
         },
       },
       {
-        // Every web file must compile under the React Compiler. Its bailout rules are errors here,
-        // and manual memoization is redundant. No upstream rule bans useMemo/useCallback, hence
-        // t3code/no-manual-memo.
+        // React Compiler owns memoization; upstream rules do not ban redundant useMemo/useCallback.
         files: ["apps/web/src/**/*.{ts,tsx}"],
         rules: {
           "react/exhaustive-effect-dependencies": "error",
@@ -358,9 +354,7 @@ export default defineConfig({
         rules: { "shadcn/no-arbitrary-values": "off" },
       },
       {
-        // Shared client code must not call APIs missing from Hermes. Our ESNext
-        // TypeScript target accepts them even when they would crash mobile at launch.
-        // Tests run on Node and are exempt.
+        // ESNext types allow APIs absent from Hermes; restrict shared client code, exempting Node tests.
         files: [
           "apps/mobile/src/**",
           "packages/client-runtime/src/**",
@@ -371,9 +365,7 @@ export default defineConfig({
         rules: { "t3code/no-hermes-unsupported-apis": "error" },
       },
       {
-        // Mobile is ratcheting toward full React Compiler coverage
-        // (apps/mobile/src/reactCompilerCoverage.test.ts). Directives would hide bailouts from it;
-        // the manual memo hooks go once the allowlist there is empty.
+        // Directives hide bailouts from mobile's compiler-coverage check; retain hooks until its allowlist is empty.
         files: ["apps/mobile/src/**/*.{ts,tsx}"],
         rules: { "t3code/no-manual-memo": ["error", { allowMemoHooks: true }] },
       },

@@ -143,10 +143,7 @@ export const make = Effect.gen(function* () {
     const settingsClick = () => {
       runMenuEffect("open-settings", dispatchMenuAction("open-settings"));
     };
-    // Chromium already pastes as plain text for this chord, so the accelerator
-    // needs nothing from the menu: the composer and the terminal each arm
-    // themselves from the same keydown. Routing it through the renderer anyway
-    // lands a second, injected paste and doubles the text.
+    // Chromium and the renderer already handle this chord; injecting another paste duplicates text.
     const pasteAsTextClick = (
       _item: Electron.MenuItem,
       _window: Electron.BaseWindow | undefined,
@@ -238,11 +235,7 @@ export const make = Effect.gen(function* () {
       {
         label: "View",
         submenu: [
-          /*
-            Not the reload, DevTools or zoom roles: those act on the focused
-            webContents, so with a browser page focused they reload or zoom
-            the guest page and the app UI appears stuck.
-          */
+          /* Native reload/DevTools/zoom roles target focused guests; these commands must target the app. */
           { label: "Reload", accelerator: "CmdOrCtrl+R", click: mainContentsClick("reload") },
           {
             label: "Force Reload",

@@ -607,9 +607,7 @@ describe("HookForwarder", () => {
       });
       const harness = makeHarness();
       const handler = yield* harness.httpEffect;
-      // As the worker runtime runs it: its own tracer around ours, turned off
-      // (see worker.ts). Whether alchemy applies the predicate per event is
-      // only visible on a deployed worker.
+      // Match worker.ts's disabled outer tracer; per-event alchemy behavior requires deployment to observe.
       yield* HttpMiddleware.tracer(
         traceRelayHttpRequestWith(handler, Layer.succeed(Tracer.Tracer, tracer)),
       ).pipe(

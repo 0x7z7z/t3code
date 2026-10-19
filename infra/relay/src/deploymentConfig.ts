@@ -125,11 +125,7 @@ export function managedEndpointTunnelName(stage: string, hash: string): string {
   return `${managedEndpointTunnelNamePrefix(stage)}${stableSuffix(hash)}`;
 }
 
-/**
- * A managed endpoint's public key in webhook URLs: the hash suffix its tunnel
- * name ends with. The hash covers user and environment, so one key names
- * exactly one link, unlike the environment id, which any account can claim.
- */
+/** Tunnel-name hash covers user and environment; public environment ids alone do not identify an authorized link. */
 export const MANAGED_ENDPOINT_KEY_PATTERN = new RegExp(
   `^[0-9a-f]{${MANAGED_ENDPOINT_HASH_LENGTH}}$`,
 );

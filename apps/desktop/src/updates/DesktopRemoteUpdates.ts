@@ -175,11 +175,7 @@ export const listen: Effect.Effect<
         const { latest, changes } = yield* updates.subscribe;
         const disabledReason = Option.getOrNull(yield* updates.disabledReason);
         let attempts: RemoteDesktopUpdateAttempts = { checks: 0, downloads: 0 };
-        // A state event can land while the action that produced it still holds
-        // the reservation (e.g. "available" before the check releases), so a
-        // forked action can be refused with no later state event to retry on.
-        // Rejected actions re-enqueue their state here after a short pause so
-        // the step runs again once the reservation is free.
+        // State events can precede reservation release; re-enqueue refused actions so they retry after release.
         const retries = yield* Queue.unbounded<DesktopUpdateState>();
         const retryLater = (state: DesktopUpdateState) =>
           Effect.sleep(ACTION_RETRY_DELAY).pipe(
@@ -415,11 +411,7 @@ export const listen: Effect.Effect<
         result.state.downloadedVersion === claim.prepared.downloadedVersion &&
         (yield* updates.isInstallActive)
       ) {
-        // Another install (local, or an earlier remote request) already owns
-        // the shutdown and will relaunch the app on the same downloaded
-        // version. This commit joins it: no failure marker, and the client
-        // proves the handoff the same way, by transport loss then the
-        // target version on reconnect.
+        // Join the existing install; reconnect and target-version checks prove its handoff.
         yield* logInfo("remote update commit joining an in-progress install", {
           requestId: commit.requestId,
         });

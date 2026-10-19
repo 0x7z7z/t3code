@@ -1,10 +1,6 @@
 #!/usr/bin/env node
 
-// Icon Composer exports already contain a rounded-square silhouette, and Android masks
-// the central 72dp of a 108dp adaptive canvas, so exporting them as a foreground produces
-// a double-framed icon with the letters cropped by the mask. Instead, each variant gets a
-// full-bleed background layer (the artwork behind the wordmark) and a shared transparent
-// foreground that keeps the wordmark inside the safe zone.
+// Android masks a 72dp safe area inside 108dp; full-bleed backgrounds and a separate wordmark avoid double silhouettes/cropping.
 
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";

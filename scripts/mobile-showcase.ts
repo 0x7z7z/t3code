@@ -809,11 +809,7 @@ async function iosSimulatorDataPath(udid: string): Promise<string> {
   return dataPath;
 }
 
-// generativeexperiencesd posts a "Ready for Apple Intelligence" follow-up
-// banner on an eligible device's first boot, and CoreFollowUp re-surfaces it on
-// every boot until the user dismisses it. Stamping the readiness marker before
-// boot makes the daemon skip the post, and dropping the CoreFollowUp store
-// clears a banner that a previous boot already queued.
+// Apple Intelligence posts persistent first-boot banners; mark readiness and clear queued CoreFollowUp notices.
 async function suppressIosSystemFollowUps(udid: string): Promise<void> {
   const dataPath = await iosSimulatorDataPath(udid);
   const preferences = NodePath.join(dataPath, "Library/Preferences");
@@ -838,9 +834,7 @@ async function suppressIosSystemFollowUps(udid: string): Promise<void> {
 
 async function normalizeIosSimulator(appearance: ShowcaseAppearance, udid: string): Promise<void> {
   await runCommand("xcrun", ["simctl", "ui", udid, "appearance", appearance]);
-  // Always-on displays (Pro Max) dim a locked screen instead of turning it
-  // off, which the lock-screen wake cannot tell from a lit one. Without it the
-  // locked display goes dark and the wake lights it fully.
+  // Disable always-on dimming so lock-screen wake can distinguish off from fully lit.
   await runCommand("xcrun", [
     "simctl",
     "spawn",
@@ -903,9 +897,7 @@ async function ensureIosFullScreenAppsMode(udid: string): Promise<void> {
       "false",
     ]);
   }
-  // A SpringBoard restart is not enough on a freshly created simulator (the
-  // first CI run captured with windowing still active), so reboot the device
-  // and verify the mode actually stuck.
+  // New simulators require a reboot, not just SpringBoard restart, before windowing settings take effect.
   await runCommand("xcrun", ["simctl", "shutdown", udid]);
   await runCommand("xcrun", ["simctl", "boot", udid]);
   await runCommand("xcrun", ["simctl", "bootstatus", udid, "-b"]);
@@ -1025,11 +1017,7 @@ async function presentIosLockScreen(udid: string): Promise<void> {
   await runAxe(udid, ["tap", "--label", "Allow"]).catch(() => undefined);
 }
 
-/**
- * The alert usually wakes the display, but not always. A home press on a dark
- * display only wakes it, so press only after a screenshot proves it is dark;
- * pressing on a lit lock screen would unlock the device instead.
- */
+/** Press home only if a screenshot proves the lock screen is dark; a lit display would unlock instead. */
 async function wakeIosLockScreen(udid: string): Promise<void> {
   const probe = NodePath.join(NodeOS.tmpdir(), `t3-showcase-wake-${udid}.png`);
   try {
@@ -1145,9 +1133,7 @@ async function captureIos(
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const isLastAttempt = attempt === 1;
         try {
-          // A freshly installed Expo development build can spend well over 30s
-          // applying an already-bundled update after it reaches 100%. Killing it
-          // at that point sends the next capture back to the dev launcher.
+          // A fresh Expo build can spend over 30 s applying a bundled update; killing it returns to the launcher.
           await waitForScene(120_000);
           break;
         } catch (error) {
@@ -1166,9 +1152,7 @@ async function captureIos(
     );
     await runCommand("xcrun", ["simctl", "io", simulator.udid, "screenshot", destination]);
     if (capture.device.orientation === "landscape") {
-      // A headless simulator keeps its display portrait while the rotated app
-      // renders sideways inside it; with Simulator.app attached the display
-      // itself rotates. Only post-rotate the former.
+      // Headless displays stay portrait despite app rotation; post-rotate only captures still in portrait.
       const { width, height } = readPngDimensions(await NodeFSP.readFile(destination));
       if (height > width) {
         await runCommand("sips", ["--rotate", "270", destination]);
@@ -1191,11 +1175,7 @@ async function runAdb(serial: string, args: ReadonlyArray<string>): Promise<void
   await runCommand(androidSdkTool("platform-tools/adb"), ["-s", serial, ...args]);
 }
 
-/**
- * Emulator images post their own ongoing notices (keyboard configured, serial
- * console enabled) that would share the shade with the app's. Snoozing hides
- * them for the capture; they come back on their own an hour later.
- */
+/** Snooze emulator system notices for an hour so only app notifications appear in captures. */
 async function snoozeAndroidSystemNotifications(serial: string): Promise<void> {
   const keys = (await adbOutput(serial, ["shell", "cmd", "notification", "list"]))
     .split("\n")
@@ -1329,9 +1309,7 @@ async function writeAndroidShowcaseScene(serial: string, scene: ShowcaseScene): 
   ]);
 }
 
-// Gesture and key-command toggles have no launch-URL flag, so they still go
-// through the preferences file; onboarding, auto-launch and the floating button
-// come from DEV_CLIENT_LAUNCH_FLAGS on the launch URL.
+// Gesture/key-command toggles have no URL flags; set preferences separately from DEV_CLIENT_LAUNCH_FLAGS.
 async function prepareAndroidShowcaseApp(serial: string): Promise<void> {
   const preferences = `<?xml version="1.0" encoding="utf-8" standalone="yes" ?>
 <map>

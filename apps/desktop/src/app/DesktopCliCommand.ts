@@ -29,12 +29,9 @@ const sameWindowsPath = (left: string, right: string) =>
   left.replace(/[\\/]+$/, "").toLowerCase() === right.replace(/[\\/]+$/, "").toLowerCase();
 
 /**
- * Reads, or with `T3_SET` set writes, the user's PATH in the registry, keeping
- * `%VAR%` entries unexpanded. Writes keep REG_EXPAND_SZ (Windows' default for
- * PATH; `SetEnvironmentVariable` would store REG_SZ and break every `%VAR%`
- * entry), then broadcast WM_SETTINGCHANGE so Explorer and the terminals it
- * opens see the change. A failed read exits nonzero rather than reading as
- * empty, so a write never replaces the user's PATH wholesale.
+ * Keep REG_EXPAND_SZ and unexpanded `%VAR%` entries; REG_SZ breaks PATH expansion.
+ * Broadcast WM_SETTINGCHANGE so Explorer's future terminals see writes.
+ * Failed reads must exit nonzero so a subsequent write cannot replace PATH wholesale.
  */
 const WINDOWS_USER_PATH_SCRIPT = `
 $ErrorActionPreference = 'Stop'

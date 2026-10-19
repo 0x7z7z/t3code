@@ -12,12 +12,8 @@ import * as DesktopAssets from "./DesktopAssets.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
 import { makeComponentLogger } from "./DesktopObservability.ts";
 
-// Linux ships as an AppImage, so the .desktop entry users end up with is
-// created by whatever integration tool they use (AppImageLauncher names it
-// appimagekit_<hash>-….desktop) and its filename is not under our control.
-// Electron's app.setAsDefaultProtocolClient resolves the desktop id from
-// setDesktopName, which cannot match those files — so the browser keeps
-// prompting "Choose an application" for every OAuth callback.
+// AppImage integration tools choose the .desktop filename, so Electron's setDesktopName cannot
+// identify the installed entry for setAsDefaultProtocolClient.
 const { logInfo, logWarning } = makeComponentLogger("desktop-linux-url-handler");
 
 export class DesktopLinuxUrlHandlerRegistrationError extends Schema.TaggedError<DesktopLinuxUrlHandlerRegistrationError>()(
@@ -97,9 +93,7 @@ export function renderUrlHandlerDesktopEntry(input: {
   ].join("\n");
 }
 
-// Some docks and bars look the Wayland app id up in the icon theme when no
-// visible desktop entry matches the window, for example an AppImage run without
-// integration. Theme lookups are case-sensitive, so install both spellings.
+// Docks may look up the Wayland app id without a desktop entry; icon theme lookups are case-sensitive.
 const LINUX_THEME_ICON_SIZE = "256x256";
 
 function linuxThemeIconNames(desktopEntryName: string): readonly string[] {
@@ -229,10 +223,8 @@ export const make = Effect.gen(function* () {
       yield* fileSystem.writeFile(target, icon);
       changed = true;
     }
-    // Only keep an existing cache current. Creating one would leave GTK reading
-    // a cache that other tools installing user icons do not update. An icon
-    // newer than the cache also retries a refresh that failed on an earlier
-    // launch.
+    // Creating a cache would leave GTK reading stale icons from other installers.
+    // A newer icon retries a refresh that failed on an earlier launch.
     const cachePath = environment.path.join(hicolorDir, "icon-theme.cache");
     const cachedAt = yield* modifiedAt(cachePath).pipe(Effect.option);
     if (Option.isNone(cachedAt)) return;
@@ -307,10 +299,7 @@ export const make = Effect.gen(function* () {
     yield* installThemeIcons;
 
     yield* updateDesktopDatabase.pipe(
-      // Some MIME implementations, including GIO, use mimeinfo.cache to verify
-      // that a desktop entry is associated with a scheme. Cache refresh is
-      // independently best-effort so a missing update-desktop-database executable
-      // does not prevent xdg-mime from recording the requested default.
+      // GIO verifies scheme associations through mimeinfo.cache. A missing cache updater must not block xdg-mime.
       Effect.catch((error) =>
         logWarning("desktop MIME cache refresh failed", {
           applicationsDir: environment.linuxApplicationsDir,

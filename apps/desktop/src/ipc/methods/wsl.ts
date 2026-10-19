@@ -101,10 +101,7 @@ export const setWslOnly = makeIpcMethod({
   payload: Schema.Boolean,
   result: DesktopWslStateSchema,
   handler: Effect.fn("desktop.ipc.wsl.setOnly")(function* (enabled) {
-    // wsl-only decides which backend the pool spins up as "primary", and that
-    // decision is captured once at layer init. A disabled WSL backend always
-    // leaves Windows primary active, so mode changes can be staged without a
-    // relaunch and applied by the subsequent enable call.
+    // The pool captures its primary at initialization; disabled WSL can stage mode changes until enable.
     const appSettings = yield* DesktopAppSettings.DesktopAppSettings;
     const lifecycle = yield* DesktopLifecycle.DesktopLifecycle;
     const change = yield* appSettings.setWslOnly(enabled);

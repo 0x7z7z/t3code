@@ -64,9 +64,7 @@ const toCloneable = (value: unknown): unknown => {
   return value;
 };
 
-// The objects below borrow the native prototypes so `instanceof` checks pass.
-// Their own properties shadow the native getters, which only work on objects
-// Chromium created itself.
+// Shadow native getters: they reject objects Chromium did not create, even with the correct prototype.
 const withValues = <T extends object>(target: T, values: Record<string, unknown>) => {
   for (const [key, value] of Object.entries(values)) {
     Object.defineProperty(target, key, { value, enumerable: true, configurable: true });

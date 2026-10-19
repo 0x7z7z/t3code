@@ -69,8 +69,6 @@ describe("makeQuitShortcutHandler", () => {
   });
 
   it("shows the hint on a tap without quitting, even when the release is never seen", async () => {
-    // macOS suppresses the letter's keyUp while Cmd is held, so a tap may
-    // produce no keyUp at all. Quit must still not fire.
     const harness = makeHarness();
     await harness.send(makeInput({}));
     expect(harness.preventDefault).toHaveBeenCalledTimes(1);
@@ -181,8 +179,6 @@ describe("makeQuitShortcutHandler", () => {
   });
 
   it("commits a concealed hold when the last Q repeat is never released", async () => {
-    // macOS can drop the final Q keyUp. The quit must land on its own once
-    // repeats stop, rather than sitting armed until an unrelated key arrives.
     const harness = makeHarness();
     await harness.send(makeInput({}));
     await harness.holdFor(QUIT_HOLD_DURATION_MS + 200);

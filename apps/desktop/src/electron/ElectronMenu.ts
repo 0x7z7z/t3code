@@ -97,9 +97,7 @@ function normalizeContextMenuItems(source: readonly ContextMenuItem[]): ContextM
   return normalizedItems;
 }
 
-// Renderer positions arrive in CSS pixels; popup() expects window points, so
-// page zoom must be factored in or menus drift proportionally to their
-// distance from the window origin.
+// popup() takes window points; renderer CSS coordinates must account for page zoom.
 const normalizePosition = (
   position: Option.Option<ElectronMenuPosition>,
   zoomFactor: number,

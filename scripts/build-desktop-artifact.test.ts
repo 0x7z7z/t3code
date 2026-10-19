@@ -98,7 +98,6 @@ import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 
-// Keeps pnpm from auto-installing TypeScript, a types-only peer, into the app.
 const stagePackageExtensions = {
   "electron-webauthn": { peerDependenciesMeta: { typescript: { optional: true } } },
   "@electron-webauthn/macos": { peerDependenciesMeta: { typescript: { optional: true } } },
@@ -507,8 +506,6 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     });
   });
 
-  // pnpm writes "set this to true or false" placeholders into allowBuilds when a
-  // tarball changes. pnpm ignores them, but the release build decode rejects them.
   it.effect("decodes the repo allowBuilds and every file: tarball it names exists", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -1281,9 +1278,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     ),
   );
 
-  // The fixture's t3code.exe is a text placeholder, not an executable. These
-  // cases reach the native-load probe, so pin only that host-platform check to
-  // Linux. Host-native paths and the real Windows tar/archive checks still run.
+  // The fixture t3code.exe is text; pin only its native-load probe to Linux, retaining real host/archive checks.
   it.effect("validates every ASAR-unpacked native in the packaged Windows payload", () =>
     Effect.scoped(
       Effect.gen(function* () {

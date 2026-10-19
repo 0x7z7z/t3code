@@ -138,9 +138,7 @@ export const writeCookies = Effect.fn("BrowserImport.writeCookies")(function* (
       skippedDomains.add(cookieHost(cookie.url));
     }
   }
-  // `set` resolves once the cookie is in memory; Chromium writes the store to
-  // disk on its own schedule. Flush before reporting "Done", so a crash right
-  // after does not lose what the user was just told was imported.
+  // Cookie writes settle in memory; flush to disk before reporting a durable import.
   if (imported > 0) {
     yield* Effect.tryPromise(() => session.cookies.flushStore()).pipe(
       Effect.tapError((error) =>
@@ -200,19 +198,14 @@ export const make = Effect.gen(function* BrowserImportMake() {
     }
 
     if (platform === "darwin" && definition.engine === "chromium") {
-      // macOS attributes the Keychain prompt and the resulting ACL grant to the
-      // executable that asks, so record which one that was — in a packaged build
-      // it is the signed app, in dev whatever binary hosts the main process.
+      // macOS attributes Keychain prompts and ACL grants to the executable, which differs in dev and packaged builds.
       yield* Effect.logInfo("Reading browser cookie key from the keychain", {
         sourceId: definition.id,
         executablePath,
       });
     }
 
-    // The profile directory arrives over IPC, so it is only honoured when the
-    // source itself reported it. Forwarding it unchecked would let `..`
-    // segments walk out of the browser's user-data directory and read any
-    // cookie database reachable on disk.
+    // IPC profile paths must match the source's listing to prevent traversal outside browser user-data.
     const sourceProfiles = yield* listSourceProfiles(definition, pathContext).pipe(
       Effect.provide(platformServices),
     );

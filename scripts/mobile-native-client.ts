@@ -285,11 +285,8 @@ export const installedBinary = Effect.fn("installedBinary")(function* (
 });
 
 /**
- * Run `expo prebuild --clean` without losing `android/.gradle` (task history) and
- * `android/app/.cxx` (native compile outputs). Both invalidate by input, so a clean
- * rebuild only redoes changed work. `app/build` stays out: its autolinking and JS
- * bundle tasks do not declare every input. Each step is best-effort, because a lost
- * cache costs one slower build and must never cost the build.
+ * Preserve input-invalidated Gradle/.cxx caches across prebuild --clean.
+ * Exclude app/build because autolinking/JS tasks omit inputs; cache failures must never fail the build.
  */
 export const prebuildAndroid = Effect.fn("nativeClient.prebuildAndroid")(function* <E, R>(
   mobile: string,

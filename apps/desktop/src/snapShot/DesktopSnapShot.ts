@@ -211,7 +211,6 @@ export class DesktopSnapShotSetupError extends Schema.TaggedError<DesktopSnapSho
       Schema.Literals(["preview-config", "apply-config"]),
     ]),
     reason: Schema.Literals(["unsupported-session", "setup-failed", "shortcut-permissions"]),
-    /** The part of the macOS test capture that failed, and how. */
     step: Schema.optional(Schema.Literals(["find-window", "capture-window"])),
     status: Schema.optional(Schema.Literals(["missing", "timed-out", "exited", "failed"])),
     exitCode: Schema.optional(Schema.Number),
@@ -266,10 +265,7 @@ export class DesktopSnapShotSetupError extends Schema.TaggedError<DesktopSnapSho
   }
 }
 
-/**
- * How a macOS capture command ended, read from the child process error's own fields.
- * What the command printed stays in the error's `cause`.
- */
+/** Inspect command exit fields; printed output remains in cause. */
 function macCommandFailure(cause: unknown) {
   const failure = Predicate.isObject(cause) ? cause : {};
   if ("killed" in failure && failure.killed === true) return { status: "timed-out" } as const;
@@ -1140,9 +1136,7 @@ export const make = Effect.gen(function* () {
       transition.dispose();
       closeLinuxFeedback();
     }
-    // Every client-settings save lands here. Only the fields that decide which
-    // shortcut listener runs may tear it down; a font-size change must not
-    // uninstall a global keyboard hook or drop an approved portal session.
+    // Unrelated settings saves must not uninstall the keyboard hook or drop an approved portal session.
     const shortcutInputsChanged =
       settings.snapShotEnabled !== previousSettings.snapShotEnabled ||
       settings.snapShotIncludeAccessibility !== previousSettings.snapShotIncludeAccessibility ||

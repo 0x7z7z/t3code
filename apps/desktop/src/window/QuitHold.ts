@@ -4,11 +4,8 @@ import type { QuitConfirmationMode, QuitShortcutHintEvent } from "@t3tools/contr
 
 export const QUIT_HOLD_DURATION_MS = 1200;
 export const QUIT_DOUBLE_PRESS_MS = 500;
-// "Still held" is proven by auto-repeat keydowns, not by the absence of a
-// release: macOS suppresses a letter keyUp while the command key is down, so a
-// tap release can go completely unseen and a release-based timer would quit
-// anyway. Once held, quitting waits for Q keyUp or a quiet grace period after
-// repeats stop so they cannot reach the next app.
+// macOS can suppress Q keyUp while Cmd is held; only auto-repeat proves a hold.
+// After a hold, wait for keyUp or a quiet grace period so repeats cannot reach the next app.
 export const QUIT_HOLD_RELEASE_GRACE_MS = 600;
 // A slow repeat rate can exceed the fixed grace. Waiting for two observed
 // cadences keeps the timer behind the next repeat without slowing normal rates.
@@ -46,9 +43,7 @@ export function makeQuitShortcutHandler(
   let lastPressAt = 0;
   let lastRepeatAt = 0;
   let repeatCadenceMs = 0;
-  // Incremented when a press is superseded or explicitly cancelled. A plain
-  // key release does not invalidate its pending mode read: a direct-mode
-  // press must still quit after that read settles.
+  // A key release must not invalidate a pending direct-mode read; only superseding/cancelled presses do.
   let generation = 0;
 
   const clearWatchdog = () => {

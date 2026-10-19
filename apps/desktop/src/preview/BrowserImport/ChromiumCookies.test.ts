@@ -38,9 +38,6 @@ const encryptWindowsV10 = (value: string | Buffer, key: Buffer): Uint8Array => {
 
 describe("cookieScope", () => {
   it("keeps a host-only cookie host-only", () => {
-    // Chromium stores a host-only cookie without a leading dot. Passing any
-    // `domain` to Electron makes it a domain cookie and re-adds the dot, which
-    // would expose the cookie to every subdomain it was never scoped to.
     expect(cookieScope("example.test", "/", true)).toEqual({
       url: "https://example.test/",
       domain: undefined,
@@ -419,9 +416,6 @@ describe("readChromiumCookieDatabase", () => {
           ('legacy.example', 'legacy', '', ${Buffer.from("legacy cleartext")}, '/', 0, 0, 0, 0)`;
       }).pipe(Effect.provide(NodeSqliteClient.layer({ filename })));
 
-      // Chromium's OSCrypt returns unprefixed data as-is on both platforms
-      // (os_crypt_mac.mm and os_crypt_linux.cc: "old data saved as clear
-      // text"), so neither counts it as undecryptable.
       const mac = yield* readChromiumCookieDatabase(filename, { cbcV10: key }, "darwin");
       const linux = yield* readChromiumCookieDatabase(filename, { cbcV10: key }, "linux");
 

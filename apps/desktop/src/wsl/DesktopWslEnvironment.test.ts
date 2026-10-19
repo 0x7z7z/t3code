@@ -28,10 +28,7 @@ import {
 
 const encoder = new TextEncoder();
 
-// The install script only fails the way this file cares about when a real shell
-// runs it, so find one that has the tools it needs: bash directly on Linux, and
-// the WSL distro on a Windows dev box, where Git Bash ships no flock. Anywhere
-// else the executed suite skips and the generated-text assertions stand alone.
+// Use Linux bash or Windows WSL for executed install checks; Git Bash lacks flock.
 const REQUIRED_SHELL_TOOLS = ["flock", "sha256sum", "tar", "mktemp"] as const;
 
 const posixShellRunner = (() => {
@@ -70,10 +67,7 @@ const sh = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const awaitHolder = (condition: string) =>
   `i=0; until ${condition}; do i=$((i + 1)); [ "$i" -lt 500 ] || exit 1; sleep 0.01; done`;
 
-// Holds a cache busy the way a running server does: the holder's argv[0] is the
-// runtime entry, which the prune and install scripts look for in /proc cmdline.
-// It reads a pipe the script keeps open on fd 7, so it exits with the script
-// instead of outliving it on a timer.
+// Use runtime-entry argv[0] for /proc detection; an open pipe keeps it alive only while this script runs.
 const holdRuntimeBusy = (entry: string) =>
   [
     `exec 7> >(exec -a ${entry} cat >/dev/null 2>&1)`,
@@ -192,8 +186,6 @@ describe("WSL runtime cache", () => {
     expect(script).not.toContain('rm -rf "$runtime_lock"');
     expect(script).toContain('mv -T "$runtime_root" "$runtime_stale"');
     expect(script).toContain('mktemp -d "$runtime_parent/.1.2.3-x64.tmp.XXXXXX"');
-    // The release archive wraps everything in one `t3-<version>-linux-x64/`
-    // directory; stripping it puts the executable at `$runtime_root/t3`.
     expect(script).toContain(
       "tar -xzf '/mnt/c/Program Files/T3 Code/wsl-runtime.tar.gz' -C \"$runtime_tmp\" --strip-components=1",
     );

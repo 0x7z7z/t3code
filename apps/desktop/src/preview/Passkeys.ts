@@ -99,9 +99,7 @@ const withDeadline = (ceremony: Promise<PasskeyCeremonyResult>, milliseconds: nu
   return Promise.race([ceremony, deadline]).finally(() => clearTimeout(timer));
 };
 
-// Secure contexts only: https, or http on this machine. Chromium also trusts
-// `*.localhost`, but the macOS layer refuses it, so it is turned away here
-// instead of failing deeper with a less useful error.
+// macOS refuses *.localhost even though Chromium trusts it.
 const isTrustworthyOrigin = (origin: string) => {
   if (!URL.canParse(origin)) return false;
   const { protocol, hostname } = new URL(origin);
@@ -168,9 +166,7 @@ const make = Effect.gen(function* () {
         // Only the guest's main frame runs the bridge preload.
         const frame = event.senderFrame;
         if (!frame || frame !== guest.mainFrame) return notAllowed;
-        // The page shares a JS world with the preload, so nothing it sends can
-        // be trusted for the origin. Read the committed origin before any await:
-        // the frame object outlives a navigation.
+        // The page shares the preload's JS world; read the frame's committed origin before any await/navigation.
         const origin = frame.origin;
         if (!isTrustworthyOrigin(origin) || ceremonyPending || !guest.isFocused()) {
           return notAllowed;

@@ -29,10 +29,8 @@ const BASE_WEB_PORT = 5733;
 const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
 const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
-// HTTP(S) requests to these ports are blocked by the Fetch standard before a
-// browser reaches the network. Keep the complete list here so explicit or
-// future wider offsets cannot produce a URL that curl accepts but browsers
-// reject. https://fetch.spec.whatwg.org/#port-blocking
+// Browsers block these ports before networking even when curl accepts them.
+// https://fetch.spec.whatwg.org/#port-blocking
 const FETCH_BAD_PORTS = new Set([
   0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102,
   103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465,
@@ -316,32 +314,19 @@ export function createDevRunnerEnv({
       delete output.T3CODE_HOME;
     }
 
-    // A dev-runner server is never launcher-managed. When the shell that runs
-    // this script was itself spawned by the machine's managed t3 service (an
-    // agent working inside T3 Code), these leak through and the child server
-    // fails startup with "The service launcher started a different t3 version"
-    // (serviceLauncherClient.ts resolveStartup).
+    // Agents can inherit service-launcher context; dev children must not impersonate a managed service.
     delete output.T3_SERVICE_LAUNCHER_CONTEXT;
     delete output.T3_BOOT_SERVICE_UNIT;
 
     if (!isDesktopMode) {
       output.T3CODE_PORT = String(serverPort);
-      // HOST is Vite's own bind address, and the desktop branch below is the
-      // only place we set it. An inherited one (an exported HOST, a container,
-      // a `HOST=0.0.0.0 npm start` habit) would otherwise reach Vite and pin
-      // its HMR socket to that address — see the `explicitHost` gate in
-      // apps/web/vite.config.ts.
+      // Inherited HOST can pin Vite's HMR socket to an unintended interface.
       delete output.HOST;
       if (mode === "dev" || mode === "dev:web") {
-        // Browser dev is single-origin: everything (including /ws) is proxied
-        // through Vite, so the client must resolve its backend from
-        // window.location.origin rather than a baked-in localhost URL.
+        // Resolve from the browser origin: Vite proxies every backend path, including /ws.
         delete output.VITE_HTTP_URL;
         delete output.VITE_WS_URL;
-        // Deleting is not enough on its own: vite.config.ts calls loadRepoEnv,
-        // which merges `.env`/`.env.local` *under* this env, so a developer
-        // with either URL in their `.env` would get it back and silently lose
-        // single-origin mode.
+        // loadRepoEnv could restore deleted URLs from .env; force single-origin mode explicitly.
         output.T3CODE_SINGLE_ORIGIN_DEV = "1";
       } else {
         output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
@@ -623,13 +608,9 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
     });
 
     const hostEnvironment = yield* HostProcess.Environment;
-    // A dev server started inside a worktree defaults to that worktree's own
-    // (gitignored) `.t3` — see @t3tools/shared/devHome for why this must
-    // outrank an ambient T3CODE_HOME. `--home-dir` still wins.
+    // Worktree state must outrank ambient T3CODE_HOME to avoid shared live state; --home-dir still wins.
     const worktreeHome = yield* resolveWorktreeT3Home(yield* HostProcess.WorkingDirectory);
-    // Trim before choosing: `--home-dir ""` is not a selection, and treating it
-    // as one would skip the worktree default and land on the shared home —
-    // exactly the outcome this precedence exists to prevent.
+    // Treat blank --home-dir as absent so it cannot bypass worktree isolation.
     const resolvedT3Home =
       (input.t3Home?.trim() || undefined) ??
       worktreeHome ??
@@ -658,9 +639,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.T3CODE_PORT)} webPort=${String(env.PORT)} baseDir=${baseDir}`,
     );
 
-    // Before the share block: --dry-run only resolves and prints. Sharing would
-    // replace, then tear down, whatever mapping the port already had — a
-    // surprising side effect from a command documented as inert.
+    // A dry run must precede sharing, which replaces persistent port mappings.
     if (input.dryRun) {
       return;
     }
@@ -674,10 +653,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
           "[dev-runner] --share is not supported for dev:desktop (the renderer is pinned to loopback). Use `dev`, which runs the whole browser stack.",
         );
       } else {
-        // acquireRelease, not share-then-addFinalizer: the mapping outlives this
-        // process (and reboots), so the cleanup has to be registered atomically
-        // with creating it. An interrupt landing in between would otherwise
-        // leave a mapping pointing at a port nothing is listening on.
+        // Register cleanup atomically: share mappings survive process exit and an interrupt could orphan one.
         const shared = yield* Effect.acquireRelease(
           shareDevServer({ webPort: sharedWebPort }),
           () =>
@@ -705,9 +681,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
         );
 
         if (shared) {
-          // The app is reached from the tailnet origin. Vite already allows
-          // *.ts.net hosts; the backend needs the origin for credentialed
-          // requests that bypass the proxy (desktop renderer, direct calls).
+          // Direct credentialed requests bypassing Vite (including desktop) need the tailnet origin allowed.
           env.T3CODE_DEV_ALLOWED_ORIGINS = [
             env.T3CODE_DEV_ALLOWED_ORIGINS,
             new URL(shared.url).origin,
@@ -717,10 +691,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
           if (input.devUrl === undefined) {
             env.VITE_DEV_SERVER_URL = shared.url;
           }
-          // A shared origin serves a remote browser, where unbundled dev's
-          // per-module requests each pay a tailnet round trip — a cold module
-          // graph takes minutes to first paint. Bundled dev collapses that to a
-          // few chunk requests.
+          // Bundle remote dev to avoid a tailnet round trip at each level of the module graph.
           if (env.T3CODE_BUNDLED_DEV === undefined) {
             env.T3CODE_BUNDLED_DEV = "1";
           }
@@ -744,9 +715,7 @@ export function runDevRunnerWithInput(input: DevRunnerCliInput) {
       env,
       extendEnv: false,
       shell: spawnCommand.shell,
-      // Keep Vite+ in the same process group so terminal signals (Ctrl+C)
-      // reach it directly. Effect defaults to detached: true on non-Windows,
-      // which would put the runner in a new group and require manual forwarding.
+      // Effect detaches non-Windows children by default; retain the process group so Ctrl-C reaches Vite+.
       detached: false,
       forceKillAfter: "1500 millis",
     }).pipe(

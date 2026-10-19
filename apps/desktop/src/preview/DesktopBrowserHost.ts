@@ -1,8 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - Names download files on the shared disk.
-/**
- * The preview manager owns the tab's single debugger session and hands it here;
- * the relay shares it.
- */
+/** The manager owns the single debugger attachment; the relay shares it. */
 import {
   DesktopBrowserCommand,
   DesktopBrowserEvent,

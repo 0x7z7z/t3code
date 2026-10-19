@@ -73,12 +73,7 @@ const decodeSchemaVersion = Schema.decodeUnknownEffect(
   Schema.Tuple([Schema.Struct({ value: SchemaVersion })]),
 );
 
-/**
- * Unspecified is imported as Electron's own `unspecified` rather than pinned to
- * Lax, so the target browser applies its default just as the source did;
- * anything unrecognised lands there too, since guessing "none" would widen a
- * cookie's scope on import.
- */
+/** Preserve unspecified SameSite; guessing no_restriction would widen cookie scope. */
 const sameSiteFromColumn = (value: number): ImportedCookie["sameSite"] => {
   if (value === 0) return "no_restriction";
   if (value === 1) return "lax";
@@ -86,11 +81,7 @@ const sameSiteFromColumn = (value: number): ImportedCookie["sameSite"] => {
   return "unspecified";
 };
 
-/**
- * The microsecond value overflows JavaScript's safe integer range and
- * `node:sqlite` refuses to narrow it, so the division happens in SQL and this
- * only ever sees seconds.
- */
+/** Convert microseconds in SQL: node:sqlite refuses integers beyond JavaScript's safe range. */
 const WEBKIT_EPOCH_OFFSET_SECONDS = 11_644_473_600;
 const toUnixSeconds = (webkitSeconds: number): number | undefined => {
   if (webkitSeconds <= 0) return undefined;

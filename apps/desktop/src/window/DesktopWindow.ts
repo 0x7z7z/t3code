@@ -107,9 +107,7 @@ export class DesktopWindow extends Context.Service<
     readonly dispatchSnapShotEvent: (
       event: DesktopSnapShotEvent,
     ) => Effect.Effect<void, DesktopWindowError>;
-    // The Electron `zoomIn`/`zoomOut` menu roles act on whichever webContents
-    // has keyboard focus, so with an embedded preview WebContentsView (or
-    // DevTools) focused they zoom the guest page instead of the app UI.
+    // Electron zoom roles target focused guests; zoomMain must always target the app.
     readonly zoomMain: (direction: MainWindowZoomDirection) => Effect.Effect<void>;
     readonly runMainContentsCommand: (command: MainWindowContentsCommand) => Effect.Effect<void>;
     readonly syncAppearance: Effect.Effect<void>;
@@ -312,11 +310,7 @@ export const make = Effect.gen(function* () {
     }
   });
 
-  // currentMainOrFirst / focusedMainOrFirst fall back to "any first window",
-  // which during WSL-only boot is the connecting splash. The splash is never
-  // registered via setMain, so it must be treated as "no real main window" --
-  // otherwise ensureMain/activate/dispatchMenuAction latch onto it and never
-  // open (or retry) the real main.
+  // Electron's first-window fallback can select the unregistered connecting splash; exclude it so main creation retries.
   const withoutSplash = (window: Option.Option<Electron.BrowserWindow>) =>
     Ref.get(splashWindowRef).pipe(
       Effect.map((splash) =>
@@ -338,9 +332,7 @@ export const make = Effect.gen(function* () {
       direction === "reset" ? 0 : webContents.getZoomLevel() + (direction === "in" ? 0.5 : -0.5),
     );
     if (environment.platform === "darwin") syncMacosWindowButtons(window);
-    // Chromium pushes the new level down to embedded guests, which would zoom
-    // the previewed page along with the app UI. The preview browser keeps its
-    // own zoom, so put each guest back where the preview left it.
+    // App zoom propagates to guests; restore each preview's own zoom.
     yield* previewManager.reapplyZoom();
   });
 
@@ -389,18 +381,13 @@ export const make = Effect.gen(function* () {
       ...getWindowTitleBarOptions(shouldUseDarkColors, environment.platform),
       webPreferences: {
         preload: environment.preloadPath,
-        // Chromium throttles hidden renderers: timers coalesce and rAF stops,
-        // which stalls first paint. Boot unthrottled; the first-reveal trigger
-        // re-enables throttling so a hidden or minimized window goes back to
-        // being cheap after it has been shown once.
+        // Hidden-renderer throttling stalls first paint; re-enable it after the first reveal.
         backgroundThrottling: false,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
         webviewTag: true,
-        // A preview guest's fullscreen request is mirrored onto this embedder,
-        // which would otherwise put the whole window into OS fullscreen. With
-        // both sides opted out the page fills its webview and the window stays.
+        // Guest fullscreen propagates to the embedder; both must opt out to keep it inside the webview.
         disableHtmlFullscreenWindowResize: true,
       },
     });
@@ -622,9 +609,7 @@ export const make = Effect.gen(function* () {
       }
     });
 
-    // Electron's windowMenu close role owns CmdOrCtrl+W. Holding the
-    // close-terminal shortcut can outlive the terminal that handled its first
-    // press, so reject repeats before they reach the native window accelerator.
+    // Terminal-close repeats can outlive the terminal; reject them before the native close-window accelerator.
     const quitShortcutHandler = makeQuitShortcutHandler({
       platform: environment.platform,
       getMode: () =>
@@ -660,9 +645,7 @@ export const make = Effect.gen(function* () {
     window.webContents.on("input-event", (_event, input) => {
       if (input.type === "gestureScrollEnd") window.webContents.send(TRACKPAD_SCROLL_END_CHANNEL);
     });
-    // Ctrl+wheel never reaches the menu accelerators: Chromium reports it here
-    // and leaves applying the zoom to the app. A preview guest under the
-    // pointer emits this on its own webContents and keeps its own zoom.
+    // Ctrl+wheel bypasses menus; guest contents emit their own zoom-changed event.
     window.webContents.on("zoom-changed", (_event, direction) => {
       if (window.isDestroyed()) return;
       runFork(zoomWindow(window, direction));
@@ -780,8 +763,6 @@ export const make = Effect.gen(function* () {
         details.reason === "oom" ||
         details.reason === "killed" ||
         details.reason === "abnormal-exit";
-      // Recovery attempts are bounded so a renderer that dies immediately on
-      // boot cannot reload-loop forever.
 
       runFork(
         Effect.gen(function* () {

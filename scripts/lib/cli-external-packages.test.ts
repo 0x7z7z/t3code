@@ -18,10 +18,7 @@ import {
   shouldBundleCliDependency,
 } from "./cli-external-packages.ts";
 
-// optionalDependencies matter as much as dependencies here: every native family
-// in the list declares its actual platform bindings there (ffi-rs -> @yuuang/*,
-// fff-node -> @ff-labs/fff-bin-*), so reading only `dependencies` would check
-// nothing for exactly those packages.
+// Native bindings live in optionalDependencies; checking dependencies alone misses them.
 const PackageManifest = Schema.Struct({
   dependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   optionalDependencies: Schema.optional(Schema.Record(Schema.String, Schema.String)),
@@ -92,11 +89,7 @@ describe("selectCliRuntimeExternalDependencies", () => {
 });
 
 it.layer(NodeServices.layer)("external package dependency closure", (it) => {
-  // Read manifests off disk from the pnpm store rather than resolving them.
-  // `require("<name>/package.json")` cannot do this job: under pnpm isolation a
-  // transitive package (node-addon-api, ffi-rs) is not reachable by name from
-  // this file at all, and an `exports` map can refuse the `/package.json`
-  // subpath outright (@ff-labs/fff-node).
+  // Read the pnpm store directly: isolation hides transitive names and exports maps can block package.json.
   const readInstalledPackages = Effect.gen(function* () {
     const fileSystem = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -135,8 +128,6 @@ it.layer(NodeServices.layer)("external package dependency closure", (it) => {
     return installed;
   }).pipe(Effect.cached, Effect.runSync);
 
-  // Runtime-external only. The build-only entries resolve `bun:*` and are never
-  // loaded by Node, so their closure genuinely does not need to be external.
   const isRuntimeExternal = isRuntimeExternalCliDependency;
 
   // A cold walk of the pnpm store can exceed the root timeout when the Windows

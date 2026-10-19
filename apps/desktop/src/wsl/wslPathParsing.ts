@@ -37,9 +37,7 @@ export function parseWslDistroList(stdout: Buffer): readonly WslDistro[] {
   return distros;
 }
 
-// Recognizes \\wsl.localhost\<distro>\... and the legacy \\wsl$\<distro>\... so
-// `wslpath` can be invoked inside the distro that actually owns the path,
-// rather than whichever distro is configured for the desktop backend.
+// Resolve UNC paths in their owning distro, which can differ from the configured desktop backend.
 export function extractDistroFromUncPath(windowsPath: string): string | null {
   const match = /^\\\\(?:wsl\.localhost|wsl\$)\\([^\\]+)/i.exec(windowsPath);
   if (!match) return null;

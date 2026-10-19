@@ -70,7 +70,6 @@ describe("HookInboxStore", () => {
           yield* Deferred.succeed(released, undefined);
           const nextAt = yield* Fiber.join(run);
           expect(sent).toEqual(["first"]);
-          // The alarm must not be rescheduled, even if the in-flight send failed.
           expect(nextAt).toBeNull();
           const sql = yield* SqlClient.SqlClient;
           expect(yield* sql`SELECT id FROM held_hooks`).toEqual([]);
@@ -193,9 +192,6 @@ describe("HookInboxStore", () => {
         const now = yield* Clock.currentTimeMillis;
         expect(yield* HookInboxStore.deliverDue(offline.send)).toBeGreaterThan(now + 60_000);
 
-        // A wake means its tunnel just connected, which Cloudflare may not
-        // route to for a few minutes: back to retrying every 10 s, sent to
-        // where the environment is now.
         expect(yield* HookInboxStore.wake(BASE_URL)).toBe(true);
         expect(yield* HookInboxStore.deliverDue(offline.send)).toBe(now + 10_000);
         expect(offline.sent.at(-1)?.baseUrl).toBe(BASE_URL);

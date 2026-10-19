@@ -1,10 +1,6 @@
 /**
- * Id source for picker annotations and their targets, one per page load.
- *
- * The composer keeps annotations keyed by id across preview reloads, and this
- * preload restarts on every page load, so a bare counter reissues ids that a
- * draft already holds. `getRandomValues` rather than `randomUUID`, because
- * plain-http previews (LAN, tailnet) are not secure contexts.
+ * A per-load nonce prevents annotation ids colliding with drafts that survive reloads.
+ * Plain-HTTP previews lack randomUUID; getRandomValues works without a secure context.
  */
 export function createAnnotationIdSource(): (prefix: string) => string {
   const pageLoad = Array.from(crypto.getRandomValues(new Uint32Array(2)), (part) =>

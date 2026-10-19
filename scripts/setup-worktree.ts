@@ -11,11 +11,8 @@ if (!projectRoot) {
 }
 const worktree = NodePath.dirname(import.meta.dirname);
 
-// `shell` resolves `vp` through PATH, including Windows command shims.
-// Setup has no one answering install prompts. Pass pnpm's confirmation flag
-// through vp and leave stdin closed so other prompts fail instead of hanging.
-// Install exactly the locked dependencies so setup never rewrites the lockfile.
-// A stale lockfile must fail setup rather than silently resolving a new one.
+// Shell lookup supports Windows vp shims; closed stdin and --yes avoid unanswered prompts.
+// Frozen dependencies prevent setup from rewriting the lockfile.
 const install = NodeChildProcess.spawnSync("vp i --frozen-lockfile -- --yes", {
   cwd: worktree,
   shell: true,
@@ -23,9 +20,7 @@ const install = NodeChildProcess.spawnSync("vp i --frozen-lockfile -- --yes", {
 });
 if (install.status !== 0) process.exit(install.status ?? 1);
 
-// Env files live as real files in the main checkout; worktrees only get
-// symlinks to them. Only a symlink is ever replaced, so a real env file is
-// never deleted, including when this runs in the main checkout itself.
+// Worktrees link main-checkout env files; replace only symlinks so real files always survive.
 for (const file of ENV_FILES) {
   const source = NodePath.join(projectRoot, file);
   const sourceStat = NodeFS.lstatSync(source, { throwIfNoEntry: false });

@@ -14,7 +14,6 @@ import { LinuxBrowserSecretPath } from "./LinuxBrowserSecret.ts";
 
 const KEY_SALT = "saltysalt";
 const KEY_LENGTH = 16;
-/** macOS stretches the keychain secret; Linux uses a single iteration. */
 const MAC_KEY_ITERATIONS = 1003;
 const LINUX_KEY_ITERATIONS = 1;
 /** Chromium's documented fallback passphrase when no Linux keyring is present. */
@@ -42,11 +41,7 @@ export interface ChromiumKeyMaterial {
   readonly cbcV10?: Buffer;
   readonly cbcV11?: Buffer;
   readonly cbcV11Error?: ChromiumKeyError;
-  /**
-   * AES-128-CBC from an empty passphrase. Some Linux clients wrote records
-   * with it (crbug.com/1195256), so Chromium — and this import — retry with it
-   * after a record's own key fails.
-   */
+  /** Linux clients can encrypt with an empty passphrase; retry it on failure (crbug.com/1195256). */
   readonly cbcEmpty?: Buffer;
   readonly gcmV10?: Buffer;
 }
@@ -55,13 +50,8 @@ const derive = (passphrase: string, iterations: number) =>
   NodeCrypto.pbkdf2Sync(passphrase, KEY_SALT, iterations, KEY_LENGTH, "sha1");
 
 /**
- * Via the CLI the prompt says "security" and "Always Allow" grants trust to a
- * tool every process on the machine can invoke; in-process it names this app
- * and the grant belongs to it.
- *
- * Deliberately untimed: macOS answers this with a modal, and a timeout racing
- * the user means the prompt can be approved while nothing is left listening,
- * which reads as "approving did nothing".
+ * In-process Keychain access attributes prompts and ACL grants to this app, not the shared security CLI.
+ * Modal prompts must remain untimed so approval never races a discarded listener.
  */
 const readKeychainSecret = Effect.fn("ChromiumKeys.readKeychainSecret")(function* (
   service: string,

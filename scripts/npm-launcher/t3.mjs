@@ -36,7 +36,6 @@ async function get(url) {
   return response;
 }
 
-/** Downloads `url` to `file` and returns its sha256, showing progress on a terminal. */
 async function download(url, file) {
   const response = await get(url);
   const total = Number(response.headers.get("content-length")) || 0;
@@ -112,13 +111,7 @@ const isComplete = (dir) => {
   }
 };
 
-/**
- * Moves a finished staging folder to `dir`. Rename never replaces an existing
- * folder, so a complete install another launcher (or `t3 update`) published
- * first is kept, never deleted from under a running process. Only a folder
- * without the completion marker, left by an interrupted older installer, is
- * cleared before trying again.
- */
+/** Preserve concurrently published complete installs; replace only incomplete folders without the completion marker. */
 function publish(staging, dir) {
   try {
     fs.renameSync(staging, dir);
@@ -141,9 +134,7 @@ async function main() {
   const dir = path.join(t3Home(), "runtime", "versions", version);
   if (!isComplete(dir)) await install(dir, key);
 
-  // A service launcher talks to its server over IPC; pass that channel and
-  // signals through. In a terminal, Ctrl-C already reaches the child directly,
-  // so forwarding SIGINT too would deliver it twice.
+  // Service IPC and signals must reach the child; terminal Ctrl-C already does, so do not forward SIGINT twice.
   const ipc = process.send !== undefined;
   const child = spawn(
     path.join(dir, process.platform === "win32" ? "t3.exe" : "t3"),

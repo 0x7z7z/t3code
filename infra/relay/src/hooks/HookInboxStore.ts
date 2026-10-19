@@ -28,12 +28,7 @@ const MAX_RETRY_DELAY = Duration.minutes(10);
 
 const MAX_COUNTED_FAILURES = 25;
 
-/**
- * A wake means its tunnel just connected, but Cloudflare can take a few
- * minutes to route the hostname to it, so the first 3 minutes retry every
- * 10 s. After that the environment is likely gone again: 30 s, 1 min, 2 min,
- * ... up to 10 min.
- */
+/** Cloudflare can take minutes to route a new tunnel; retry every 10 s for three minutes before backing off. */
 export const retrySchedule = Schedule.spaced("10 seconds").pipe(
   Schedule.upTo({ times: 18 }),
   Schedule.concat(

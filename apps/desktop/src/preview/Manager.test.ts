@@ -151,8 +151,6 @@ describe("previewWindowOpenAction", () => {
   });
 
   it("opens a real window for scripted popups so the opener survives", () => {
-    // OAuth SDKs read a null `window.open()` as a blocked popup, and they need
-    // the opener alive to receive the credential back.
     expect(PreviewManager.previewWindowOpenAction(details({}))).toBe("popup");
     expect(
       PreviewManager.previewWindowOpenAction(details({ url: "http://localhost:5173/auth" })),
@@ -169,7 +167,6 @@ describe("previewWindowOpenAction", () => {
   });
 
   it("keeps a form POST with a body on the in-place path", () => {
-    // A new tab can only reopen the URL as a GET, which would drop the body.
     const postBody = { data: [], contentType: "application/x-www-form-urlencoded" };
     expect(
       PreviewManager.previewWindowOpenAction({
@@ -180,9 +177,6 @@ describe("previewWindowOpenAction", () => {
   });
 
   it("does not hand a window to schemes that cannot be hardened", () => {
-    // A popup skips the `will-attach-webview` hardening, so it only gets a window
-    // when its preferences can be overridden. Chromium copies the guest's
-    // preferences for `about:blank` and forbids overriding them.
     for (const url of [
       "javascript:alert(1)",
       "file:///etc/passwd",
@@ -194,8 +188,6 @@ describe("previewWindowOpenAction", () => {
   });
 
   it("denies a blank window instead of blanking the opener", () => {
-    // MSAL opens `about:blank` first and falls back to a redirect on `null`;
-    // loading the blank page into the tab would destroy that fallback.
     for (const url of ["about:blank", ""]) {
       for (const disposition of ["new-window", "foreground-tab"] as const) {
         expect(PreviewManager.previewWindowOpenAction(details({ url, disposition }))).toBe("deny");
@@ -329,7 +321,6 @@ const withManager = <A>(
 
 interface TestCapturedPreviewImage {
   readonly toJPEG: () => Buffer;
-  /** Only fixtures that deliver picture-in-picture frames need pixels to fingerprint. */
   readonly toBitmap?: () => Buffer;
   readonly getSize: () => { readonly width: number; readonly height: number };
 }
@@ -849,7 +840,6 @@ describe("PreviewManager", () => {
         const older = makeFaviconWebContents({ id: 42 });
         const newer = makeFaviconWebContents({ id: 43 });
         for (const tab of [older, newer]) Object.assign(tab.webContents, { hostWebContents: host });
-        // Electron names one arbitrary guest here when several share a focused window.
         getFocusedWebContents.mockReturnValue(newer.webContents as never);
         fromId.mockReturnValue(older.webContents);
         yield* manager.createTab("tab_older");
@@ -875,7 +865,6 @@ describe("PreviewManager", () => {
         expect(preventDefault).toHaveBeenCalledOnce();
         expect(send).toHaveBeenCalledExactlyOnceWith("desktop:menu-action", "view.reopenClosed");
 
-        // The person types in the older tab, so keys reaching the newer one are an agent's.
         Object.assign(newer.webContents, { focusedFrame: null });
         const agentInput = newer.listeners.get("before-input-event")!;
         const agentPreventDefault = vi.fn();
@@ -1067,9 +1056,6 @@ describe("PreviewManager", () => {
   effectIt.effect("detaches through the pinned debugger after the webview is destroyed", () =>
     withManager((manager) =>
       Effect.gen(function* () {
-        // Real Electron throws on any `wc.debugger` access once the
-        // WebContents is destroyed, so cleanup must go through the debugger
-        // reference captured at attach time (electron/electron#53376).
         let destroyed = false;
         let attached = false;
         const debuggerOff = vi.fn();
@@ -1578,9 +1564,6 @@ describe("PreviewManager", () => {
     ),
   );
 
-  // The guest reports whatever zoom level Chromium handed it from the app
-  // window, so the tab's own zoom is the source of truth in both directions:
-  // asserted onto every guest, never read back off one.
   effectIt.effect("keeps the tab's own zoom instead of the guest's reported zoom", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -1691,8 +1674,6 @@ describe("PreviewManager", () => {
     ),
   );
 
-  // Zooming the app UI pushes the window's zoom level onto every guest, so the
-  // preview has to be put back at the zoom the user gave it.
   effectIt.effect("re-applies each tab's own zoom when the app window zooms", () =>
     withManager((manager) =>
       Effect.gen(function* () {
@@ -1838,8 +1819,6 @@ describe("PreviewManager", () => {
         yield* manager.registerWebview("tab_scheme", 42);
         yield* Effect.yieldNow;
 
-        // Guests start with a transparent base; dark-scheme pages need an opaque
-        // one or Chromium skips their dark canvas.
         const opaqueBase = {
           color: { r: 255, g: 255, b: 255, a: 1 },
         };
@@ -1891,7 +1870,6 @@ describe("PreviewManager", () => {
       id,
       isDestroyed: () => destroyed,
       isDevToolsOpened: () => {
-        // Electron throws from native methods once a WebContents is destroyed.
         if (destroyed) throw new TypeError("Object has been destroyed");
         return false;
       },
@@ -2005,11 +1983,7 @@ describe("PreviewManager", () => {
         audible = next;
         listeners.get("audio-state-changed")?.({ audible: next } as never);
       },
-      /**
-       * Starts playing between the attach-time read and the post-attach
-       * reconcile, without a delivered event — the window in which
-       * audio-state-changed fires against a guest the tab does not own yet.
-       */
+      /** Simulate playback starting during attach before the tab owns the guest and can receive its events. */
       startPlayingAfterFirstRead: () => {
         audibleAfterFirstRead = true;
       },
@@ -2158,9 +2132,6 @@ describe("PreviewManager", () => {
         yield* manager.registerWebview("tab_audio_window", 42);
         yield* Effect.yieldNow;
 
-        // audio-state-changed for this transition was dropped: it fired before
-        // the tab owned the guest. Without a post-attach reconcile the icon
-        // stays wrong until the next real transition, which may never come.
         expect(states.at(-1)?.audible).toBe(true);
       }),
     ),
@@ -2188,7 +2159,6 @@ describe("PreviewManager", () => {
         yield* Effect.yieldNow;
         expect(states.at(-1)?.audible).toBe(true);
 
-        // Chromium re-emits per media element; only real transitions publish.
         const publishedAfterFirst = states.length;
         guest.emitAudioState(true);
         yield* Effect.yieldNow;
@@ -2518,8 +2488,6 @@ describe("PreviewManager", () => {
           /\/browser-artifacts\/browser-screenshot-example-com-[^.]+\.png$/,
         );
 
-        // Chromium reports UnknownVizError while a hidden guest warms its
-        // first compositor frame, so transient failures are retried.
         capturePage.mockClear();
         capturePage.mockRejectedValueOnce(new Error("UnknownVizError"));
         capturePage.mockRejectedValueOnce(new Error("UnknownVizError"));
@@ -2571,7 +2539,6 @@ describe("PreviewManager", () => {
         fromId.mockReturnValue(makeTestPreviewWebContents(capturePage));
         yield* manager.createTab("tab_1");
         yield* manager.registerWebview("tab_1", 42);
-        // it.effect keeps TestClock fixed until explicitly advanced.
         const first = yield* manager.captureScreenshot("tab_1");
         const second = yield* manager.captureScreenshot("tab_1");
 
@@ -3446,7 +3413,6 @@ describe("PreviewManager", () => {
             expect(windowThrottling.mock.calls).toEqual([[false], [true]]);
             expect(webviewSend).toHaveBeenLastCalledWith("preview:recording-cursor", false);
           } finally {
-            // Release stalled native calls after a failing assertion against unchanged base.
             firstWarmup.resolve(image);
             lateWarmup.resolve(image);
           }
@@ -3884,7 +3850,6 @@ describe("PreviewManager", () => {
           expect.objectContaining({ data: Buffer.from("jpeg:changed-page").toString("base64") }),
         );
 
-        // A frame whose pixels cannot be read has no fingerprint and is still delivered.
         pixelsReadable = false;
         yield* TestClock.adjust(100);
 
