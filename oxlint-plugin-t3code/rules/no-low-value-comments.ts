@@ -10,6 +10,7 @@ const TASK_LINK_PATTERN = /#\d+|https?:\/\//u;
 // `owner/repo#123` names an external tracker; a bare `#123` is our own history.
 const BARE_ISSUE_REF_PATTERN = /(?<![\w/&#-])#\d{3,6}(?![\w-])/u;
 const CODE_SPAN_PATTERN = /`[^`]*`/gu;
+const PUBLIC_BOILERPLATE_PATTERN = /^@public\s+Service construction is part of the canonical/u;
 const JSDOC_TYPE_PATTERN = /^@(?:param|returns?|type|typedef)\s+\{/u;
 const EMPTY_JSDOC_TAG_PATTERN = /^@(?:param(?:\s+\[?[\w$.]+\]?)?|returns?)$/u;
 const COMMENTED_CODE_PATTERN =
@@ -98,6 +99,9 @@ export default defineRule({
       }
       if (isTypeScript && lines.some((line) => JSDOC_TYPE_PATTERN.test(line))) {
         return "Drop the JSDoc type; TypeScript already has it.";
+      }
+      if (lines.some((line) => PUBLIC_BOILERPLATE_PATTERN.test(line))) {
+        return "Keep `@public` alone; the boilerplate after it says nothing about this export.";
       }
       if (lines.some((line) => EMPTY_JSDOC_TAG_PATTERN.test(line))) {
         return "Drop the JSDoc tag that has no description.";
