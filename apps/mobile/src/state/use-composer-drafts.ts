@@ -87,11 +87,7 @@ export function rememberComposerDraftSelection(
   lastComposerSelection = { draftKey, text, ...selection };
 }
 
-/**
- * Inserting a chip moves the caret past it here; without reading this back the editor would
- * restore the pre-insert offset and leave the caret sitting before the chip the user just
- * added.
- */
+/** Read the post-chip-insertion selection or the editor restores the pre-insert caret before the chip. */
 export function readComposerDraftSelection(
   draftKey: string,
   text: string,
@@ -1664,11 +1660,8 @@ export function sameComposerDraftState(a: ComposerDraft, b: ComposerDraft): bool
 }
 
 /**
- * When the draft is untouched since `merged` (the state captured right after
- * the merge), the pre-merge snapshot comes back exactly. When the user edited
- * the draft during the merge's awaits, only what the merge inserted (the
- * appended text and the new attachments) is taken back out, so the user's edits
- * survive the rollback.
+ * Restore untouched drafts exactly. If edits landed during merge awaits, remove only the merge's
+ * inserted text and attachments so rollback preserves those edits.
  */
 export function undoComposerDraftMergeState(
   current: Record<string, ComposerDraft>,
@@ -1745,10 +1738,8 @@ export function clearComposerDraftContent(
   options?: {
     readonly clearModelSelection?: boolean;
     readonly clearWorkspaceSelection?: boolean;
-    // Send clears the draft while the durable outbox write is still in flight.
-    // Sweeping then would race the write: a failed enqueue rolls the message
-    // out of the queue mid-sweep and its files get deleted right before the
-    // failure handler restores them.
+    // Defer sweeping while enqueue persists: a failed write can temporarily remove the outbox owner
+    // before the failure handler restores its attachments.
     readonly deferAttachmentCleanup?: boolean;
   },
 ): void {
@@ -1822,10 +1813,8 @@ export function retargetNewTaskDraft(
       return current;
     }
     const { workspaceSelection: _workspaceSelection, ...retained } = normalizeDraft(existing);
-    // Pending uploads live on one server. Crossing environments keeps the
-    // local bytes (the upload worker re-sends them to the new environment)
-    // but drops the old stamp, so it cannot pin the source environment's
-    // pending upload alive from the moved draft.
+    // Pending uploads belong to one server. Keep local bytes across an environment move but drop
+    // the upload stamp so it cannot retain the old server's pending upload.
     const attachments = retained.attachments.map((attachment) =>
       attachment.uploadEnvironmentId !== undefined &&
       attachment.uploadEnvironmentId !== project.environmentId
@@ -1887,8 +1876,6 @@ export async function clearComposerDraftsEnvironment(environmentId: EnvironmentI
   await releaseUnusedComposerAttachmentFiles(removedAttachments);
 }
 
-// One atom per draft key, so typing in one composer only notifies readers of
-// that draft instead of every subscriber to the whole drafts map.
 const composerDraftAtom = Atom.family((draftKey: string) =>
   Atom.make((get) => get(composerDraftsAtom)[draftKey] ?? EMPTY_DRAFT),
 );
@@ -1900,8 +1887,6 @@ function sameDrafts(a: ComposerDraftsByKey, b: ComposerDraftsByKey): boolean {
   const keys = Object.keys(a);
   return keys.length === Object.keys(b).length && keys.every((key) => a[key] === b[key]);
 }
-// The question drafts under one key prefix. Equal while only other drafts change
-// (the open thread's composer text, for example), so typing does not notify readers.
 export const questionAttachmentDraftsAtom = Atom.family((prefix: string) =>
   Atom.make((get): ComposerDraftsByKey => {
     if (prefix === "") return EMPTY_DRAFTS;
@@ -1912,7 +1897,6 @@ export const questionAttachmentDraftsAtom = Atom.family((prefix: string) =>
   }).pipe(Atom.withEquality(sameDrafts)),
 );
 
-// New-task drafts only; equal while a thread composer's text changes.
 export const newTaskComposerDraftsAtom = Atom.make((get): ComposerDraftsByKey => {
   const matching = Object.entries(get(composerDraftsAtom)).filter(([key]) =>
     isNewTaskDraftKey(key),
@@ -1921,7 +1905,6 @@ export const newTaskComposerDraftsAtom = Atom.make((get): ComposerDraftsByKey =>
 }).pipe(Atom.withEquality(sameDrafts));
 
 type ComposerDraftUploadSource = Pick<ComposerDraft, "attachments" | "project">;
-// What the upload worker reads: equal while only draft text changes.
 type ComposerDraftUploadSources = Readonly<Record<string, ComposerDraftUploadSource>>;
 export const composerDraftUploadSourcesAtom = Atom.make((get): ComposerDraftUploadSources =>
   Object.fromEntries(
@@ -1947,7 +1930,6 @@ type ComposerDraftSettings = Pick<
   "modelSelection" | "runtimeMode" | "interactionMode"
 >;
 const EMPTY_DRAFT_SETTINGS: ComposerDraftSettings = {};
-// Text edits copy the other fields by reference, so this stays equal while typing.
 const composerDraftSettingsAtom = Atom.family((draftKey: string) =>
   Atom.make((get): ComposerDraftSettings => {
     const draft = get(composerDraftAtom(draftKey));

@@ -50,7 +50,6 @@ const RESPONSIVE_CLASSES = ["sm:p-6", "sm:text-lg"];
 const runFixture = (globalCss: string, probeSource: string): FixtureOutput => {
   const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "uniwind-platform-"));
   try {
-    // So `@import "tailwindcss"` and `@import "uniwind"` resolve like in the app.
     NodeFS.symlinkSync(
       NodeFS.realpathSync(new URL("../../node_modules", import.meta.url)),
       NodePath.join(tempDir, "node_modules"),
@@ -208,8 +207,7 @@ describe("uniwind keeps selector and transformer behavior", () => {
       expect(styles?.["data-x:underline"]?.every((style) => style.dataAttributes?.["data-x"])).toBe(
         true,
       );
-      // `[aria-disabled="true"]` is not expressible at runtime; emitting it
-      // unconditionally (the pre-#9355 behavior) styles the element always.
+      // aria-disabled is not expressible at runtime; emitting it unconditionally always applies the style.
       expect(styles).not.toHaveProperty("aria-disabled:text-red-500");
     }
   });

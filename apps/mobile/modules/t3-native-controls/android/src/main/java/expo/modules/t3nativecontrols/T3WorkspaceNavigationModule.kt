@@ -54,7 +54,6 @@ class T3WorkspaceNavigationModule : Module() {
   }
 }
 
-/** Material3 bottom navigation for the compact workspace. */
 class T3WorkspaceNavigationView(
   context: Context,
   appContext: AppContext

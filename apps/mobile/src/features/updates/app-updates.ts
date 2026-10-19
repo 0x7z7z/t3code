@@ -33,17 +33,13 @@ export interface AppUpdateEnvironment {
   readonly confirmInstallNow: () => Promise<boolean>;
   readonly flushPendingWrites: () => Promise<void>;
   /**
-   * Whether a deferred restart may fire right now: the app must still be
-   * backgrounded (flush latency or an iOS suspend can push the continuation
-   * into the next foreground session) and not merely paused behind an
-   * app-initiated handoff like the Android image picker.
+   * Re-check that the app is still backgrounded after flushing, and exclude app-initiated handoffs
+   * such as Android's image picker.
    */
   readonly isSafeToRestartInBackground: () => Promise<boolean>;
   /**
-   * With `includeCurrent`, an app that is already backgrounded fires
-   * immediately (so a backgrounding that raced module load is not missed);
-   * without it, only a future transition fires, so an attempt that already
-   * failed in the current background session cannot retry in a tight loop.
+   * includeCurrent catches backgrounding during module load. Omit it after a failed install so
+   * the same background session cannot retry in a tight loop.
    */
   readonly onNextBackground: (apply: () => void, includeCurrent: boolean) => void;
   readonly onForegroundStay: (apply: () => void) => void;
@@ -277,12 +273,7 @@ async function performAppUpdateCheck(
 
 type AppUpdateInstallOutcome = "installed" | "flush-failed" | "restart-failed";
 
-/**
- * Restarting mid-session while native surfaces are mounted is the crashiest
- * moment expo-updates has, so the restart flushes persistence first and, by
- * default, waits for a backgrounding — where nothing is rendering and the
- * teardown is invisible.
- */
+/** Flush persistence and defer restart until backgrounded to avoid tearing down mounted native surfaces. */
 async function installAppUpdate(
   client: AppUpdateClient,
   environment: AppUpdateEnvironment,

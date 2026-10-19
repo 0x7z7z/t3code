@@ -140,7 +140,6 @@ export function markdownWithHtml(markdown: string): string {
   return markdown;
 }
 
-// A delimiter row such as `|---|:--:|`, possibly inside a blockquote or list item.
 function isTableDelimiterRow(line: string): boolean {
   if (!line.includes("-")) return false;
   const row = line.replace(/^[ \t>]+/, "").trim();
@@ -161,9 +160,8 @@ function mayHaveTableUnderText(markdown: string): boolean {
 }
 
 /**
- * GFM lets a table interrupt a paragraph, but the native parser (md4c) only starts a table
- * on a paragraph's first line, so a table right under a line of text renders as one
- * run-on paragraph. Insert the blank line md4c needs before each such table.
+ * md4c only starts tables at a paragraph's first line, unlike GFM. Insert a blank line before
+ * tables directly below paragraph text.
  */
 export function markdownWithTableBreaks(markdown: string): string {
   if (!mayHaveTableUnderText(markdown)) return markdown;

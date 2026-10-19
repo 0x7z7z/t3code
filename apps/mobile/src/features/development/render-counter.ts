@@ -1,12 +1,6 @@
-// Dev-only render counter driven by `scripts/measure-renders.mts` through the
-// Hermes inspector. It wraps the DevTools hook's commit callback, so it must load
-// before React renders anything; see `render-counter-entry.ts`.
-//
-// The fiber walk matches the web counter used for React Compiler work: a
-// bailed-out subtree keeps `child === alternate.child`, so it is not descended,
-// because fibers there keep stale flags and alternates from older commits.
-// PerformedWork (1) is cleared whenever React clones a fiber, so a reached fiber
-// with it set rendered in this commit.
+// Load before React renders so the DevTools commit hook is wrapped (see render-counter-entry.ts).
+// Skip fibers with child === alternate.child: bailed-out subtrees retain stale flags.
+// PerformedWork is cleared on cloning, so a reached fiber with that flag rendered this commit.
 
 interface Fiber {
   readonly tag: number;
@@ -145,7 +139,6 @@ const sorted = (map: Map<string, number>) =>
 install(state);
 
 Object.assign(globalThis, {
-  /** Routes an app link in-process, so drivers need no simctl or adb access. */
   __t3RenderCounterOpen(url: string) {
     const { Linking } = require("react-native") as typeof import("react-native");
     void Linking.openURL(url);

@@ -139,7 +139,6 @@ export interface VerticalHinge {
   readonly width: number;
 }
 
-/** Moves the list/detail split onto a book-posture hinge so neither pane straddles the crease. */
 export function alignListPaneToHinge(input: {
   readonly layout: Layout;
   readonly hinge: VerticalHinge | null;
@@ -154,10 +153,8 @@ export function alignListPaneToHinge(input: {
 }
 
 /**
- * Whether the workspace root must keep the primary sidebar open. Native split
- * columns keep a sidebar toggle in the empty detail header, so only they may
- * collapse it there. Compact layouts stay pinned so a reveal request (such as
- * focusing search) cannot flip the saved preference for a later split view.
+ * Only native split columns retain a sidebar toggle in empty detail. Pin compact layouts so reveal
+ * requests cannot alter the preference saved for a later split view.
  */
 export function isPrimarySidebarPinned(input: {
   readonly pathname: string;

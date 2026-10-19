@@ -866,8 +866,7 @@ describe("mobile composer drafts", () => {
     expect(getComposerDraftSnapshot(draftKey).context).toBeUndefined();
   });
 
-  // Hydration is one-shot per module instance and the attachment sweep now
-  // triggers it too, so this test must observe it before any sweep test runs.
+  // Hydration is one-shot per module and attachment sweeps trigger it; observe it before sweep tests.
   it("hydrates generic file attachments from their saved local paths", () => {
     const file = {
       id: "file-1",

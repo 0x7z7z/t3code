@@ -1,11 +1,8 @@
 import type { NativeLayoutMetrics } from "./reserved-regions";
 
 /**
- * Hardware family for device-specific chrome. Column count still comes from
- * `deriveLayout`: an iPad in Slide Over or a narrow window on the Duo's inner
- * display keeps its device type but has no room for a sidebar.
- *
- * iOS only. Android has no layout metrics observer and always reads "phone".
+ * Hardware type does not imply column count: iPad Slide Over and narrow Duo windows may lack sidebar space.
+ * Android has no metrics observer and reports phone.
  */
 export type DeviceType = "phone" | "duo-folded" | "duo-unfolded" | "pad";
 

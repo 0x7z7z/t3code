@@ -80,7 +80,6 @@ const median = (values: ReadonlyArray<number>) => {
   return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
 };
 
-/** One Hermes inspector session, reached through Metro's inspector proxy. */
 const connectInspector = Effect.fn("measure.connectInspector")(function* (metro: string) {
   const http = yield* HttpClient.HttpClient;
   const targets = yield* http
@@ -183,7 +182,6 @@ const streamingItem = (projection: OrchestrationV2ThreadProjection) =>
     (item) => (item.type === "assistant_message" || item.type === "reasoning") && item.streaming,
   );
 
-/** A thread streams a long reply: the open one, or with `route` a thread the app never shows. */
 const measureStreamReply = Effect.fn("measure.streamReply")(function* (
   options: Options,
   run: number,
@@ -256,7 +254,6 @@ const measureStreamReply = Effect.fn("measure.streamReply")(function* (
 const appLink = (options: Options, route: string) =>
   `__t3RenderCounterOpen(${encodeJson(`${options.scheme}://${route.replace(/^\//, "")}`)})`;
 
-/** Reloads onto Home, then opens `route` and lets it settle; `/` stays on Home. */
 const reloadAndOpen = Effect.fn("measure.reloadAndOpen")(function* (
   options: Options,
   route: string,
@@ -277,7 +274,6 @@ const reloadAndOpen = Effect.fn("measure.reloadAndOpen")(function* (
   yield* Effect.sleep("5 seconds");
 });
 
-/** Opens a screen from a freshly loaded Home and records its mount and data settling. */
 const measureRouteOpen = Effect.fn("measure.routeOpen")(function* (
   options: Options,
   route: string,

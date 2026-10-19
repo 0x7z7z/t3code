@@ -78,9 +78,8 @@ export async function createPastedTextComposerAttachment(input: {
 export type DraftComposerAttachment = DraftComposerImageAttachment | DraftComposerFileAttachment;
 
 /**
- * The chip is not optional for a non-media file. Every path that attaches one also writes
- * its reference, so a file with no chip means the draft lost it rather than that the strip
- * should stand in.
+ * Every non-media attachment requires a chip reference; its absence means the draft lost the file
+ * rather than that the strip should replace the chip.
  */
 export function composerStripAttachments(
   attachments: ReadonlyArray<DraftComposerAttachment>,
@@ -109,9 +108,8 @@ export function isFileBackedComposerAttachment(
 }
 
 /**
- * A picture taken from the photo library or the clipboard owns no file and carries its bytes
- * inline, and its `attachmentId` is a local draft id the server has never seen — so falling
- * back to a remote asset for one only ever fails.
+ * Inline library and clipboard images own no file; their local attachment ids cannot resolve
+ * to server assets.
  */
 export function composerAttachmentInlineUri(
   attachment: DraftComposerAttachment | undefined,
@@ -306,9 +304,7 @@ export async function pickComposerFiles(input: {
       exceededAttachmentLimit = true;
       break;
     }
-    // A SAF/document picker can hand back a blank display name; the wire
-    // contract rejects empty names at send time, so fall back before the name
-    // reaches storage, errors, or the attachment itself.
+    // SAF can return blank display names, but the wire contract rejects them; fill before persisting.
     const name = file.name.trim().length > 0 ? file.name : "file";
     try {
       attachments.push(
@@ -391,9 +387,8 @@ export async function pickComposerMedia(input: {
       mediaTypes: input.maxVideoBytes === undefined ? ["images"] : ["images", "videos"],
       allowsMultipleSelection: true,
       selectionLimit: remainingSlots,
-      // Bytes stay in the picker's file until we know how much of them we need. Asking for
-      // base64 here made iOS decode and re-encode every camera photo at full resolution and
-      // hand JS a 10 MB+ string, which stalled the composer for seconds.
+      // Requesting base64 makes iOS decode every full-size photo and send 10 MB+ strings to JS,
+      // stalling the composer. Read bytes only after deciding what is needed.
       base64: false,
       quality: 1,
       shouldDownloadFromNetwork: true,
@@ -452,9 +447,7 @@ export async function pickComposerMedia(input: {
     }
 
     const name = asset.fileName?.trim() || "image";
-    // The picker's reported size is a hint, not a measurement: Android content streams can
-    // deliver more bytes than they advertise. Only a size read from the file itself decides
-    // whether the original bytes are safe to load into JS.
+    // Android content streams can exceed their reported size; measure the file before loading bytes into JS.
     let sourceBytes: number | null = null;
     try {
       const { File } = await import("expo-file-system");

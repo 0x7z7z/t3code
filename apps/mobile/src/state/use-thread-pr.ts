@@ -58,7 +58,6 @@ export function useThreadPr(thread: EnvironmentThreadShell): ThreadPrPresentatio
   );
   const threadKey = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
   const snapshotIdentity = JSON.stringify(pullRequestRef);
-  // Select this row's entry so writes for other rows do not re-render it.
   const snapshotEntry = useAtomValue(
     threadPrSnapshotsAtom,
     useCallback(

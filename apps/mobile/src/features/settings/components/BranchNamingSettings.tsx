@@ -34,9 +34,7 @@ export function BranchNamingSettings(props: {
   const edit = (field: Field, text: string) => {
     drafts.current[field] = { text, over: savedValue(field) };
   };
-  // Takes a field's draft as a patch, or {} when there is nothing new to save.
-  // A newer saved value remounts the input, so a draft typed over an older one
-  // is no longer on screen and is dropped.
+  // Drop a draft typed over an older saved value: the updated value has already remounted its input.
   const take = (field: Field): ServerSettingsPatch => {
     const draft = drafts.current[field];
     delete drafts.current[field];

@@ -65,10 +65,8 @@ function descendsFrom(
 export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  // A plain goBack pops whatever is on top, so it only runs while this modal
-  // is: an exit that lands while another screen covers it (after a teardown
-  // wait) waits for the modal to be on top again, rather than popping that
-  // screen or being lost.
+  // An exit may finish while another screen covers this modal. Wait for focus before goBack
+  // so dismissal cannot pop the covering screen.
   const focused = useIsFocused();
   const [exitRequested, setExitRequested] = useState(false);
   const onClose = useCallback(() => {

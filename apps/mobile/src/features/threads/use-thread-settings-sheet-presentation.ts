@@ -16,11 +16,8 @@ export type NavigationWithFinishTransitioning = {
 const SHEET_DISMISSAL_KEYBOARD_OVERLAP_MS = 300;
 
 /**
- * A JS-initiated dismissal pops state before its animation runs; a
- * gesture-driven one animates natively first and pops afterwards, with the
- * navigator's completion event landing a few dozen milliseconds before the pop.
- * A completion this fresh at pop time therefore means the sheet is already gone
- * and the keyboard should return immediately.
+ * Native gesture dismissal completes before its router pop; a recent completion means the sheet
+ * is already gone and keyboard restoration need not wait for another transition.
  */
 const NATIVE_DISMISSAL_ECHO_WINDOW_MS = 150;
 
@@ -56,8 +53,6 @@ export function useThreadSettingsSheetPresentation(input: {
   }, [input.isEditorFocused]);
 
   useEffect(() => {
-    // React Strict Mode and Fast Refresh both run an effect cleanup/setup
-    // cycle without recreating refs. Re-arm the mounted guard on every setup.
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;

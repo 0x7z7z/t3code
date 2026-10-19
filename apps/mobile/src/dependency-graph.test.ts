@@ -2,12 +2,7 @@ import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-/**
- *    Dynamic `import("...")` calls are excluded from this rule on purpose:
- *    they are the deliberate async escape hatch (e.g. composer-draft cleanup
- *    reaching `lib/attachmentUpload`), and Metro resolves them after both
- *    modules have initialized, so they cannot create an initialization cycle.
- */
+/** Dynamic imports cannot create Metro initialization cycles: they resolve after both modules initialize. */
 
 const SOURCE_ROOT = __dirname;
 
@@ -233,10 +228,7 @@ describe("mobile dependency graph", () => {
     const ceilings: ReadonlyArray<readonly [Layer, Layer, number, string]> = [
       ["state", "features", 6, "state must not add imports from features"],
       ["lib", "features", 7, "lib must not add imports from features"],
-      // components -> features: mostly the appearance preferences provider
-      // and the layout toolbar bridges.
       ["components", "features", 30, "components must not add imports from features"],
-      // native -> features: native glue reading appearance/keyboard/review features.
       ["native", "features", 8, "native must not add imports from features"],
       ["lib", "state", 10, "lib must not add imports from state"],
     ];

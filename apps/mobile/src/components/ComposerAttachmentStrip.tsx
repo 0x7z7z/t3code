@@ -96,10 +96,8 @@ export function ComposerAttachmentThumbnail(props: ComposerAttachmentThumbnailPr
 const PREVIEW_CACHE_DIRECTORY = "t3-composer-previews";
 
 /**
- * Fabric re-parses an image source URL on every layout pass of the node, and a
- * multi-megabyte data URL makes each Fabric commit slow enough that concurrent
- * UI-thread commits (the question card's coverage animation) win the race every
- * time until the renderer aborts.
+ * Fabric re-parses image URLs on every layout pass. Multi-megabyte data URLs can stall
+ * commits until concurrent UI-thread commits cause the renderer to abort.
  */
 const INLINE_PREVIEW_FALLBACK_MAX_CHARS = 256_000;
 

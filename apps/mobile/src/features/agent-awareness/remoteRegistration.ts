@@ -73,11 +73,8 @@ export class AgentAwarenessOperationError extends Schema.TaggedError<AgentAwaren
 }
 
 const environmentConnections = new Map<EnvironmentId, SavedRemoteConnection>();
-// Keyed by ActivityKit id: getAgentLiveActivities() wraps the same native
-// activity in a new object on every call. The relay keeps only the latest token
-// a device registers, so each activity's token reads and registrations run one
-// at a time; otherwise a lookup that read the old token could land after the
-// rotated one.
+// ActivityKit returns new wrappers for the same native id. Serialize token reads and registrations
+// by id so an old token cannot register after its replacement.
 const activityPushTokenLocks = new Map<string, Semaphore.Semaphore>();
 // But the registration is not a pure no-op: the relay replays the current
 // aggregate to this device on every accepted registration, and that replay is
@@ -225,10 +222,7 @@ export function setAgentAwarenessRelayTokenProvider(
   enqueueDeviceRegistration({}, "device registration after cloud sign-in failed");
 }
 
-// For provider teardown while the user is still signed in (e.g. the auth bridge
-// unmounting/remounting), ending lock-screen activities and wiping the
-// persisted registration would be wrong — the relay still holds a valid
-// registration and the next mount reuses it.
+// Provider remounts retain a valid relay registration; teardown must preserve it and lock-screen activities.
 export function releaseAgentAwarenessRelayTokenProvider(): void {
   relayTokenProvider = null;
   relayTokenProviderIdentity = null;
@@ -1068,10 +1062,8 @@ export function refreshActiveLiveActivityRemoteRegistration(): Effect.Effect<
       activities = activities.slice(0, 1);
     }
 
-    // Activities are only ever created here, in the foreground, where the
-    // update token can be observed and registered immediately — the relay never
-    // remote-starts one (background push-to-start wakes proved too unreliable
-    // to hand the token over).
+    // Create activities only in the foreground, where their update tokens can be registered immediately;
+    // background push-to-start wakes cannot reliably hand the token over.
     if (activities.length === 0) {
       const preferences = yield* Effect.tryPromise({
         try: () => loadPreferences(),

@@ -44,6 +44,4 @@ export function threadOutboxRevision(messageId: QueuedThreadMessage["messageId"]
   return threadOutboxManager.revisionOf(messageId);
 }
 
-// Removal lives in `thread-outbox-removal.ts`: taking a message out of the
-// outbox must also release its local attachment files, and that owner needs
-// the composer draft state this module must not depend on.
+// Removal needs draft-state ownership to release files; keep that dependency outside this module.

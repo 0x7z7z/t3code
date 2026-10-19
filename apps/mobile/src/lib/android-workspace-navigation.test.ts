@@ -214,7 +214,6 @@ describe("Android workspace navigation", () => {
   it("resets from the navigation container before any navigation action", () => {
     const root = router.getInitialState(options);
     const actions: AndroidWorkspaceResetAction[] = [];
-    // The container only learns the root state after the first action.
     resetAndroidWorkspace(
       {
         dispatch: (action) => actions.push(action),

@@ -15,9 +15,8 @@ export function useComposerPopoverHost() {
 }
 
 /**
- * Mount it inside the composer's KeyboardStickyView: popovers placed here move with the composer and sit inside a parent that
- * covers them, so Android delivers their scroll gestures. Pass `hidden` whenever the composer itself is hidden: popovers live
- * outside the composer's subtree, so they don't hide with it.
+ * Mount inside KeyboardStickyView so Android can deliver gestures within the host's bounds.
+ * Hide with the composer explicitly: portal content lives outside its subtree.
  */
 export function ComposerPopoverHost(props: {
   readonly hidden: boolean;

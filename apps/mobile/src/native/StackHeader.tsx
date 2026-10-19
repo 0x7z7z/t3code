@@ -136,10 +136,8 @@ function stabilizeOptionFunctions(
 export function NativeStackScreenOptions(props: {
   readonly options?: AppNativeStackNavigationOptions;
   /**
-   * Causes dynamic native header factories to be reapplied when their closed-over
-   * menu content changes. Factory functions are intentionally stabilized, so
-   * their source alone cannot capture a menu that was initially empty while
-   * asynchronous data was loading.
+   * Reapply stable header factories when closed-over data changes; function source cannot reveal
+   * menu content that arrived asynchronously.
    */
   readonly optionsVersion?: unknown;
   readonly listeners?: Record<string, (event: never) => void>;

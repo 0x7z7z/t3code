@@ -15,7 +15,6 @@ import { useSidebarWorkspaceTabs } from "./useSystemWorkspaceTabBar";
 import { useSelectWorkspaceTab } from "./useSelectWorkspaceTab";
 import { useMobileNavigationTheme } from "../../lib/useMobileNavigationTheme";
 
-// Tabler's git-pull-request geometry, shared with the UIKit tab bar.
 const PULL_REQUEST_ICON = require("../../../assets/icons/pull-request.png");
 
 export function WorkspaceToolbar(props: {

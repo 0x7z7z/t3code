@@ -219,10 +219,8 @@ export function AgentActivity(
     </HStack>
   );
 
-  // Image views only honor `resizable` directly (frame/foregroundStyle are
-  // dropped), so we size it via a container frame the resizable image fills and
-  // tint it through the container's foreground style, which the template image
-  // inherits.
+  // Image drops direct frame and foregroundStyle modifiers; use a resizable template image inside
+  // a sized, tinted container.
   const renderLogo = (height: number, color: Foreground) => (
     <HStack modifiers={[frame({ width: height * 1.5, height }), foregroundStyle(color)]}>
       <Image assetName="T3Mark" modifiers={[resizable()]} />

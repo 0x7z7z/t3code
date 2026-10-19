@@ -99,9 +99,7 @@ private final class ComposerTextView: UITextView {
   var textPasteThresholdBytes = 0
   var maxInputChars = Int.max
   var enterBehavior: ComposerEnterBehavior = .send
-  /// Shortcut HUD titles. JS supplies what the two sends actually do right now
-  /// ("Queue Message" / "Steer Message"), so the iPad Command-hold list names
-  /// the outcome rather than a generic "Send".
+  /// JS supplies the actual send outcomes so the iPad Command-hold HUD names the configured actions.
   var submitTitle = "Send Message"
   var alternateSubmitTitle = "Send Message"
   private var bypassTextPasteInterception = false
@@ -109,9 +107,6 @@ private final class ComposerTextView: UITextView {
   override var keyCommands: [UIKeyCommand]? {
     var commands = super.keyCommands ?? []
     guard !isReadOnly, markedTextRange == nil else { return commands }
-    // The plainer chord always performs the configured follow-up behavior and
-    // the more-modified one performs its opposite, so Command is the "other
-    // way" modifier whichever Return behavior is configured.
     if enterBehavior == .send {
       let submitOnReturn = UIKeyCommand(
         input: "\r",
@@ -949,9 +944,7 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     return attributedAttachment
   }
 
-  /// Chip glyphs with no SF Symbol that reads correctly. A pull request would otherwise land on
-  /// `arrow.triangle.branch`, a road-sign fork that says "branch", not "pull request", so it is
-  /// drawn from the same lucide geometry web and Android use.
+  /// Use web and Android's lucide geometry: no SF Symbol distinguishes a pull request from a branch.
   private static func vectorIcon(named name: String, size: CGFloat, color: UIColor) -> UIImage? {
     guard name == "git-pull-request" else { return nil }
     return UIGraphicsImageRenderer(size: CGSize(width: size, height: size)).image { _ in
@@ -995,8 +988,6 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
         withConfiguration: UIImage.SymbolConfiguration(pointSize: 12, weight: .medium)
       )
     let icon = iconImage ?? fallbackIcon
-    // The size reads as metadata, not part of the name, so it renders a step down from the
-    // label the way the web chip does.
     let paragraph = NSMutableParagraphStyle()
     paragraph.alignment = .left
     let detailFont = UIFont(name: "DMSans-Medium", size: chipFontSize * 0.84)
@@ -1021,9 +1012,6 @@ public final class T3ComposerEditorView: ExpoView, UITextViewDelegate, UITextDro
     let iconGap: CGFloat = icon == nil ? 0 : chipFontSize * 0.33
     let padding = chipFontSize * 0.5
     let height = ceil(chipFontSize * 1.41)
-    // A long path would otherwise draw a chip wider than the composer and clip. Cap the label
-    // to the text the editor can actually show and truncate inside it, as Android's
-    // `maximumWidth` does, so the chip always fits the line it sits on.
     let availableWidth = textView.textContainer.size.width > 0
       ? textView.textContainer.size.width - textView.textContainer.lineFragmentPadding * 2
       : (textView.window?.bounds.width ?? bounds.width)

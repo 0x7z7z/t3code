@@ -1,9 +1,7 @@
 "use strict";
 
-// ORDERING: must be listed BEFORE "expo-widgets" in the plugins array. That
-// matters twice: expo-widgets' dangerous mod rmSync's ios/ExpoWidgetsTarget/
-// (deleting any catalog written before it), and its xcodeproj mod is what
-// creates the widget target.
+// Must precede expo-widgets: its reverse-ordered mods create the target and wipe its directory
+// before this plugin adds the asset catalog and compile phase.
 
 const path = require("path");
 const fs = require("fs");

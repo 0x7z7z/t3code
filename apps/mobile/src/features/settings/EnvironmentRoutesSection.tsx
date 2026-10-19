@@ -73,9 +73,8 @@ export function EnvironmentRoutesSection({
     null,
   );
   const [heights, setHeights] = useState<ReadonlyMap<string, number>>(() => new Map());
-  // Each drop remounts the rows so the new order and the cleared drag offsets
-  // land in one frame. Kept rows would show their old offsets in their new
-  // slots until the animated style catches up, and the card flashes empty.
+  // Remount dropped rows so reordered data and cleared drag offsets land in the same frame;
+  // retained offsets otherwise flash in their new slots.
   const [drops, setDrops] = useState(0);
   if (entry === undefined) return null;
 

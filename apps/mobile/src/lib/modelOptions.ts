@@ -124,9 +124,8 @@ function normalizeSelectionOptions(
 }
 
 /**
- * `projectId` has no default: a caller that forgets it would silently check only the
- * machine-wide state and miss a project that turned this instance off. Pass `null` explicitly
- * outside a project's scope.
+ * Require an explicit projectId, or null outside a project, so a forgotten argument cannot miss
+ * project-level provider disablement.
  */
 export function isModelSelectionUnavailable(
   config: T3ServerConfig | null | undefined,

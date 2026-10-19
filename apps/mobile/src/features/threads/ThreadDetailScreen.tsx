@@ -349,13 +349,9 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
   const insets = useSafeAreaInsets();
   const isKeyboardVisible = useKeyboardState((state) => state.isVisible);
   const liveKeyboardHeight = useKeyboardState((state) => state.height);
-  // Android can swallow the IME hide callbacks when the app is backgrounded mid keyboard-hide
-  // (the reported repro: send — which blurs and starts the hide — then Home within a second). The
-  // keyboard library's height AND visibility then stay frozen open, so gating the sticky
-  // translation on visibility alone still strands the composer after resume. An input that kept
-  // focus through the switch is exempt: Android restores its keyboard unchanged, so no keyboard
-  // or focus event would ever lift the quarantine. Hiding the keyboard with Back keeps focus, so
-  // Back then Home mid-hide takes the exemption and can still strand the composer.
+  // Android can lose IME hide callbacks when backgrounded mid-hide, freezing height and visibility.
+  // Quarantine sticky translation on resume unless an input kept focus; Android restores that keyboard
+  // without sending another focus event.
   const [keyboardStateSuspect, setKeyboardStateSuspect] = useState(false);
   const ownedInputFocusedRef = useRef(false);
   useEffect(() => {
@@ -418,11 +414,8 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
   const [anchorMessageId, setAnchorMessageId] = useState<MessageId | null>(null);
   const [submittedMessageId, setSubmittedMessageId] = useState<MessageId | null>(null);
   const [endFollowEnabled, setEndFollowEnabled] = useState(true);
-  // Android keys the safe-area padding on keyboard visibility (#5988): the back gesture closes
-  // the keyboard while the editor stays focused, and a focus-keyed inset would leave the toolbar
-  // under the gesture bar. iOS must NOT use visibility — it only flips on keyboardDidHide, after
-  // the hide animation, so the composer would ride down flush to the screen edge and then snap up
-  // into the inset.
+  // Android Back hides the keyboard while preserving focus, so safe-area padding follows visibility.
+  // iOS reports hidden only after animation; using visibility there would snap the inset afterward.
   const composerBottomInset = (
     Platform.OS === "android" ? isKeyboardVisible : composerExpanded || composerFocused
   )
@@ -587,10 +580,8 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
     );
   const userInputCollapsed =
     activeUserInputRequestId !== null && collapsedUserInputRequestId === activeUserInputRequestId;
-  // The card's height RESERVES keyboard space at all times instead of tracking the keyboard:
-  // transforms (the sticky translation) apply same-frame on the UI thread while layout props lag
-  // a Yoga pass behind, so any height that follows the keyboard flashes the card over the nav
-  // header on the way up.
+  // Reserve keyboard space continuously: sticky transforms apply before Yoga layout, so tracking
+  // keyboard height would flash the card over the navigation header.
   const [lastKnownKeyboardHeight, setLastKnownKeyboardHeight] = useState(0);
   useEffect(() => {
     if (liveKeyboardHeight > 0 && liveKeyboardHeight !== lastKnownKeyboardHeight) {
@@ -605,13 +596,8 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
     composerOverlapHeight: composerBottomInset,
   });
   const estimatedOverlayHeight = composerOverlapHeight;
-  // The overlay's measured height includes the home-indicator inset (the
-  // composer pads it), but contentInsetAdjustmentBehavior="automatic" makes
-  // UIKit add the safe-area bottom to the content inset AGAIN — leaving a
-  // dead strip between the resting content and the composer. Report the
-  // overlay height minus the safe area; UIKit adds it back, and ThreadFeed
-  // hands LegendList the same delta via contentInsetEndStaticAdjustment so
-  // its end-scroll math matches the real resting position.
+  // UIKit automatically adds safe-area bottom to the measured overlay inset. Subtract it here
+  // and tell ThreadFeed's scroll math about the addition to avoid a gap above the composer.
   const nativeInsetOvercount =
     props.usesAutomaticContentInsets === true && Platform.OS === "ios" ? insets.bottom : 0;
   const { contentInsetEndAdjustment, onComposerLayout } = useKeyboardChatComposerInset(
@@ -656,8 +642,6 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
     [userInputCoverageApplies],
   );
   const { freeze, scrollMessageToEnd } = useKeyboardScrollToEnd({ listRef });
-  // Repin timers fire after the render that scheduled them, so they read follow
-  // state from the ref the writers below keep in step with it.
   const endFollowEnabledRef = useRef(true);
   const overlayRepinTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previousWorkingControlStateRef = useRef({
@@ -719,9 +703,7 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
     } else {
       Keyboard.dismiss();
       userInputCardProgress.set(withTiming(0, USER_INPUT_TOGGLE_TIMING));
-      // Instant: the sinking card still covers the strip being revealed, and
-      // animating the inset downward is what drifted the short-content end
-      // anchor.
+      // The sinking card already covers this strip. Animating the inset downward would drift the end anchor.
       userInputInsetProgress.set(0);
       setCollapsedUserInputRequestId(activeUserInputRequestId);
       scheduleOverlayRepin(60);
@@ -860,11 +842,8 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
         return;
       }
       lastScrolledSubmittedMessageIdRef.current = submittedMessageId;
-      // Wait for the keyboard dismissal (started by blur() on send) to finish
-      // before scrolling: scrollMessageToEnd freezes keyboard-driven inset
-      // updates while it runs, and a close event swallowed by that freeze
-      // leaves the keyboard padding permanently applied — overshooting the
-      // anchor and leaving a phantom bottom inset once the reply streams in.
+      // Wait for keyboard dismissal before scrollMessageToEnd freezes inset updates; swallowing the hide
+      // event would leave permanent bottom padding and overshoot the anchor.
       void KeyboardController.dismiss()
         .then(() => {
           if (
@@ -1257,10 +1236,6 @@ export const ThreadDetailScreen = function ThreadDetailScreen(props: ThreadDetai
                   ) : null}
                 </View>
 
-                {/*
-                 * Hidden (not unmounted) while a user-input request owns the composer slot, so
-                 * composer drafts and editor state survive.
-                 */}
                 <View style={composerSlotHidden ? { display: "none" } : undefined}>
                   {isProviderSubagent ? (
                     <View

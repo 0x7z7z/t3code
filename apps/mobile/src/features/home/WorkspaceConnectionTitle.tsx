@@ -38,12 +38,7 @@ function useDelayedConnectionStatus(): WorkspaceConnectionStatusPresentation | n
   return visible ? presentation : null;
 }
 
-/**
- * Deliberately JS-driven: this can mount inside a native header item
- * (RNSScreenStackHeaderSubview), where native-driver animated nodes blank the
- * re-hosted view entirely. The JS driver updates opacity through the ordinary
- * style path, which those subviews handle.
- */
+/** Native-driver animation blanks views re-hosted in RNSScreenStackHeaderSubview; use the JS style path. */
 function StatusFadeIn(props: {
   readonly children: ReactNode;
   readonly grow?: boolean;

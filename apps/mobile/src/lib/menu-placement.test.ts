@@ -13,7 +13,6 @@ describe("deriveMenuHorizontalPlacement", () => {
   });
 
   it("keeps a menu on its anchor's side of a creased hinge", () => {
-    // The filter button sits near the crease, so the menu right-aligns to it instead of crossing.
     expect(
       deriveMenuHorizontalPlacement({ ...base, anchorX: 340, hinge: { x: 426, width: 0 } }),
     ).toEqual({ left: 164, width: 224 });

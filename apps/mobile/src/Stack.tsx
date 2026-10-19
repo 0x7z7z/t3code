@@ -380,11 +380,8 @@ const SettingsContentStack = createV5SheetStackNavigator({
         title: "Diagnostics",
       },
     }),
-    // Its params are a tap-time snapshot, not a stable resource address: `now` is the wall-clock
-    // of the tap, `environmentIds` is the usage screen's local filter selection, and the window
-    // id/kind identify freshly aggregated pools. React Navigation round-trips non-path params
-    // through the URL as query strings, so a path here would bake in a permanently stale
-    // timestamp and filter.
+    // These params contain a tap-time timestamp, filters, and aggregated pool ids.
+    // A linking path would serialize them into query strings and restore stale usage state.
     SettingsUsageAccount: createNativeStackScreen({
       screen: UsageLimitAccountScreen,
       options: { title: "Account" },
@@ -441,9 +438,7 @@ const SettingsSheetStack = createV5SheetStackNavigator({
   },
 });
 
-// A nested stack means a second UINavigationController with its own UINavigationBar, which breaks
-// iOS 26's shared-header morphing between Home and Thread (each pair inside one bar morphs;
-// across two bars the whole screen slides).
+// iOS 26 header morphing requires one UINavigationBar; nested stacks make the whole screen slide.
 const THREAD_LINKING_PREFIX = "threads/:environmentId/:threadId";
 
 const NewTaskSheetStack = createNativeStackNavigator({
@@ -572,10 +567,8 @@ function workspaceLocationFromState(state: NavigationState) {
   };
 }
 
-// The drain hook subscribes to the outbox, all thread shells, projects, and
-// connection statuses. Hosting it in a null-rendering leaf keeps those
-// updates from re-rendering RootStackLayout (and with it every screen) on
-// each enqueue, shell change, or reconnect.
+// Keep outbox and shell subscriptions in a null-rendering leaf so each update cannot
+// re-render RootStackLayout and every screen.
 function ThreadOutboxDrainWorker() {
   useThreadOutboxDrain();
   useComposerAttachmentUploadWorker();

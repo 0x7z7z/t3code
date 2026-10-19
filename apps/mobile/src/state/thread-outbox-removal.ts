@@ -77,9 +77,7 @@ export async function removeThreadOutboxMessage(
 }
 
 export async function clearThreadOutboxEnvironment(environmentId: EnvironmentId): Promise<void> {
-  // clearEnvironment loads and merges persisted messages itself and reports
-  // what it actually removed, so the release set cannot miss messages a
-  // failed earlier hydration would have hidden.
+  // Use the actual removed set, including persisted messages missed by an earlier failed hydration.
   const removed = await threadOutboxManager.clearEnvironment(environmentId);
   await cleanUpRemovedMessages(removed);
 }

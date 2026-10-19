@@ -62,9 +62,8 @@ export function getTerminalStatusLabel(input: {
 }
 
 /**
- * Counts the terminal screen already mounted (`activeRouteTerminalId`) as occupied so
- * an empty session list on the primary route still advances to `term-2` instead of
- * `replace`-navigating to the same `default` tab.
+ * Count the mounted terminal as occupied even before its session list loads, or a new terminal
+ * would replace-navigate back to the same default tab.
  */
 export function nextOpenTerminalId(input: {
   readonly listedTerminalIds: ReadonlyArray<string>;

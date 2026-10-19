@@ -36,12 +36,8 @@ export function applyCtrlModifier(input: string): string {
 }
 
 /**
- * The host's paste chord (cmd+v on a macOS host, ctrl+v elsewhere) pastes the
- * device clipboard instead of reaching the remote shell as a raw control byte,
- * which matches what the web terminal does with the same chord. Forwarding the
- * byte is never what a phone user means: PowerShell binds ctrl+v to paste from
- * the host machine's clipboard, so the shell inserts whatever the desktop last
- * copied rather than the text on the phone.
+ * Paste from the device clipboard for the host's paste chord. Forwarding Ctrl+V to PowerShell
+ * would paste the host's clipboard instead of the phone's.
  */
 export function resolveModifiedTerminalInput(input: {
   readonly data: string;
@@ -60,12 +56,8 @@ export function resolveModifiedTerminalInput(input: {
 }
 
 /**
- * Encodes clipboard text for the remote pty the way the web terminal does when
- * bracketed paste is off: unsafe control bytes become spaces (which also
- * defuses an embedded bracketed-paste end marker, since its ESC goes too) and
- * line breaks become carriage returns, since a bare LF is Ctrl+J to a raw-mode
- * TUI. The native mobile surface does not expose DECSET 2004, so mobile never
- * wraps a paste in bracketed-paste markers.
+ * Mobile has no DECSET 2004 state, so paste without bracket markers. Strip unsafe controls
+ * (including embedded end markers) and use CR for line breaks; raw-mode TUIs read LF as Ctrl+J.
  */
 export function encodeTerminalPaste(text: string): string {
   return text.replace(UNSAFE_PASTE_BYTES, " ").replace(/\r\n|\n/g, "\r");

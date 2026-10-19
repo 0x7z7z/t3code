@@ -20,7 +20,6 @@ export const SHOWCASE_AGENT_ACTIVITY_ROWS = [
   readonly minutesAgo: number;
 }>;
 
-// Matches the relay's row wording (AgentActivityPublisher.statusForPhase).
 const STATUS_BY_PHASE: Record<AgentActivityPhase, string> = {
   starting: "Connecting",
   running: "Working",

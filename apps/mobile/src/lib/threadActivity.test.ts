@@ -1458,7 +1458,6 @@ describe("buildThreadFeed", () => {
     };
 
     it("is its own row, with no group header to open first", () => {
-      // The second call never finished, so only one call is visible.
       for (const items of [[wait()], [wait(), read(running)]]) {
         const feed = buildThreadFeed(
           [userMessage(), ...items, assistantMessage("2026-06-20T00:00:04.000Z")].map(
@@ -1476,7 +1475,6 @@ describe("buildThreadFeed", () => {
           activities: [{ canExpand: true, groupStandIn: { label: "Waited for a T3 thread" } }],
         });
         expect(rows[2]).not.toMatchObject({ activities: [{ groupedToolDetail: true }] });
-        // The group's own disclosure adds nothing while the call is alone.
         expect(
           deriveThreadFeedPresentation(
             feed,
@@ -2840,7 +2838,6 @@ describe("html renders", () => {
       "message",
     ]);
     expect(expanded[3]).toMatchObject({ type: "html-render", render: page, runId });
-    // The render splits the work log, so each command is a lone call with its own group.
     const callIds = [expanded[2], expanded[4]].map((row) =>
       row?.type === "activity-group"
         ? row.activities.map((activity) => activity.projectedItem.item.id)

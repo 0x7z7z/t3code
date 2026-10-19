@@ -143,9 +143,8 @@ function rgbChannels(color: string): readonly [number, number, number] | null {
 }
 
 /**
- * Native chip drawing parses only opaque hex — an `rgba()` string falls back to a default that
- * is nothing like the colour asked for — so a translucent role like `--color-border` has to be
- * flattened first.
+ * Native chip parsers accept only opaque hex; flatten translucent roles instead of falling back
+ * to an unrelated default color.
  */
 export function flattenThemeColor(color: string, surface: string): string {
   const alphaHex = /^#([\da-f]{6})([\da-f]{2})$/i.exec(color);

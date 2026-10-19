@@ -190,10 +190,8 @@ export function ComposerEditor({
       }),
     );
   }, [props.value, props.context, skillLabels]);
-  // Every render resolves against the snapshot history, so a render whose
-  // (value, selection) lags the acknowledged native state is stamped behind
-  // the native revision and rejected by the editor instead of re-applying a
-  // stale caret or stale text mid-typing.
+  // Stamp renders lagging acknowledged native state behind its revision so the editor rejects
+  // stale text and caret positions.
   const controlledEventCount = resolveComposerControlledEventCount(
     props.value,
     selection ?? null,

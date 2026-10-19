@@ -11,7 +11,6 @@ import android.text.TextUtils
 import kotlin.math.ceil
 import kotlin.math.min
 
-/** Shared by editable spans and inline chat images so their metrics and colors agree. */
 class T3ContextChip(
   content: Content,
   fontSize: Float,
@@ -19,7 +18,6 @@ class T3ContextChip(
   maximumWidth: Float,
   private val density: Float
 ) {
-  /** What the chip says: its name, the size beside it, and the glyph that leads it. */
   data class Content(val label: String, val symbol: String, val detail: String = "")
 
   data class Colors(val accent: Int, val foreground: Int, val border: Int)
@@ -32,8 +30,6 @@ class T3ContextChip(
   }
   private val em = fontSize
 
-  // The size reads as metadata beside the name, so it draws a step down from the label the
-  // way the web chip does.
   private val detailPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
     textSize = fontSize * 0.84f
     typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -41,9 +37,7 @@ class T3ContextChip(
   private val detailText = if (content.detail.isEmpty()) "" else " ${content.detail}"
   private val detailWidth = if (detailText.isEmpty()) 0f else detailPaint.measureText(detailText)
 
-  // The border is stroked, and a stroke straddles the path it follows, so the box has to
-  // reserve a stroke on every side it insets. Reserving it once left the right edge a
-  // stroke short, and antialiasing shaved that curve flat against the span bounds.
+  // Reserve stroke space on both sides so antialiasing cannot clip the chip's right curve.
   private val strokeWidth = density
   private val inset = strokeWidth * 2f
   val width = ceil(
@@ -141,7 +135,6 @@ class T3ContextChip(
           line(3f, 7f, 12f, 12f, 21f, 7f)
           line(12f, 12f, 12f, 22f)
         }
-        // lucide `git-pull-request`, the glyph web draws: two nodes, an elbow, and a stem.
         "git-pull-request" -> {
           addCircle(18f, 18f, 3f, Path.Direction.CW)
           addCircle(6f, 6f, 3f, Path.Direction.CW)

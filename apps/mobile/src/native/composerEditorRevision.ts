@@ -46,11 +46,8 @@ export function resolveComposerControlledEventCount(
   return mostRecentEventCount;
 }
 
-// A snapshot without a selection describes a state the editor applied itself
-// (an assumed controlled document, where the native side may have bounded the
-// caret). Echo detection must not reuse this wildcard: an echo payload
-// serializes `selection: null`, which would drop that caret move instead of
-// applying it.
+// Selection-less snapshots describe assumed native state, including a possibly bounded caret.
+// Do not reuse that wildcard for echoes: selection:null would drop the caret move.
 function snapshotSelectionMatches(
   snapshot: ComposerNativeEventSnapshot,
   selection: ComposerEditorSelection,
@@ -83,11 +80,8 @@ export function isComposerNativeEcho(
 }
 
 /**
- * Records that a parent-driven controlled document was handed to the native
- * editor. From that point the acknowledged snapshot history describes a
- * superseded native state, so it is replaced with the assumed applied state; a
- * later parent update back to a previously acknowledged value must classify as
- * a fresh edit, not as a native echo the editor would drop.
+ * Replace acknowledged history with assumed controlled state so returning to an older native value
+ * is recognized as a fresh parent edit rather than an echo to discard.
  */
 export function assumeComposerControlledState(
   snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
@@ -104,10 +98,8 @@ export function pruneAcknowledgedComposerNativeEvents(
   snapshots: ReadonlyArray<ComposerNativeEventSnapshot>,
   acknowledgedEventCount: number,
 ): ComposerNativeEventSnapshot[] {
-  // The newest acknowledged snapshot must survive pruning: it is what lets a
-  // later, unrelated re-render classify the settled composer state as a native
-  // echo instead of a parent-driven edit that would re-control the caret (and
-  // reset the keyboard's autocorrect context on iOS).
+  // Keep the latest acknowledged snapshot so unrelated renders remain native echoes instead of
+  // re-controlling the caret and resetting iOS autocorrect.
   let latestAcknowledgedIndex = -1;
   for (let index = snapshots.length - 1; index >= 0; index -= 1) {
     const snapshot = snapshots[index];

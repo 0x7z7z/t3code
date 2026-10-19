@@ -599,10 +599,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   );
   const handleSettle = useCallback(() => onSettleThread(thread), [onSettleThread, thread]);
   const [customSnoozeOpen, setCustomSnoozeOpen] = useState(false);
-  // A recycled cell reassigns this mounted row to a different thread without
-  // remounting it, and the render closure stops running while list equality
-  // says the item is unchanged — so any row-local UI state must be dismissed
-  // when the identity under it changes.
+  // Recycling can change thread identity without remounting; dismiss row-local UI when that happens
+  // because list equality can prevent the render closure from running.
   const rowIdentity = `${thread.environmentId}:${thread.id}`;
   const [boundIdentity, setBoundIdentity] = useState(rowIdentity);
   if (boundIdentity !== rowIdentity) {
@@ -626,9 +624,8 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
   const handleArchive = useCallback(() => onArchiveThread(thread), [onArchiveThread, thread]);
 
   const canUnsettle = variant === "slim";
-  // The React Compiler caches render results on props and state, so a clock read
-  // in render would stay frozen until `thread` changes: the gate could never
-  // expire and its timer would re-fire every 50ms. The gate's clock is state.
+  // Use clock state: the compiler can cache render-time reads until thread changes, freezing the gate
+  // and making its expiry timer fire every 50ms.
   const [snoozeGateClock, setSnoozeGateClock] = useState(() => ({ thread, now: Date.now() }));
   if (snoozeGateClock.thread !== thread) setSnoozeGateClock({ thread, now: Date.now() });
   const snoozeGateNow = new Date(snoozeGateClock.now).toISOString();

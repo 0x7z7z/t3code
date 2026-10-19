@@ -25,7 +25,6 @@ import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSi
 import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 
-/** One toolbar height for the compact list and expanded sidebar, including search. */
 export function ThreadListToolbar(props: {
   readonly searchQuery: string;
   readonly onSearchQueryChange: (query: string) => void;

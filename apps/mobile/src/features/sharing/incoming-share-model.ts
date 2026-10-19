@@ -77,11 +77,8 @@ function normalizedFileUriPath(uri: string): string | null {
 }
 
 /**
- * Whether a shared `file:` URI points strictly inside one of the directories
- * this app owns (its sandbox and its share-extension App Group container).
- * Share cleanup must never delete anything else: an iOS open-in-place share
- * hands over the sender's own file URL, and deleting it destroys the user's
- * document.
+ * Share cleanup may delete only files strictly inside app-owned roots; iOS open-in-place shares
+ * can point directly at the sender's original document.
  */
 export function isShareFileUriUnderOwnedRoots(
   uri: string,

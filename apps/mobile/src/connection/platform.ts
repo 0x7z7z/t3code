@@ -83,10 +83,8 @@ const layerConnectivity = Connectivity.layer({
 });
 
 /**
- * Wakes connections when the device moves between networks while staying
- * online, such as Wi-Fi to cellular. Connectivity only reports online or
- * offline, so leaving home on cellular would otherwise go unnoticed until the
- * LAN socket times out.
+ * Online/offline status misses Wi-Fi-to-cellular moves; wake connections on path changes
+ * rather than waiting for the old LAN socket to time out.
  */
 const networkPathChanges = Stream.callback<"network-changed">((queue) =>
   Effect.acquireRelease(

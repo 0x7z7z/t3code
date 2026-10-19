@@ -88,11 +88,7 @@ export function clearPendingThreadCreationOutcome(threadKey: string): void {
   appAtomRegistry.set(pendingThreadCreationOutcomesAtom, next);
 }
 
-/**
- * The server creates the thread, then builds the worktree, and only then starts
- * the turn, so the thread shell and an empty detail arrive seconds ahead of the
- * prompt.
- */
+/** Thread shell and empty detail precede the prompt: worktree setup runs between creation and turn start. */
 export function isPendingThreadCreationVisible(input: {
   readonly creationMessageId: string;
   readonly loadedMessageIds: ReadonlyArray<string> | null;
@@ -106,10 +102,8 @@ export function pendingThreadCreationMessage(message: QueuedThreadMessage): Loca
     role: "user",
     text: message.text,
     context: message.context,
-    // Deliberately no attachments. Their ids are local draft ids the server
-    // cannot resolve, so the feed's attachment rows would sit on a spinner that
-    // only ends when the real message arrives — and never, if the creation is
-    // rejected.
+    // Local draft attachment ids cannot resolve on the server; showing them would spin indefinitely
+    // if thread creation is rejected.
     streaming: false,
     createdAt: message.createdAt,
     updatedAt: message.createdAt,

@@ -1,10 +1,6 @@
 /**
- * A user bubble sizes itself from its content (`maxWidth` with no `width`), so
- * Android lays the bubble's children out during the unclamped intrinsic pass —
- * where the surrounding paragraphs collapse to a single line — and never
- * repositions them once the width is clamped back to `maxWidth`. Ordered lists
- * hit the same Android layout bug because each item contains a flexing content
- * column inside a shrink-to-fit row.
+ * Android lays out shrink-to-fit children before maxWidth clamps them and never repositions them.
+ * Wide blocks and ordered-list flex columns therefore need a definite bubble width.
  */
 
 const FENCED_CODE_BLOCK = /^ {0,3}(?:```|~~~)/m;

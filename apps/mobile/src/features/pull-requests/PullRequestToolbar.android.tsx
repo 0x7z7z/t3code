@@ -12,7 +12,6 @@ import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import { useWorkspaceListNavigation } from "../workspace/useAndroidWorkspaceNavigation";
 
-/** PR search shares the thread list's native Android header placement. */
 export function PullRequestToolbar(props: {
   readonly sidebar?: boolean;
   readonly onRequestVisibility?: () => void;

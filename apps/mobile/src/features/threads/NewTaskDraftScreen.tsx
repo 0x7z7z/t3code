@@ -403,8 +403,6 @@ export function NewTaskDraftScreen(props: {
     draftKey: null,
     names: new Set(),
   });
-  // The share import resumes after awaits; this reads the screen's current
-  // draft and share at that point without re-running the import effect.
   const isCurrentShareImport = useEffectEvent(
     (draftKey: string, shareId: string) =>
       flow.draftKey === draftKey && props.incomingShareId === shareId,
@@ -417,10 +415,8 @@ export function NewTaskDraftScreen(props: {
   });
   const isImportingShare = importingShareKey !== null;
   const alertedUnavailableIncomingShareIdRef = useRef<string | null>(null);
-  // The share this screen already moved into its draft. Sending clears the
-  // draft (and its importedShareIds receipt) a frame before the screen leaves,
-  // and the inbox entry is long gone by then; without this the re-render in
-  // between reads as "shared content vanished" and alerts on every send.
+  // Sending clears the draft receipt before this screen leaves; remember the consumed share locally
+  // so that intervening render cannot report the content as missing.
   const [consumedIncomingShareId, setConsumedIncomingShareId] = useState<string | null>(null);
   const incomingShare = props.incomingShareId ? getShare(props.incomingShareId) : null;
   const requestedInitialProjectAvailable = Boolean(
@@ -832,11 +828,8 @@ export function NewTaskDraftScreen(props: {
       await consumeShare(shareId);
       didConsumeShare = true;
       setConsumedIncomingShareId(shareId);
-      // The consumed inbox draft was the last owner of files that never made
-      // it into the composer draft (unsupported server, oversize, limit
-      // skips). Release them before any early return: an unmount or a
-      // superseding import must not leak them, and the sweep re-checks
-      // ownership so it cannot delete a file another draft picked up.
+      // Release skipped files after consuming their last inbox owner, even if the import unmounts.
+      // The sweep re-checks ownership to preserve files another draft acquired.
       const retainedAttachmentIds = new Set(
         getComposerDraftSnapshot(draftKey).attachments.map((attachment) => attachment.id),
       );
@@ -1265,10 +1258,8 @@ export function NewTaskDraftScreen(props: {
       return;
     }
     if (!queuesInsteadOfStarting) {
-      // Arm the lock-screen card before the async thread creation: backgrounding
-      // the app right after tapping submit would otherwise reject the foreground
-      // -only Activity start. If creation fails, the token registration's replay
-      // finds no work and ends the card within seconds.
+      // ActivityKit requires foreground startup; arm before async thread creation so an immediate
+      // backgrounding cannot reject it. Registration replay ends the card if creation fails.
       armAgentAwarenessLiveActivityForLocalWork({
         environmentId: selectedProject.environmentId,
         threadTitle: deriveThreadTitleSeed({

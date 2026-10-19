@@ -188,10 +188,8 @@ export function ComposerEditor({
       }),
     );
   }, [props.value, props.context, skillLabels]);
-  // Every render resolves against the snapshot history, so a render whose
-  // (value, selection) lags the acknowledged native state is stamped behind
-  // the native revision and rejected by the editor instead of re-applying a
-  // stale caret or stale text mid-typing.
+  // Stamp renders lagging acknowledged native state behind its revision so the editor rejects
+  // stale text and caret positions.
   const controlledEventCount = resolveComposerControlledEventCount(
     props.value,
     selection ?? null,
@@ -311,11 +309,8 @@ export function ComposerEditor({
             event.nativeEvent.selection,
           );
           if (acknowledgedEventCount === false) return;
-          // Android emits the selection change mid-mutation, before the change
-          // event, so the payload can carry post-edit text. It must reach the
-          // parent alongside the acknowledged revision, or the next render
-          // stamps the stale draft at that revision and can re-apply it over
-          // the newer native text.
+          // Android selection events can carry post-edit text before the change event. Publish that text
+          // with its revision or the parent can stamp and reapply the stale draft as current.
           if (event.nativeEvent.value !== props.value) {
             onChangeText(event.nativeEvent.value);
           }

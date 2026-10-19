@@ -602,10 +602,8 @@ export function start(configuration: PreviewStreamConfiguration) {
     ((document.pictureInPictureEnabled === true &&
       typeof videoPrototype.requestPictureInPicture === "function") ||
       typeof videoPrototype.webkitSetPresentationMode === "function");
-  // Since the iOS 17 SDK, WebKit revokes the activation it grants an injected script when
-  // the script returns, so the native button's request must start before any await. The
-  // video is ready ahead of the tap: paused, and fed a frame only when it has none or
-  // floats, so the inline view captures nothing.
+  // WebKit revokes injected-script activation on return, so start picture in picture before any await.
+  // Prepare paused video ahead of the tap; feed frames only while empty or floating.
   let video: PresentationVideo | null = null;
   let track: CanvasCaptureMediaStreamTrack | null = null;
   const pictureInPictureActive = () =>

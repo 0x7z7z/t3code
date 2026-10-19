@@ -339,10 +339,8 @@ export async function recoverEditedCreationAfterDelivery(
   }
   const draftKey = scopedThreadKey(kept.environmentId, kept.threadId);
   try {
-    // Merge before removing: the draft's reference keeps the removal sweep
-    // from deleting the attachment files. allowOverflow mirrors the
-    // send-failure restore; the send path refuses over-cap drafts, so the
-    // state stays recoverable.
+    // Merge before removing so the draft retains file ownership. Allow overflow to keep recovery lossless;
+    // the send guard requires trimming before dispatch.
     await mergeComposerDraftContent(draftKey, {
       text: kept.text,
       context: kept.context,
@@ -439,12 +437,8 @@ export async function restoreRejectedQueuedMessage(
         attachments: queuedMessage.attachments,
       });
     } finally {
-      // Snapshots for the rollbacks below: undoComposerDraftMerge restores
-      // the original draft only while it is untouched, and otherwise takes
-      // out just what this recovery inserted so edits typed during the awaits
-      // survive. Captured in a finally because mergeComposerDraftContent
-      // publishes before its persistence await: even its failure leaves the
-      // merged content in the draft.
+      // Capture rollback state in finally: merge publishes even if persistence fails. Undo restores untouched
+      // drafts exactly and removes only inserted content when the user edited during awaits.
       mergedDraft = getComposerDraftSnapshot(draftKey);
       rollback = { snapshot: originalDraft, merged: mergedDraft };
     }
@@ -1243,10 +1237,8 @@ export function useThreadOutboxDrain(): void {
         if (!queued) {
           return true;
         }
-        // The guards evaluated before the confirmation await are stale by now: the user may
-        // have opened this message in the editor. Re-read that guard and defer to the next
-        // drain pass (returning true skips the failure/backoff path) rather than sending a
-        // payload being edited.
+        // Re-check edit ownership after confirmation awaits. Return true to defer an editor-owned message
+        // without triggering failure backoff.
         if (appAtomRegistry.get(editingQueuedMessageIdsAtom)[nextQueuedMessage.messageId]) {
           return true;
         }
@@ -1270,10 +1262,8 @@ export function useThreadOutboxDrain(): void {
         return deliveryAction === "remove"
           ? creation !== undefined
             ? // A creation entry that survived its delivery cleanup either
-              // holds edits (recover them) or the delivered payload (a
-              // recovered duplicate the user can delete). Restart loses any
-              // in-memory distinction, and losing edits is the worse failure,
-              // so recovery is unconditional here.
+              // After restart, a delivered creation may contain unsaved edits or a duplicate payload; always recover
+              // because the in-memory distinction is lost and discarding edits is worse.
               recoverEditedCreationAfterDelivery(nextQueuedMessage)
             : removeQueuedMessage("[thread-outbox] failed to remove message for a missing thread")
           : creation !== undefined

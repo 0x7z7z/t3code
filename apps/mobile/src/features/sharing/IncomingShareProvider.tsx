@@ -99,10 +99,8 @@ async function removeOwnedFile(uri: string): Promise<void> {
   }
   try {
     const { File, Paths } = await import("expo-file-system");
-    // Only delete files in directories this app owns: its documents and cache
-    // sandbox and its share-extension App Group container. An iOS
-    // open-in-place share points at the sender's own storage; deleting that
-    // URI would destroy the user's document.
+    // Delete only app-owned documents, cache, and App Group files. iOS open-in-place shares can
+    // point into the sender's storage; removing those URIs destroys the original document.
     const ownedRootUris = [
       Paths.document.uri,
       Paths.cache.uri,

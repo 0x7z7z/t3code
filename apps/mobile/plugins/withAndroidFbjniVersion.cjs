@@ -1,14 +1,8 @@
 const { withProjectBuildGradle } = require("expo/config-plugins");
 
-// react-native-shiki-engine 0.3.12 asks for `com.facebook.fbjni:fbjni:+`, which Gradle
-// resolves to the newest release on Maven Central. That is now 0.8.x, built
-// with NDK 28, while React Native links the NDK 27.1 C++ runtime and requires
-// 0.7.0. The two disagree on libc++, so the app dies in
-// ReactNativeFeatureFlagsCxxInterop's static initializer before any JavaScript
-// runs ("cannot locate symbol __cxa_init_primary_exception").
-//
-// Keep this equal to `fbjni` in react-native/gradle/libs.versions.toml, and move
-// it with React Native. withAndroidFbjniVersion.test.mjs fails when they differ.
+// react-native-shiki-engine's fbjni:+ can resolve to NDK 28 builds incompatible with RN's
+// NDK 27.1 libc++, crashing before JS with __cxa_init_primary_exception missing.
+// Keep this equal to fbjni in react-native/gradle/libs.versions.toml.
 const FBJNI_VERSION = "0.7.0";
 const MARKER = "withAndroidFbjniVersion";
 

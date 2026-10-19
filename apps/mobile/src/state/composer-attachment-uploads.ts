@@ -109,7 +109,6 @@ export function useComposerAttachmentUploadWorker() {
           }),
         );
         release?.();
-        // The upload queue owns retry and failure reporting, so a failed upload rethrows to it.
         if (AsyncResult.isFailure(prepared)) throw squashAtomCommandFailure(prepared);
         return prepared.value.status === "ready";
       },

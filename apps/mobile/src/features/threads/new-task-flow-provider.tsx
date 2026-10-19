@@ -130,10 +130,8 @@ function pendingTaskDraftKey(messageId: string): string {
   return `pending-task:${messageId}`;
 }
 
-// The message id owned by the currently active editing session, tracked
-// across provider instances. An in-flight flush from a dismissed session
-// consults it so it never drops the draft or releases the drain lock out from
-// under a newer session editing the same task.
+// Track edit ownership across provider instances so a dismissed editor's flush cannot drop
+// a newer session's draft or release its drain lock.
 let activeEditingMessageId: string | null = null;
 
 function findQueuedPendingTask(messageId: string): QueuedThreadMessage | null {
@@ -203,11 +201,7 @@ type NewTaskFlowContextValue = {
   readonly filteredBranches: ReadonlyArray<VcsRef>;
   readonly reset: () => void;
   readonly setProject: (project: EnvironmentProject) => void;
-  /**
-   * Binds the composer to an existing new-task draft (a row in the thread
-   * list). Returns false when the draft is gone, so the caller can fall back
-   * to a fresh one.
-   */
+  /** Returns false if the existing draft is gone, allowing fallback to a fresh draft. */
   readonly openDraft: (draftKey: string) => boolean;
   readonly selectEnvironment: (environmentId: EnvironmentId) => void;
   readonly switchEnvironment: (environmentId: EnvironmentId) => Promise<boolean>;
@@ -484,10 +478,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         projectHasThreads: selectedProjectHasThreads,
       })
     : "local";
-  // While the file read is pending and nothing above it decided, the
-  // resolved default is provisional. Nothing may write it into the draft
-  // during that window (the auto-branch effect does), or the frozen interim
-  // value beats the t3.json default once it loads.
+  // Do not persist the provisional workspace default while t3.json is loading; it would override
+  // the file's eventual default.
   const defaultWorkspaceModeSettled =
     selectedProjectDraft.workspaceSelection?.mode !== undefined ||
     projectSettings.sources.defaultThreadEnvMode !== "environment" ||
@@ -497,9 +489,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     : "local";
   const selectedBranchName = selectedProjectDraft.workspaceSelection?.branch ?? null;
   const selectedWorktreePath = selectedProjectDraft.workspaceSelection?.worktreePath ?? null;
-  // Keep the user's explicit choice separate from the resolved display value:
-  // only the explicit flag is ever written back to the draft, so the resolved
-  // value keeps tracking the server setting when the config loads late.
+  // Persist only the explicit choice so the display default can follow late-arriving server settings.
   const draftStartFromOrigin = selectedProjectDraft.workspaceSelection?.startFromOrigin;
   const startFromOrigin =
     draftStartFromOrigin ?? projectSettings.settings.newWorktreesStartFromOrigin;
@@ -959,10 +949,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     }
     const workspaceSelection = canChooseWorkspace ? draft.workspaceSelection : undefined;
     const mode = workspaceSelection?.mode ?? workspaceMode;
-    // When the selection is the stand-in built from the queued snapshot,
-    // persist the original (possibly absent) snapshot values — the
-    // stand-in's placeholder title/workspaceRoot must never be written back
-    // as if they were real project metadata.
+    // Queued placeholders must retain their original snapshot fields; never persist placeholder
+    // titles or workspace paths as real project metadata.
     const usingPendingSnapshot = selectedProject === editingPendingProject;
     const projectTitle = usingPendingSnapshot
       ? editingPendingTask?.creation?.projectTitle
@@ -997,10 +985,8 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
         ...(mode === "worktree" && workspaceSelection?.pullRequestReference
           ? { pullRequestReference: workspaceSelection.pullRequestReference }
           : {}),
-        // An explicit picker choice wins. Otherwise only a task sending now
-        // records the current checkout: a queued local task drains days
-        // later against whatever is checked out then, so a queue-time
-        // guess would pin a stale label to a thread that ran somewhere else.
+        // Queued local tasks use the checkout at drain time. Snapshot the current branch only for immediate
+        // sends or explicit picker choices, so a delayed task cannot acquire a stale branch label.
         branch: resolveProjectThreadCreationBranch({
           workspaceMode: mode,
           selectedBranch: workspaceSelection?.branch ?? null,
@@ -1029,10 +1015,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
     setEditingPendingTask(null);
   };
 
-  // If the queued task disappears mid-edit (deleted from the list, or
-  // delivered), end the editing session immediately without saving — a later
-  // flush must not resurrect it, and the composer should fall back to the
-  // regular per-project draft.
+  // End editing without saving if the queued task disappears; a later flush must not resurrect it.
   const queuedMessagesByThreadKey = useThreadOutboxMessages();
   useEffect(() => {
     const editing = editingPendingTaskRef.current;
@@ -1068,10 +1051,7 @@ export function NewTaskFlowProvider(props: React.PropsWithChildren) {
       });
 
       if (!message) {
-        // The edits are currently unsendable (e.g. the prompt was cleared).
-        // Keep both the draft and the drain lock: the stale queued payload
-        // must not auto-send content the user just removed, and reopening the
-        // task resumes from the saved draft.
+        // Keep unsendable edits and the drain lock so removed content cannot auto-send from a stale payload.
         return;
       }
 

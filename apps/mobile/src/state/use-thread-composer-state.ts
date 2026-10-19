@@ -240,10 +240,8 @@ export function useThreadComposerState() {
   const selectedThreadMessages = selectedThreadProjection?.projection.messages;
   const selectedThreadAttempts = selectedThreadProjection?.projection.attempts;
   const selectedThreadNodes = selectedThreadProjection?.projection.nodes;
-  // A thread whose creation has not delivered its turn yet: the prompt only
-  // exists in the outbox, so it is appended to whatever the server has. The
-  // detail is usually present but empty during a worktree checkout, so this
-  // cannot be an either/or with the loaded messages.
+  // Pending creation prompts exist only in the outbox while worktree setup leaves server detail empty.
+  // Append them to server messages rather than choosing one source.
   const pendingCreationMessage = selectedThreadCreation?.message ?? null;
   const selectedThreadFeed = (() => {
     const pendingCreation =
@@ -430,7 +428,6 @@ export function useThreadComposerState() {
     const draft = getComposerDraftSnapshot(queuedEditDraftKey(threadKey, edit.runId));
     const text = draft.text.trim();
     if (text.length === 0) {
-      // The server rejects an empty queued message, attachments or not.
       Dialog.alert("Add a message", "A queued message cannot be left empty.");
       return;
     }
@@ -511,9 +508,7 @@ export function useThreadComposerState() {
     if (!selectedThreadShell) {
       return null;
     }
-    // The server has not created this thread yet. Queuing a follow-up against
-    // its id would strand the message: if the creation is rejected the thread
-    // never appears and the drain drops the orphan. The composer disables its
+    // Before thread creation succeeds, follow-ups could become orphaned and be dropped by the drain.
     if (selectedThreadCreation !== null) {
       return null;
     }
@@ -543,10 +538,8 @@ export function useThreadComposerState() {
     if (text.length === 0 && attachments.length === 0) {
       return null;
     }
-    // A send-failure restore appends with allowOverflow so it never drops the
-    // user's files, which can leave the draft over the cap. Sending it anyway
-    // would enqueue a message that outbox recovery rejects forever, so block
-    // here until the user removes attachments.
+    // Failure recovery preserves attachments above the cap. Block send until trimmed, or the outbox
+    // would reject the restored payload indefinitely.
     if (attachments.length > PROVIDER_SEND_TURN_MAX_ATTACHMENTS) {
       Dialog.alert(
         "Too many attachments",
@@ -618,11 +611,8 @@ export function useThreadComposerState() {
       return null;
     }
 
-    // Resolved here rather than at drain time: the outbox can deliver minutes
-    // later, and the choice belongs to the moment the user pressed send.
-    // Steering travels as "auto" so a turn that ends in the meantime degrades
-    // to a queued run on the server instead of failing the delivery and
-    // bouncing the message back into the draft.
+    // Capture dispatch mode on send, before a delayed drain. Send steering as auto so a turn that ends
+    // in the meantime falls back to a queued run instead of rejecting delivery.
     const followUpAction = resolveComposerDispatchMode({
       running: activeThreadBusy && canSteerActiveTurn,
       alternateModifier: followUpOverride !== undefined && followUpOverride !== followUpBehavior,
@@ -663,10 +653,8 @@ export function useThreadComposerState() {
     enqueuePromise.then(
       () => scheduleUnusedComposerAttachmentCleanup(attachments),
       (error: unknown) => {
-        // Restore text via merge (idempotent) but attachments via the uncapped
-        // append: the merge path slots existing attachments first and truncates
-        // at the send limit, which would silently drop this message's images if
-        // the user attached new ones while the write was in flight.
+        // Restore attachments through uncapped append; merge truncates at the send limit and could drop
+        // files when the user added attachments during the failed write.
         void mergeComposerDraftContent(threadKey, {
           text,
           context: draft.context,

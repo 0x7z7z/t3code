@@ -114,14 +114,10 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
       try {
         await options.storage.write(message);
       } catch (cause) {
-        // Roll back by reference, not messageId: a retry enqueue with the same
-        // id may have optimistically replaced this attempt while the write was
-        // in flight, and its entry must survive this attempt's failure.
+        // Rollback by reference: a retry with the same id may already own a newer optimistic entry.
         setMessages(currentMessages().filter((candidate) => candidate !== message));
-        // A concurrent update losing its post-write race compensates by
-        // persisting this message's payload before this write settles. When
-        // no same-id entry survives the rollback, drop that disk copy too, or
-        // a restart resurrects a message the queue no longer holds.
+        // A concurrent update may persist a compensating copy before rollback. Remove it if no same-id
+        // entry survives, or restart would resurrect a message the queue rejected.
         if (!currentMessages().some((candidate) => candidate.messageId === message.messageId)) {
           try {
             await options.storage.remove(message);
@@ -143,10 +139,8 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
   const confirmQueued = (message: QueuedThreadMessage): Promise<boolean> =>
     serialize(async () => currentMessages().some((candidate) => candidate === message));
 
-  // An enqueue can still publish synchronously while the durable write below is in flight, so the
-  // revision is re-checked after the write too; the stale payload it just persisted is then
-  // overwritten with the winning payload inside this mutation, so a crash before the winner's own
-  // serialized write cannot leave stale state on disk.
+  // Enqueue can publish during the durable write. Re-check revision and persist the winning payload
+  // before this mutation settles so a crash cannot preserve stale data.
   const update = (message: QueuedThreadMessage, expectedRevision?: number): Promise<boolean> =>
     serialize(async () => {
       const staleOrMissing = (): boolean =>
@@ -351,9 +345,7 @@ export function createThreadOutboxManager(options: ThreadOutboxManagerOptions) {
         bumpRevision(message.messageId);
       }
       setMessages(reconciledMessages);
-      // The caller releases these messages' attachment files; reporting what
-      // was actually removed keeps the release set honest even when this
-      // function's own load produced the messages.
+      // Report the actual removed messages so caller-owned attachment cleanup includes records loaded here.
       return removed;
     });
   };

@@ -152,11 +152,8 @@ function AddProjectShell(props: { readonly children: ReactNode; readonly title: 
   const insets = useSafeAreaInsets();
 
   return (
-    // collapsable={false} is load-bearing: if this wrapper is flattened, the
-    // ScrollView lands directly under RNSSafeAreaView and RNS's formSheet
-    // scroll-view frame correction mistakes this full-height wrapper for a
-    // "header" sibling, coercing the ScrollView to zero height (blank sheet
-    // as soon as the sheet re-lays-out, e.g. when the keyboard opens).
+    // Without a non-collapsible wrapper, RNS formSheet sizing mistakes the full-height view for a header
+    // and shrinks the ScrollView to zero when the sheet relayouts.
     <SettingsScreen title={props.title}>
       <ScrollView
         keyboardShouldPersistTaps="handled"

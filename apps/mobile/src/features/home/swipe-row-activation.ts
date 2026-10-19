@@ -1,10 +1,8 @@
 import { createContext, use, useSyncExternalStore } from "react";
 
 /**
- * Full swipe rows (pan gesture, animated actions, hidden action buttons) only
- * exist around the viewport. Every other Home row renders a dormant frame that
- * paints the same content with a fraction of the native views, so a row the
- * list rebuilds while scrolling is cheap.
+ * Keep swipe gestures and hidden action views near the viewport; dormant frames make offscreen
+ * row rebuilds cheap during scrolling.
  */
 export function createSwipeRowActivation() {
   let activeKeys = new Set<string>();

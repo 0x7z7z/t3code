@@ -1,8 +1,6 @@
 /**
- * `<environmentId>:<threadId>~queued-edit~<runId>`: the marker holds no colon,
- * so `composerDraftEnvironmentId` still reads the environment from the segment
- * before the last colon and attachment uploads keep working, while the user's
- * own draft for the thread stays untouched under its own key.
+ * The marker must contain no colon: composerDraftEnvironmentId parses before the last colon.
+ * Keep queued edits under separate keys so the user's original draft survives.
  */
 const QUEUED_EDIT_DRAFT_MARKER = "~queued-edit~";
 

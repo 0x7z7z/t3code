@@ -15,9 +15,7 @@ import { MenuPopup } from "./MenuPopup";
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 6;
 
-// Both snapshots are taken at open time so later reflows (keyboard show/hide,
-// screen transitions) can't flip an opens-up menu to opens-down
-// mid-presentation.
+// Freeze both snapshots at opening so keyboard and screen reflows cannot flip menu direction.
 type AnchorSnapshot = {
   readonly x: number;
   readonly y: number;
@@ -115,9 +113,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
           margin: SCREEN_MARGIN,
           hinge: windowHinge && { x: windowHinge.x - overlay.x, width: windowHinge.width },
         });
-  // The keyboard stays up while the menu is open (in-window overlay, no
-  // focus change), so the space it covers is not usable — without this the
-  // composer-pill menus "open down" into the IME and can't be tapped.
+  // This in-window menu preserves keyboard focus; subtract the IME area so its items remain tappable.
   const usableBottom =
     overlay === null ? 0 : overlay.height - (keyboardVisible ? keyboardHeight : 0);
   const spaceBelow =

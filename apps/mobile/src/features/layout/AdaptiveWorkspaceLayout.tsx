@@ -129,14 +129,8 @@ export function useAdaptiveWorkspacePaneRole(role: WorkspaceAuxiliaryPaneRole) {
 }
 
 /**
- * The column renders BESIDE the navigator — outside any screen — so the
- * registering screen's navigation and route contexts are captured here and
- * re-provided around the portal content.
- *
- * Registration is FOCUS-scoped, driven by navigation events rather than the
- * screen's own render cycle: react-native-screens freezes blurred screens, so a
- * cleanup that depends on the blurred subtree re-rendering never runs and would
- * leak the pane into the next route.
+ * Capture navigation contexts for the inspector rendered outside the navigator.
+ * Scope registration to focus events: frozen blurred screens may never re-render to run cleanup.
  */
 export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefined) {
   const { registerWorkspaceInspector } = useAdaptiveWorkspaceLayout();
@@ -157,8 +151,6 @@ export function useRegisterWorkspaceInspector(render: (() => ReactNode) | undefi
   const focusedRef = useRef(false);
   const deactivateRef = useRef<(() => void) | null>(null);
 
-  // An effect event reads this render's pane without making the focus
-  // subscription re-run (and deactivate) every time the pane closure changes.
   const syncRegistration = useEffectEvent(() => {
     if (!focusedRef.current || wrappedRender === undefined) {
       deactivateRef.current?.();
@@ -468,7 +460,6 @@ function AdaptiveWorkspaceLayoutContent(
     const sameViewport = contentSizing.viewportWidth === viewportWidth;
     const openingSidebar =
       sameViewport && !contentSizing.sidebarVisible && panes.primarySidebarVisible;
-    // A book-posture hinge resizes the visible list pane instead of revealing it.
     const resizingSidebar =
       sameViewport &&
       contentSizing.sidebarVisible &&
@@ -554,9 +545,7 @@ function AdaptiveWorkspaceLayoutContent(
     width: renderedSidebarWidth.value,
   }));
 
-  // The navigator (native header + markdown feed) lays out ONCE per pane toggle
-  // instead of re-measuring on every animation frame — the animating columns
-  // merely clip/reveal it over a matching background.
+  // Clip the navigator at its settled width so native headers and markdown reflow only once per pane toggle.
   const renderedInspectorWidth = useSharedValue(inspectorColumnTargetWidth);
   const renderedContentWidth = useDerivedValue(() =>
     Math.max(0, viewportWidth - renderedSidebarWidth.value - renderedInspectorWidth.value),

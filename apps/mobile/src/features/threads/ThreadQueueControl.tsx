@@ -587,8 +587,6 @@ function QueueDragHandle(props: {
   onMove: (y: number) => void;
   onEnd: (y: number, success: boolean) => void;
 }) {
-  // Gesture callbacks fire outside render, so effect events read the latest
-  // props without rebuilding the gesture.
   const onStart = useEffectEvent(() => props.onStart());
   const onMove = useEffectEvent((y: number) => props.onMove(y));
   const onEnd = useEffectEvent((y: number, success: boolean) => props.onEnd(y, success));

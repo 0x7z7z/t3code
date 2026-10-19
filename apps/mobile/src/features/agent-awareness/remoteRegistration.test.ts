@@ -805,10 +805,8 @@ describe("makeRelayDeviceRegistrationRequest", () => {
   });
 
   it.effect("dedupes rapid activity-token re-registrations within the replay window", () => {
-    // Fetch counts are unreliable here (the module-level relay layer captures
-    // the first test's fetch), so assert on the flow's own seams: a real
-    // registration attempt loads the device id, a deduped one short-circuits
-    // before it.
+    // The module's relay layer captures the first test's fetch. Check registration via device-id
+    // loads instead; deduped attempts skip them.
     const fetchMock = vi.fn((request: RequestInfo | URL) => {
       const url = request instanceof Request ? request.url : String(request);
       return Promise.resolve(

@@ -547,7 +547,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     const sent = await settlePromise(() => onSendMessage(followUp));
     inFlightThreadIdsRef.current.delete(threadKey);
     if (AsyncResult.isFailure(sent)) {
-      // The composer state already surfaces send errors; only the lock needed releasing.
       console.error("[composer] send failed", squashAtomCommandFailure(sent));
       return;
     }

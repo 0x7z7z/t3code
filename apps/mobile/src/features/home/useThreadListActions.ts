@@ -360,8 +360,6 @@ export function useThreadListActions(): {
       return false;
     }
     selectionHaptic();
-    // Same placement as web: a fresh pin takes the top of the arranged
-    // run. Servers that predate reordering get the bare pin (keyless).
     let orderKey: string | undefined;
     if (environmentSupportsPinReorder(thread.environmentId)) {
       const shells = appAtomRegistry.get(environmentThreadShells.threadShellsAtom);

@@ -195,9 +195,7 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-sharing",
   {
     ios: {
-      // Personal Teams cannot sign App Groups or extension targets. Keep the
-      // reduced-capability local build usable while release builds expose the
-      // real system share target.
+      // Personal Teams cannot sign App Groups or extension targets; keep local builds usable.
       enabled: !isIosPersonalTeamBuild,
       extensionBundleIdentifier: `${iosBundleIdentifier}.sharing`,
       appGroupId: `group.${iosBundleIdentifier}`,
@@ -217,9 +215,8 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   },
 ];
 
-// These aliases match the fonts' PostScript names on iOS. Register the same
-// names on Android so React Native and the native composer use one set of
-// family names without waiting for runtime font loading.
+// Match iOS PostScript names on Android so RN and the native composer share font families
+// without waiting for runtime loading.
 
 const config: ExpoConfig = {
   name: variant.appName,
@@ -274,11 +271,8 @@ const config: ExpoConfig = {
       // picture in picture needs it to start and to stay up outside the app.
       UIBackgroundModes: ["audio"],
       ITSAppUsesNonExemptEncryption: false,
-      // The App Store screenshot harness rotates the iPad interface from
-      // inside the app (CI denies osascript the Accessibility access that
-      // Simulator menu scripting needs), and iPadOS ignores programmatic
-      // orientation requests for multitasking-capable apps — so the capture
-      // build opts out of multitasking and declares landscape support.
+      // CI cannot script Simulator rotation, and iPadOS ignores programmatic orientation requests
+      // for multitasking-capable apps. Capture builds must opt out of multitasking.
       ...(process.env.T3_SHOWCASE_CAPTURE_BUILD === "1"
         ? {
             "UISupportedInterfaceOrientations~ipad": [
@@ -361,8 +355,6 @@ const config: ExpoConfig = {
     [
       "expo-quick-actions",
       {
-        // Adaptive launcher-shortcut icon; referenced by resource name from
-        // the shortcut items set in src/features/shortcuts.
         androidIcons: {
           shortcut_icon: {
             foregroundImage: variant.assets.androidAdaptiveForeground,
@@ -405,10 +397,8 @@ const config: ExpoConfig = {
           backgroundColor: "#0a0a0a",
         },
         android: {
-          // Android 12+ masks the splash icon to a circle over the central two thirds of
-          // its 288dp canvas, so the iOS export's corners get cut. A full-canvas image of
-          // the composed adaptive layers puts the wordmark in the same frame the launcher
-          // icon uses.
+          // Android 12+ masks the central two thirds of the 288dp canvas to a circle; the composed
+          // adaptive layers avoid clipping the iOS export's corners.
           image: variant.assets.androidSplashIcon,
           imageWidth: 288,
           dark: { image: variant.assets.androidSplashIcon },
@@ -445,11 +435,8 @@ const config: ExpoConfig = {
     // Only the accelerometer is used (device viewer shake). Compile out the
     // pedometer so iOS needs no motion purpose string.
     ["expo-sensors", { motionPermission: false }],
-    // Must be listed BEFORE expo-widgets: same-type mods run last-registered-
-    // first, so registering earlier makes this plugin's mods run AFTER
-    // expo-widgets' — its dangerous mod wipes ios/ExpoWidgetsTarget/ (which
-    // would delete the asset catalog) and its xcodeproj mod creates the widget
-    // target (which must exist before the compile phase can be attached).
+    // Same-type mods run last-registered-first: this must precede expo-widgets so its target
+    // exists and its directory wipe finishes before the asset catalog and compile phase are added.
     ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),
     "./plugins/withAndroidCleartextTraffic.cjs",
     "./plugins/withAndroidGradleHeap.cjs",
@@ -471,11 +458,8 @@ const config: ExpoConfig = {
       publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
       jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
     },
-    // @clerk/expo reads these from `extra`
-    // under their exact env-var names (not nested), and its config plugin reads
-    // the iOS URL scheme at prebuild to register it in Info.plist.
-    // Unset values must be omitted (not null): the public manifest serializes
-    // null to {}, which is truthy and would defeat Clerk's fallback checks.
+    // Clerk requires these exact top-level env-var names and reads the URL scheme at prebuild.
+    // Omit unset values: manifest serialization turns null into truthy {}, defeating its fallback.
     EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
     EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
     EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,

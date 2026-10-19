@@ -120,7 +120,6 @@ describe("useVisibleSecondClock", () => {
   });
 
   it("notices an AppState change between first render and subscribing", () => {
-    // Layout effects run before the hook's passive subscription, so this change has no listener.
     function BackgroundBeforeSubscribe() {
       useLayoutEffect(() => harness.setAppState("background"), []);
       return null;

@@ -471,9 +471,7 @@ export function HomeScreen(props: HomeScreenProps) {
   } = listEnvironments;
   const resolveProviderInstance = useThreadRowProviderInstanceResolver(providersByEnvironmentId);
   const pendingOrder = usePendingThreadOrder(nowMinute, snoozeWakeTick);
-  // Up/down menu availability for every card, computed once per section per
-  // rebuild (see computeThreadMoveAvailability): per-thread planner calls made
-  // list construction quadratic, and this list rebuilds on every minute tick.
+  // Compute move availability once per section to avoid quadratic planner work on each minute tick.
   const threadMoveAvailability = (() => {
     const sectionAvailability = (section: "pinned" | "active") =>
       computeThreadMoveAvailability({
@@ -694,10 +692,8 @@ export function HomeScreen(props: HomeScreenProps) {
   };
   const v2KeyExtractor = (item: ThreadListV2ListItem) => item.key;
 
-  // FlatList/LegendList treat a changed extraData identity as "re-render every
-  // visible row", so an inline object literal would invalidate all rows on
-  // every HomeScreen render — and the minute clock must stay out of it for
-  // the same reason: the clock text is precomputed per item instead.
+  // A changed extraData identity invalidates every visible row. Keep the minute clock on items
+  // so ticks update only rows whose displayed text changes.
   const v2ExtraData = {
     projectByKey,
     projectTitleByProjectKey: v2ProjectTitleByProjectKey,

@@ -223,7 +223,6 @@ export function AttachmentFileScreen(props: AttachmentFileScreenProps) {
     const message = pendingNativeError.current;
     pendingNativeError.current = null;
     if (nativeViewer === null) {
-      // A file this screen renders itself: an explicit viewer failure is worth a word.
       if (message) Dialog.alert("Could not open document", message);
       return;
     }

@@ -248,11 +248,8 @@ function errorMessage(error: unknown): string | null {
 }
 
 /**
- * Only a failure the server actually decided (`OrchestrationDispatchCommandError`,
- * or an authorization rejection) means the payload itself is bad. The other typed
- * failures a queued send can hit are transport-shaped: a socket that dropped
- * mid-request (`RpcClientError` wrapping a Socket read/write/close reason), or an
- * environment that is not connected or not registered.
+ * Only dispatch or authorization rejections prove the payload is invalid. Other typed failures
+ * can be disconnected transports and must remain retryable.
  */
 export function shouldRetryThreadOutboxDelivery(error: unknown): boolean {
   if (typeof error === "object" && error !== null && "_tag" in error) {

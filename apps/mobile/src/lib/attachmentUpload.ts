@@ -146,11 +146,8 @@ export type PrepareTurnAttachmentsResult =
   | { readonly status: "abandoned" };
 
 /**
- * A picture picked through Files arrives typed as a plain file, often with no usable mime, so it is
- * promoted to the type the provider accepts. Every place that names the attachment on the wire —
- * the upload header, the upload input, and the message reference — has to agree on this one value,
- * or the turn describes bytes that are not what was actually sent and `ChatImageAttachment` rejects
- * it.
+ * Files-picked images arrive as plain files. Upload headers, payloads, and message references must
+ * agree on the promoted wire MIME type or ChatImageAttachment rejects the uploaded bytes.
  */
 export function composerAttachmentWireMimeType(attachment: DraftComposerAttachment): string {
   if (!isComposerImageAttachment(attachment)) return attachment.mimeType;

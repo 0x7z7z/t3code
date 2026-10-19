@@ -257,9 +257,8 @@ export interface AgentSpawnSummary {
 }
 
 /**
- * Work-log headers render one line, but Android still lays out and hit-tests
- * the whole string, so a multi-kilobyte heredoc stalls touch dispatch until
- * the app ANRs. Expanded bodies and copy keep the full text.
+ * Android lays out and hit-tests the full header string even at one line; long heredocs can ANR.
+ * Cap only the label; expanded content and copy retain the full text.
  */
 const WORK_LOG_LABEL_MAX_LENGTH = 200;
 

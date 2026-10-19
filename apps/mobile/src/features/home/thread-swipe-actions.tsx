@@ -117,12 +117,7 @@ function resolveSecondaryAction(input: {
   };
 }
 
-/**
- * Delivers the scroll gate to swipeables via context so that flipping it does
- * NOT re-render whole rows: putting the flag in list extraData/renderItem deps
- * re-rendered every visible row (hooks, subscriptions and all) exactly at
- * scroll start — peak frame pressure.
- */
+/** Keep the scroll gate in context so scroll start cannot re-render every row and its subscriptions. */
 const SwipeableScrollGateContext = createContext(true);
 
 export function SwipeableScrollGateProvider(props: {
@@ -140,11 +135,8 @@ export function SwipeableScrollGateProvider(props: {
 }
 
 /**
- * failOffsetY on the swipe pan covers the first pan of a scroll, but trackpad
- * scroll sessions spawn fresh gesture sessions (momentum catch, direction
- * changes) whose reset translation can re-activate a swipe mid-scroll — so
- * while the list has moved vertically during an active drag/momentum phase, row
- * swipes are disabled entirely.
+ * Trackpad scrolling can start fresh pan sessions mid-momentum, bypassing failOffsetY.
+ * Disable row swipes throughout any active vertical scroll session.
  */
 export function useSwipeableScrollGate(options?: {
   readonly onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
@@ -225,11 +217,7 @@ interface ThreadSwipeableProps {
   readonly containerStyle?: StyleProp<ViewStyle>;
   readonly enabled?: boolean;
   readonly enableTrackpadSwipe?: boolean;
-  /**
-   * Omitted keeps the v1 Delete behavior only when the built-in Delete
-   * secondary action is in use; custom or absent secondary actions default to
-   * the advertised primary action.
-   */
+  /** Omitted uses Delete only with the built-in Delete secondary action; otherwise it uses primary. */
   readonly fullSwipeAction?: "delete" | "primary";
   readonly fullSwipeWidth: number;
   readonly onDelete: () => void;
@@ -238,9 +226,8 @@ interface ThreadSwipeableProps {
   readonly primaryAction: ThreadSwipeAction;
   readonly threadKey: string;
   /**
-   * Omitted keeps the v1 destructive Delete action. Explicit null opts out of
-   * a secondary action entirely so a gated Snooze can never fall back to an
-   * unadvertised Delete.
+   * Omitted defaults to Delete. Explicit null removes the secondary action so a gated Snooze
+   * cannot silently fall back to Delete.
    */
   readonly secondaryAction?: ThreadSwipeAction | null;
   readonly resetKey?: string;

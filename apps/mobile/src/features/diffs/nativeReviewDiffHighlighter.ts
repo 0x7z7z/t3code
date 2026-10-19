@@ -226,11 +226,8 @@ function createHighlighterHandle(
       while (start < lines.length) {
         if (signal?.aborted) return [];
 
-        // Skipping this line leaves its ending grammar state unknown. Resume
-        // from a fresh state rather than leaving the rest of the segment plain:
-        // highlighted rows are cached for the sheet's lifetime, so a plain tail
-        // would stick, and which rows it covered would depend on where the
-        // first visible window happened to start.
+        // An oversized line leaves grammar state unknown. Restart rather than caching a plain tail
+        // whose extent depends on the first visible window.
         if (lines[start]!.length > NATIVE_REVIEW_DIFF_TOKENIZE_MAX_LINE_LENGTH) {
           highlighted.push([{ content: lines[start] || " ", color: null, fontStyle: null }]);
           grammarState = undefined;

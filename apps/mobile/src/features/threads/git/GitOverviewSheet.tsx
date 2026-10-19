@@ -381,9 +381,7 @@ function GitOverviewSheetContent(props: GitOverviewSheetProps) {
   }
 
   if (Platform.OS === "ios") {
-    // Compact form sheet: a plain screen presented as formSheet never renders a
-    // stack header, so — like the Settings sheet — the header must come from a
-    // nested native stack INSIDE the sheet.
+    // A formSheet screen has no stack header; use a nested native stack inside the sheet.
     return (
       <View collapsable={false} className="flex-1 bg-sheet">
         <ScreenStack style={{ flex: 1 }}>
