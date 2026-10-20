@@ -177,6 +177,7 @@ export const make = Effect.fn("OpenCodeServerOwner.make")(function* (input: {
   });
 });
 
+/** @public */
 export const layer = (input: {
   readonly binaryPath: string;
   readonly directory: string;
