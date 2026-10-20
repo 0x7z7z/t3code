@@ -1,4 +1,5 @@
 import type { ProviderDriverKind } from "@t3tools/contracts";
+import type * as Effect from "effect/Effect";
 
 export interface ProviderMaintenanceCapabilities {
   readonly provider: ProviderDriverKind;
@@ -6,6 +7,11 @@ export interface ProviderMaintenanceCapabilities {
   readonly update: ProviderMaintenanceCommandAction | null;
   /** undefined defers to npm; null means the installer could not determine the latest version. */
   readonly latestVersion?: string | null;
+  /**
+   * Deferred until update checks are enabled; `null` falls back to
+   * `latestVersion`, then npm.
+   */
+  readonly lookupLatestVersion?: Effect.Effect<string | null>;
   readonly compareVersions?: (current: string, latest: string) => number;
   /** Resolved executable path for advisories when no update command is proven. */
   readonly installPath?: string;

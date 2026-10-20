@@ -121,37 +121,34 @@ export function grokApprovalOptions(
   ];
 }
 
-export const makeGrokAcpRuntime = (
+export const makeGrokAcpRuntime = Effect.fn("GrokAcpSupport.makeGrokAcpRuntime")(function* (
   input: GrokAcpRuntimeInput,
-): Effect.Effect<
+): Effect.fn.Return<
   AcpSessionRuntime.AcpSessionRuntime["Service"],
   EffectAcpErrors.AcpError,
   ChildProcessSpawner.ChildProcessSpawner | Crypto.Crypto | Scope.Scope
-> =>
-  Effect.gen(function* () {
-    const processGroupPlatform = yield* HostProcess.Platform.pipe(
-      Effect.provide(NodeServices.layer),
-    );
-    const acpContext = yield* Layer.build(
-      AcpSessionRuntime.layer({
-        ...input,
-        spawn: buildGrokAcpSpawnInput(
-          input.grokSettings,
-          input.cwd,
-          input.environment,
-          input.runtimeMode,
-        ),
-        authMethodId: resolveGrokAuthMethodId(input.environment),
-        cancelMeta: { ...input.cancelMeta, ...GROK_ACP_CANCEL_META },
-        initializeMeta: GROK_ACP_INITIALIZE_META,
-        ...grokAcpRuntimeProcessOwnership(processGroupPlatform),
-      }),
-    );
-    const runtime = yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
-      Effect.provide(acpContext),
-    );
-    return yield* makeXAiPromptCompletionRuntime(runtime);
-  });
+> {
+  const processGroupPlatform = yield* HostProcess.Platform.pipe(Effect.provide(NodeServices.layer));
+  const acpContext = yield* Layer.build(
+    AcpSessionRuntime.layer({
+      ...input,
+      spawn: buildGrokAcpSpawnInput(
+        input.grokSettings,
+        input.cwd,
+        input.environment,
+        input.runtimeMode,
+      ),
+      authMethodId: resolveGrokAuthMethodId(input.environment),
+      cancelMeta: { ...input.cancelMeta, ...GROK_ACP_CANCEL_META },
+      initializeMeta: GROK_ACP_INITIALIZE_META,
+      ...grokAcpRuntimeProcessOwnership(processGroupPlatform),
+    }),
+  );
+  const runtime = yield* Effect.service(AcpSessionRuntime.AcpSessionRuntime).pipe(
+    Effect.provide(acpContext),
+  );
+  return yield* makeXAiPromptCompletionRuntime(runtime);
+});
 
 // This product name is not an ACP model ID; it selects the current session model.
 export const GROK_DEFAULT_MODEL_SLUG = "grok-build";

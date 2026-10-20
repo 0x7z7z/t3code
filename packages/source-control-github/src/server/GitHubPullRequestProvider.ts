@@ -19,7 +19,11 @@ import {
   type PullRequestProviderApi,
   type ProviderRepositoryRef,
 } from "@t3tools/source-control-core/server/PullRequestProvider";
-import type { GitHubViewerAccess, GitHubWorkflowRunApproval } from "./gitHubPullRequestJson.ts";
+import type {
+  GitHubRepositoryAccess,
+  GitHubViewerAccess,
+  GitHubWorkflowRunApproval,
+} from "./gitHubPullRequestJson.ts";
 import { definition } from "../client/definition.ts";
 
 const CAPABILITIES: PullRequestCapabilities = {
@@ -45,16 +49,25 @@ const CAPABILITIES: PullRequestCapabilities = {
   labels: true,
 };
 
-/** GitHub requires write access to request reviewers, even for the PR author. */
-export function gitHubViewerPermissions(access: GitHubViewerAccess): PullRequestViewerPermissions {
+/**
+ * Asking somebody else for a review needs write access, which is the one thing here an author
+ * cannot do on their own pull request: GitHub shows an outside contributor the reviewer control
+ * and refuses the request behind it.
+ */
+export function gitHubViewerPermissions(
+  access: GitHubViewerAccess & Pick<GitHubRepositoryAccess, "autoMergeAllowed">,
+): PullRequestViewerPermissions {
   return {
     ...(access.canWrite ? { stackRebase: true } : {}),
     actions: [
       ...(access.canDeleteBranch === true ? (["delete-branch"] as const) : []),
+      // Keep disabling available if the repository has since turned auto-merge off.
       ...(access.canWrite
         ? ([
             "merge",
-            "enable-auto-merge",
+            ...(access.autoMergeAllowed && access.canMergeNow !== true
+              ? (["enable-auto-merge"] as const)
+              : []),
             "disable-auto-merge",
             "revert",
             "approve-workflows",
@@ -492,6 +505,8 @@ export const make = Effect.gen(function* () {
     getFilesViewed: (input) =>
       cli.getPullRequestFilesViewed(input).pipe(Effect.mapError(fail("getFilesViewed"))),
 
+    getFileStats: (input) =>
+      cli.getPullRequestFileStats(input).pipe(Effect.mapError(fail("getFileStats"))),
     setFilesViewed: (input) =>
       cli.setPullRequestFilesViewed(input).pipe(Effect.mapError(fail("setFilesViewed"))),
 

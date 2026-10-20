@@ -16,6 +16,17 @@ interface WorkspaceNavigation {
   readonly getRootState?: () => NavigationState | undefined;
 }
 
+function androidWorkspaceBackReturnsToThread(state: NavigationState) {
+  const current = state.routes[state.index];
+  const params = current?.params as ReactNavigation.RootParamList["Thread"] | undefined;
+  return (
+    current?.name === "Thread" &&
+    state.routes[state.index - 1]?.name === "Thread" &&
+    params !== undefined &&
+    !parentThreadIsBelow(state, params)
+  );
+}
+
 export function androidWorkspaceNavigationState(
   state: NavigationState,
   destination?: AndroidWorkspaceDestination,
@@ -62,7 +73,31 @@ export function resetAndroidWorkspace(
   });
 }
 
-// Split destinations replace the detail pane; slide-in would imply a nonexistent layer over Home.
+export function parentThreadIsBelow(
+  state: NavigationState,
+  parent: ReactNavigation.RootParamList["Thread"],
+) {
+  const previous = state.routes[state.index - 1];
+  const params = previous?.params as ReactNavigation.RootParamList["Thread"] | undefined;
+  return (
+    previous?.name === "Thread" &&
+    params?.environmentId === parent.environmentId &&
+    params.threadId === parent.threadId
+  );
+}
+
+export function returnToAndroidWorkspaceList(
+  navigation: WorkspaceNavigation & { readonly goBack: () => void },
+  selectTab: () => void,
+) {
+  const state = navigation.getState();
+  if (state && androidWorkspaceBackReturnsToThread(state)) return navigation.goBack();
+  selectTab();
+  resetAndroidWorkspace(navigation);
+}
+
+// In the split view these destinations swap the detail pane beside the sidebar instead of
+// stacking over Home, so the default slide-in would show a layer that is not there.
 export function androidWorkspaceDestinationAnimation(routeName: string, usesSplitView: boolean) {
   return usesSplitView && (routeName === "Thread" || routeName === "PullRequest")
     ? ("none" as const)

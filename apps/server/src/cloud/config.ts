@@ -44,10 +44,14 @@ export function isAgentActivityPublishingEnabledValue(value: string | null): boo
   return value === "true";
 }
 
-export const readAgentActivityPublishingActive = (
+/**
+ * Mirrors the per-publish gate in AgentAwarenessRelay, so the descriptor
+    capability never advertises publishing that the publisher would skip.
+ */
+export const readAgentActivityPublishingActive: (
   secrets: ServerSecretStore.ServerSecretStore["Service"],
-): Effect.Effect<boolean> =>
-  Effect.gen(function* () {
+) => Effect.Effect<boolean> = Effect.fn("config.readAgentActivityPublishingActive")(
+  function* (secrets: ServerSecretStore.ServerSecretStore["Service"]) {
     const readSecretString = (name: string) =>
       secrets
         .get(name)
@@ -69,7 +73,9 @@ export const readAgentActivityPublishingActive = (
       environmentCredential !== null &&
       environmentCredential !== ""
     );
-  }).pipe(Effect.orElseSucceed(() => false));
+  },
+  Effect.orElseSucceed(() => false),
+);
 
 const readSecretString = (name: string) =>
   ServerSecretStore.ServerSecretStore.pipe(

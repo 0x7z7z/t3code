@@ -9,9 +9,14 @@ const snapshotStack = (
   return { name: frame.name, stack: () => stack, parent: snapshotStack(frame.parent) };
 };
 
-/** Materializes Cache.get's inherited stack so lazy frames do not retain request snapshots for the TTL. */
-export const detachStackFrame = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-  Effect.gen(function* () {
-    const frame = snapshotStack(yield* References.CurrentStackFrame);
-    return yield* Effect.provideService(effect, References.CurrentStackFrame, frame);
-  });
+/**
+ * Wrap a `Cache.get` so its lookup fiber inherits a materialized stack. The lazy
+ * caller frame would otherwise retain the caller's request snapshot for the TTL.
+ * Stay untraced so this helper does not introduce another lazy frame to retain.
+ */
+export const detachStackFrame = Effect.fnUntraced(function* <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+) {
+  const frame = snapshotStack(yield* References.CurrentStackFrame);
+  return yield* Effect.provideService(effect, References.CurrentStackFrame, frame);
+});

@@ -28,6 +28,7 @@ export const make = Effect.gen(function* () {
       net.hasListenerOnHost(SSH_PORT, "::1"),
       (ipv4, ipv6) => ipv4 || ipv6,
     );
+    const username = yield* HostProcess.Username;
 
     const magicDnsName = yield* readTailscaleStatus.pipe(
       Effect.map((status) => status.magicDnsName),
@@ -46,20 +47,32 @@ export const make = Effect.gen(function* () {
           Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
         ))
       ) {
-        targets.push({ kind: "tailscale", host: magicDnsName });
+        targets.push({
+          kind: "tailscale",
+          host: magicDnsName,
+          ...(username === null ? {} : { username }),
+        });
       }
       return targets;
     }
 
     if (magicDnsName !== null) {
-      targets.push({ kind: "tailscale", host: magicDnsName });
+      targets.push({
+        kind: "tailscale",
+        host: magicDnsName,
+        ...(username === null ? {} : { username }),
+      });
     }
 
     // hostname() may be an FQDN; mDNS always uses <first-label>.local.
     const hostname = yield* HostProcess.Hostname;
     const shortHostname = hostname.split(".")[0]?.trim();
     if (shortHostname !== undefined && shortHostname.length > 0) {
-      targets.push({ kind: "mdns", host: `${shortHostname}.local` });
+      targets.push({
+        kind: "mdns",
+        host: `${shortHostname}.local`,
+        ...(username === null ? {} : { username }),
+      });
     }
 
     return targets;

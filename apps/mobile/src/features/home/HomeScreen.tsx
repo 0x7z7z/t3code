@@ -137,7 +137,9 @@ interface HomeScreenProps {
 }
 
 const ESTIMATED_THREAD_LIST_V2_ROW_HEIGHT = 72;
-// Offscreen rows are cheap dormant frames; rendering ahead avoids rebuilding during fast flings.
+// Rows away from the viewport skip their swipe actions (see
+// swipe-row-activation), so render further ahead: a fast fling then reaches
+// rows that are already built instead of rows still being rebuilt.
 const THREAD_LIST_V2_DRAW_DISTANCE = 1_000;
 
 function deriveEmptyState(props: {

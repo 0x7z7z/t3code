@@ -6,14 +6,23 @@ import type {
 } from "@t3tools/provider-core/server/usage";
 import * as Schema from "effect/Schema";
 
+import { CLAUDE_SYNTHETIC_MODEL } from "../provider/Drivers/claudeUsage.ts";
 import { GUARD_LENGTH, type TranscriptParsePosition } from "./usageTranscriptReader.ts";
 
-const USAGE_SCAN_CACHE_VERSION = 5 as const;
+const USAGE_SCAN_CACHE_VERSION = 7 as const;
 const SPEED_COMPATIBLE_SINCE_VERSION = 4;
 
-// Separate cache versions prevent older servers overwriting newer saved usage for deleted transcripts.
-export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v5.json";
-export const LEGACY_SCAN_CACHE_FILE_NAME = "usage-scan-cache.json";
+/**
+ * An older server sharing that directory cannot read a newer cache and would
+ * replace it, dropping saved usage for deleted transcripts. Separate files keep
+ * both.
+ */
+export const SCAN_CACHE_FILE_NAME = "usage-scan-cache-v7.json";
+export const LEGACY_SCAN_CACHE_FILE_NAMES = [
+  "usage-scan-cache-v6.json",
+  "usage-scan-cache-v5.json",
+  "usage-scan-cache.json",
+] as const;
 
 const SPEEDS: readonly UsageSpeed[] = ["standard", "fast", "ultrafast"];
 
@@ -24,6 +33,8 @@ export interface CachedFile {
   readonly records: readonly UsageRecord[];
   /** Unterminated tail records stay separate because incremental parsing rereads them. */
   readonly tailRecords: readonly UsageRecord[];
+  /** Whole-file count, including diagnostics from the tentative tail. */
+  readonly malformedRecords: number;
   readonly position: TranscriptParsePosition;
 }
 
@@ -42,6 +53,7 @@ type SerializedRecord = readonly [
   reportedCostUsd: number | null,
   speed: number,
   rateModelIndex?: number | null,
+  unresolvedServiceTierTurnId?: string,
 ];
 
 interface SerializedFile {
@@ -50,6 +62,7 @@ interface SerializedFile {
   readonly p: UsageProviderKind;
   readonly r: readonly SerializedRecord[];
   readonly t: readonly SerializedRecord[];
+  readonly mr: number;
   readonly o: number;
   readonly gl: number;
   readonly gh: number;
@@ -99,6 +112,9 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     record.rateModel === undefined
       ? null
       : intern(tables.models, tables.modelIndex, record.rateModel),
+    ...(record.unresolvedServiceTierTurnId === undefined
+      ? ([] as const)
+      : ([record.unresolvedServiceTierTurnId] as const)),
   ];
   return {
     s: entry.size,
@@ -106,6 +122,7 @@ function serializeFile(entry: CachedFile, tables: InternTables): SerializedFile 
     p: entry.provider,
     r: entry.records.map(serializeRecord),
     t: entry.tailRecords.map(serializeRecord),
+    mr: entry.malformedRecords,
     o: entry.position.resumeOffset,
     gl: entry.position.guardLength,
     gh: entry.position.guardHash,
@@ -203,6 +220,7 @@ export function decodeScanCache(
         reportedCostUsd,
         speedIndex,
         rateModelIndex,
+        unresolvedServiceTierTurnId,
       ] = row as SerializedRecord;
       const speed = typeof speedIndex === "number" ? SPEEDS[speedIndex] : undefined;
 
@@ -212,6 +230,8 @@ export function decodeScanCache(
         typeof timestampMs !== "number" ||
         !Number.isFinite(timestampMs) ||
         model === undefined ||
+        (unresolvedServiceTierTurnId !== undefined &&
+          typeof unresolvedServiceTierTurnId !== "string") ||
         (rateModelIndex != null && rateModel === undefined) ||
         !Number.isFinite(uncached) ||
         !Number.isFinite(cached) ||
@@ -222,6 +242,10 @@ export function decodeScanCache(
       ) {
         return null;
       }
+
+      // Unchanged and deleted transcripts may only exist in the cache, so the
+      // parser cannot remove their previously saved local placeholders.
+      if (provider === "claude" && model === CLAUDE_SYNTHETIC_MODEL) continue;
 
       records.push({
         provider,
@@ -238,6 +262,9 @@ export function decodeScanCache(
         },
         reportedCostUsd: typeof reportedCostUsd === "number" ? reportedCostUsd : null,
         speed,
+        ...(version >= 7 && unresolvedServiceTierTurnId !== undefined
+          ? { unresolvedServiceTierTurnId }
+          : {}),
         dedupeKey: typeof dedupeKey === "string" ? dedupeKey : null,
       });
     }
@@ -252,7 +279,12 @@ export function decodeScanCache(
     const format = formats.get(entry.p);
     if (format === undefined) continue;
     if (!isRecordArray(entry.r) || !isRecordArray(entry.t)) continue;
-    // Validate byte offsets and buffer sizes; corrupt resume positions would repeatedly fail parsing and drop usage.
+    const malformedRecords = entry.mr === undefined ? 0 : entry.mr;
+    if (!Number.isSafeInteger(malformedRecords) || malformedRecords < 0) continue;
+    // Position fields feed byte offsets and a Buffer allocation in the reader,
+    // so anything outside their real ranges must reject the entry: a bogus
+    // guard length would otherwise fail every parse of the file, silently
+    // dropping its usage instead of costing the documented cold re-parse.
     if (
       typeof entry.o !== "number" ||
       !Number.isSafeInteger(entry.o) ||
@@ -267,9 +299,12 @@ export function decodeScanCache(
     ) {
       continue;
     }
-    // Legacy caches lack service tiers; preserve deleted usage but force live files to reparse without resuming.
-    const legacy = format.state !== undefined && version < USAGE_SCAN_CACHE_VERSION;
-    // Reject corrupt state to avoid attributing appended usage to wrong models or replaying fork copies.
+    // Keep history for deleted rollouts, but re-parse incompatible reducer state.
+    // Only Codex requires new provenance state in v7.
+    const legacy =
+      format.state !== undefined && (version < 6 || (entry.p === "codex" && version < 7));
+    // A corrupt state disqualifies the entry: resuming with it would attach
+    // appended usage to the wrong model or replay fork-copied history.
     if (!legacy && !isValidState.get(entry.p)?.(entry.cs)) continue;
 
     const provider = entry.p;
@@ -283,6 +318,7 @@ export function decodeScanCache(
       provider,
       records,
       tailRecords,
+      malformedRecords,
       position: legacy
         ? { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null }
         : {

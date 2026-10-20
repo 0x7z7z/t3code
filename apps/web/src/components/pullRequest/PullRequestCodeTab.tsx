@@ -38,7 +38,7 @@ import {
 
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useClientSettings, updateClientSettings } from "~/hooks/useSettings";
-import { useTheme } from "~/hooks/useTheme";
+import { useRenderedAppearance } from "~/hooks/useTheme";
 import { areAllDiffFilesCollapsed } from "~/lib/diffCollapse";
 import { pullRequestFindingKey, type PullRequestFinding } from "./pullRequestDetail.logic";
 import { canEditPullRequestComment, canResolvePullRequestThread } from "./pullRequestEditing.logic";
@@ -245,6 +245,7 @@ function PullRequestCodeTab({
   onAddToAgentSelection,
   onRefresh,
   refreshToken = 0,
+  backgroundRefreshToken = 0,
   revealRequest = null,
 }: {
   scrollerRef: (node: HTMLDivElement | null) => void;
@@ -259,9 +260,10 @@ function PullRequestCodeTab({
   onAddToAgentSelection?: (input: PullRequestAgentSelectionInput) => void;
   onRefresh: () => void;
   refreshToken?: number;
+  backgroundRefreshToken?: number;
   revealRequest?: { readonly path: string; readonly nonce: number } | null;
 }) {
-  const { resolvedTheme } = useTheme();
+  const resolvedTheme = useRenderedAppearance();
   const settings = useClientSettings((settings) => ({
     diffFilesCollapsed: settings.diffFilesCollapsed,
     diffIgnoreWhitespace: settings.diffIgnoreWhitespace,
@@ -300,8 +302,9 @@ function PullRequestCodeTab({
 
   const referenceKey = pullRequestReviewKey(reference);
   const commit = selectedCommitOid;
-  const scopeKey = commit === null ? referenceKey : `${referenceKey}@${commit}`;
-  // The mounted composer survives pull request switches; reset it to avoid misposting.
+  const scopeKey = JSON.stringify([environmentId, referenceKey, commit]);
+  // The panel keeps this mounted across pull requests, so an open composer would otherwise
+  // survive the switch and attach its comment to whichever one is on screen when it is sent.
   const [stateScopeKey, setStateScopeKey] = useState(scopeKey);
   if (stateScopeKey !== scopeKey) {
     setStateScopeKey(scopeKey);
@@ -420,6 +423,15 @@ function PullRequestCodeTab({
     refreshFirstDiffPage();
     refreshFilesViewed();
   }, [refreshToken, scopeKey, refreshFirstDiffPage, refreshFilesViewed]);
+  const appliedBackgroundRefreshToken = useRef(backgroundRefreshToken);
+  useEffect(() => {
+    if (appliedBackgroundRefreshToken.current === backgroundRefreshToken) return;
+    appliedBackgroundRefreshToken.current = backgroundRefreshToken;
+    // Keeping slices mounted preserves scroll; the page merge invalidates changed pages.
+    setSliceState((previous) => ({ ...previous, cursor: null }));
+    refreshFirstDiffPage();
+    refreshFilesViewed();
+  }, [backgroundRefreshToken, refreshFirstDiffPage, refreshFilesViewed]);
 
   // The viewer mounts its footer later; state ensures the observer sees the sentinel.
   const [sentinel, setSentinel] = useState<HTMLDivElement | null>(null);
@@ -439,7 +451,12 @@ function PullRequestCodeTab({
     resolve: hostReview.resolve && detail.viewerPermissions.resolve,
   };
   const canCommentOnLines = review.inlineComment && commit === null;
-  // Tokenizer caches depend on theme; include patch hash because refreshed pages reuse cursors.
+  // Agent context is local, so it does not require host comment permission.
+  const canSelectLines =
+    commit === null && (review.inlineComment || onAddToAgentSelection !== undefined);
+  // The cache key carries the theme, which is what the tokenizer caches against, so a theme
+  // change is still a fresh parse. The patch's own hash is part of it too: a refreshed page
+  // reuses its cursor, and a key of position alone would hand back the parse it replaced.
   const parsedSlices = loadedSlices.map((slice) =>
     parseSlice(
       slice,
@@ -673,7 +690,7 @@ function PullRequestCodeTab({
     range: SelectedLineRange | null,
     context: { item: CodeViewItem<ReviewAnnotationGroup> },
   ) => {
-    if (!range || !canCommentOnLines) return;
+    if (!range || !canSelectLines) return;
     const item = context.item;
     if (item.type !== "diff") return;
     const file = files.find((candidate) => buildFileDiffRenderKey(candidate) === item.id);
@@ -792,8 +809,8 @@ function PullRequestCodeTab({
     themeType: resolvedTheme,
     stickyHeaders: true,
     loadDiffFiles,
-    enableGutterUtility: canCommentOnLines && draft === null,
-    enableLineSelection: canCommentOnLines && draft === null,
+    enableGutterUtility: canSelectLines && draft === null,
+    enableLineSelection: canSelectLines && draft === null,
     onGutterUtilityClick: beginComment,
     onLineSelectionEnd: beginComment,
   };
@@ -888,13 +905,13 @@ function PullRequestCodeTab({
           onRemove={() => removeComment(reviewKey, comment.id)}
         />
       ))}
-      {annotation.metadata.draft && draft ? (
+      {annotation.metadata.draft && draft && canSelectLines ? (
         <DiffCommentAnnotation
           kind="draft"
           rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
           text=""
-          submitLabel="Add to review"
-          {...(onAddToAgentSelection
+          submitLabel={canCommentOnLines ? "Add to review" : "Add to agent"}
+          {...(canCommentOnLines && onAddToAgentSelection
             ? {
                 secondaryAction: {
                   label: "Add to agent",
@@ -910,6 +927,14 @@ function PullRequestCodeTab({
             setSelectedLines(null);
           }}
           onComment={(body) => {
+            if (!canCommentOnLines) {
+              if (onAddToAgentSelection) {
+                finishSelection(draft, body, (comment) =>
+                  onAddToAgentSelection({ comment, request: body }),
+                );
+              }
+              return;
+            }
             addComment(reviewKey, {
               id: nextPendingReviewCommentId(),
               path: draft.path,

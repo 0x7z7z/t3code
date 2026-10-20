@@ -14,7 +14,11 @@ import { DPOP_REPLAY_MARKER_PREFIX } from "./dpop.ts";
 
 const REPLAY_MARKER_PREFIXES = [DPOP_REPLAY_MARKER_PREFIX, ...CLOUD_REPLAY_MARKER_PREFIXES];
 
-// Proof expiry rejects replays after ~5 minutes for DPoP or 7 for cloud proofs.
+/**
+ * A marker only matters while its proof can pass the time check (about 10 minutes
+ * for DPoP, 7 for cloud proofs). After that, the time check rejects a replay by
+ * itself.
+ */
 export const REPLAY_MARKER_MAX_AGE = Duration.days(1);
 
 /** Prunes only <marker prefix>*.bin, excluding other secrets and temporary files. */

@@ -23,6 +23,7 @@ import type {
 
 import * as BitbucketApi from "./BitbucketApi.ts";
 import { parseDiffFileRevisions } from "@t3tools/source-control-core/server/diffFileRevisions";
+import { sortChecks } from "@t3tools/source-control-core/server/pullRequestChecks";
 import {
   buildReviewThreads,
   decodeCommentsJson,
@@ -531,10 +532,11 @@ export const make = Effect.gen(function* () {
     listPullRequests: (input) =>
       withRepository(input.repository, (path) => {
         const search = input.query?.trim() ?? "";
-        // Include equal-time rows across pages; the caller deduplicates.
+        // Exclude already-sent IDs at the inclusive timestamp before applying the page limit.
         const predicates = [
           ...(search.length === 0 ? [] : [searchFilter(search)]),
           ...(input.cursor === undefined ? [] : [`updated_on <= ${input.cursor.updatedBefore}`]),
+          ...(input.cursor?.seenAt ?? []).map((number) => `id != ${number}`),
         ];
         return listPage({
           // Listings omit reviewers needed by `viewerReviewRequested`.
@@ -635,7 +637,7 @@ export const make = Effect.gen(function* () {
           decode: decodeStatusesJson,
           items: [],
           prepend: false,
-        }),
+        }).pipe(Effect.map(sortChecks)),
       ),
 
     listReviewerCandidates: (input) =>

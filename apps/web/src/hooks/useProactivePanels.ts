@@ -16,7 +16,15 @@ import {
   shouldRetargetThreadPullRequestPanel,
 } from "../components/ChatView.logic";
 
-/** New linked PRs or completed-turn diffs may open the panel; later user choices win. */
+// Settings and drafts unmount ChatView; remember links until the page reloads.
+const observedThreadPullRequests = new Map<string, ThreadLinkedPullRequest | null>();
+
+/**
+ * Opens the right panel on its own when there is something new to look at: a
+ * change request linked to the thread, or the diff of a turn that just
+ * completed. A panel the user opened or closed since wins; see
+ * observeProactivePanelUserChoice.
+ */
 export function useProactivePanels(input: {
   // Null for drafts and while the thread is unavailable.
   readonly threadRef: ScopedThreadRef | null;
@@ -59,16 +67,11 @@ export function useProactivePanels(input: {
   const proactivePanelObservationRef = useRef<ReturnType<
     typeof observeProactivePanelUserChoice
   > | null>(null);
-  const observedThreadPullRequestRef = useRef<{
-    readonly threadKey: string;
-    readonly reference: ThreadLinkedPullRequest | null;
-  } | null>(null);
   const threadKey = threadRef ? scopedThreadKey(threadRef) : null;
 
   useEffect(() => {
     if (threadKey === null || threadRef === null) {
       proactivePanelObservationRef.current = null;
-      observedThreadPullRequestRef.current = null;
       return;
     }
     const panels = useRightPanelStore.getState();
@@ -84,24 +87,24 @@ export function useProactivePanels(input: {
       userActionRevision,
     } = observation;
     const openSurface = selectActiveRightPanelSurface(panels.byThreadKey, threadRef);
-    const previousPullRequest = observedThreadPullRequestRef.current;
-    observedThreadPullRequestRef.current = {
-      threadKey: threadKey,
-      reference: linkedThreadPullRequest,
-    };
-    const followSelectedPullRequest =
-      previousPullRequest?.threadKey === threadKey &&
-      shouldRetargetThreadPullRequestPanel(
-        previousPullRequest.reference,
-        linkedThreadPullRequest,
-        openSurface,
-      );
-    // Following the selected PR works with proactive panels off, but still respects later user choices.
+    const previousPullRequest = observedThreadPullRequests.get(threadKey) ?? null;
+    // A missing link during loading must not erase the last observed one.
+    if (linkedThreadPullRequest !== null || !threadDetailLoading) {
+      observedThreadPullRequests.set(threadKey, linkedThreadPullRequest);
+    }
+    const followSelectedPullRequest = shouldRetargetThreadPullRequestPanel(
+      previousPullRequest,
+      linkedThreadPullRequest,
+      openSurface,
+    );
+    // Following the selected linked PR does not open an unrelated panel, so it
+    // remains available with proactive panels off. It still respects a later choice.
     if (followSelectedPullRequest && linkedThreadPullRequest !== null) {
       panels.openProactive(
         threadRef,
         pullRequestSurface(linkedThreadPullRequest),
         userActionRevision,
+        true,
       );
     }
     if (!clientSettingsHydrated) return;
@@ -117,6 +120,7 @@ export function useProactivePanels(input: {
     };
     if (eligibleLink && pullRequestsCapabilityKnown) {
       if (
+        !followSelectedPullRequest &&
         pullRequestsSurfaceAvailable &&
         (visiblePullRequestCount > 1 || !hasLinkedPullRequestDetail || !supportsPullRequests)
       ) {
@@ -162,7 +166,6 @@ export function useProactivePanels(input: {
       ? resolveProactiveTurnDiffAction({
           checkpoint: completedCheckpoint,
           isGitRepo,
-          activeSurfaceKind: openSurface?.kind ?? null,
         })
       : "ignore";
     proactivePanelObservationRef.current = {
@@ -172,7 +175,13 @@ export function useProactivePanels(input: {
         diffAction === "defer" || shouldDeferLink ? previousRunningTurnId : activeRunningTurnId,
     };
     if (diffAction !== "open" || newlyCompletedTurnId === null) return;
-    if (!panels.openProactive(threadRef, { id: "diff", kind: "diff" }, userActionRevision)) {
+    if (
+      !panels.openProactive(
+        threadRef,
+        { kind: "diff", turnId: newlyCompletedTurnId },
+        userActionRevision,
+      )
+    ) {
       return;
     }
     useDiffPanelStore.getState().selectGitScope(threadRef, "branch");

@@ -32,6 +32,8 @@ export interface TranscriptParseResult {
   readonly records: readonly UsageRecord[];
   /** Unterminated tail records stay outside records/position so the next scan rereads them. */
   readonly tailRecords: readonly UsageRecord[];
+  /** Includes tentative tail diagnostics; position.state only includes committed lines. */
+  readonly malformedRecords: number;
   readonly position: TranscriptParsePosition;
   readonly resumed: boolean;
 }
@@ -273,10 +275,9 @@ export async function readTranscriptRecords<State>(
     // Parse unfinished tails against copied state so the next scan can replay from resumeOffset.
     const encodedState = encodeState === undefined ? null : encodeState(state);
     const tailRecords: UsageRecord[] = [];
-    finish(
-      decodeState === undefined ? state : Option.getOrThrow(decodeState(encodedState)),
-      tailRecords,
-    );
+    const tailState =
+      decodeState === undefined ? state : Option.getOrThrow(decodeState(encodedState));
+    finish(tailState, tailRecords);
 
     const guardLength = Math.min(GUARD_LENGTH, resumeOffset);
     let guardHash = 0;
@@ -289,6 +290,7 @@ export async function readTranscriptRecords<State>(
     return {
       records,
       tailRecords,
+      malformedRecords: format.readMalformedRecords?.(tailState) ?? 0,
       position: {
         resumeOffset,
         guardLength,

@@ -2,6 +2,7 @@ import type {
   OrchestrationV2ProviderTurn,
   OrchestrationV2ProviderTurnTokenUsage,
   OrchestrationV2ProviderThread,
+  OrchestrationV2ThreadProjection,
   OrchestrationV2TurnItem,
   ThreadTokenUsageSnapshot,
 } from "@t3tools/contracts";
@@ -27,6 +28,8 @@ export type ContextWindowSnapshot = NullableContextWindowUsage & {
 /** Newest report by timestamp; snapshots order turns by provider thread. */
 export function latestProviderTurnTokenUsage(
   turns: ReadonlyArray<Pick<OrchestrationV2ProviderTurn, "tokenUsage">>,
+  projection?: Pick<OrchestrationV2ThreadProjection, "thread" | "contextTransfers"> | null,
+  providerThread?: Pick<OrchestrationV2ProviderThread, "contextUsage"> | null,
 ): OrchestrationV2ProviderTurnTokenUsage | null {
   let latest: OrchestrationV2ProviderTurnTokenUsage | null = null;
   for (const { tokenUsage } of turns) {
@@ -36,7 +39,20 @@ export function latestProviderTurnTokenUsage(
       latest = tokenUsage;
     }
   }
-  return latest;
+  if (latest !== null || projection == null || providerThread?.contextUsage != null) return latest;
+  const forkedFrom = projection.thread.forkedFrom;
+  if (forkedFrom?.type !== "run") return null;
+  return (
+    projection.contextTransfers.find(
+      (transfer) =>
+        transfer.type === "fork" &&
+        transfer.targetThreadId === projection.thread.id &&
+        transfer.sourceThreadId === forkedFrom.threadId &&
+        transfer.sourcePoint.runId === forkedFrom.runId &&
+        transfer.sourceProviderInstanceId === projection.thread.modelSelection.instanceId &&
+        (transfer.status === "pending" || transfer.resolution?.strategy === "native_fork"),
+    )?.sourceTokenUsage ?? null
+  );
 }
 
 export function deriveLatestContextWindowSnapshot(
@@ -73,7 +89,7 @@ export function deriveLatestContextWindowSnapshot(
       toolUses: null,
       durationMs: null,
       compactsAutomatically: true,
-      autoCompactThreshold: null,
+      autoCompactThreshold: liveUsage.autoCompactThreshold ?? null,
       cost: null,
       updatedAt: liveUsage.updatedAt,
     };

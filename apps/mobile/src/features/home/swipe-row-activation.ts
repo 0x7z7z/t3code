@@ -1,9 +1,13 @@
 import { createContext, use, useSyncExternalStore } from "react";
 
-/** Keep swipe gestures near the viewport; dormant frames make offscreen rebuilds cheap. */
+/**
+ * Only rows around the viewport enable swipe gestures and render actions.
+ * Dormant rows keep the same child views so waking them preserves touches.
+ */
 export function createSwipeRowActivation() {
   let activeKeys = new Set<string>();
-  // Frame swaps remount rows and cancel presses; wait until all list touches end.
+  // Turning a row's swipe gesture off ends a swipe in progress, so changes
+  // wait until every finger that started on the list has lifted.
   const listTouches = new Set<string>();
   let pendingKeys: ReadonlyArray<string> | null = null;
   const listeners = new Set<() => void>();

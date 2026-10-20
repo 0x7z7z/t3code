@@ -131,7 +131,12 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
   attributes: {
     ...defaultSchema.attributes,
     "*": (defaultSchema.attributes?.["*"] ?? []).filter((attribute) => attribute !== "title"),
-    code: [...(defaultSchema.attributes?.code ?? []), "dataCodeMeta", "dataInlineCode"],
+    // Fence languages plus the two math classes the web chat's math plugin emits.
+    code: [
+      ["className", /^language-./, "math-inline", "math-display"],
+      "dataCodeMeta",
+      "dataInlineCode",
+    ],
     blockquote: [...(defaultSchema.attributes?.blockquote ?? []), "dataAlert"],
     div: [...(defaultSchema.attributes?.div ?? []), ...CODEX_ARTIFACT_TEMPLATE_HAST_PROPERTIES],
     a: [...(defaultSchema.attributes?.a ?? []), "dataPullRequestAutolink"],
@@ -270,8 +275,14 @@ function keepWindowsPathEscape(this: EscapeCompileContext) {
   if (UNFINISHED_DRIVE_PATH.test(before)) text.value = `${before}\\${text.value.slice(-1)}`;
 }
 
-/** Preserve backslashes in Windows link destinations and prose paths; prose paths end at whitespace to preserve later Markdown escapes. */
-export function remarkKeepWindowsPaths(this: Processor) {
+/**
+ * CommonMark reads the `\.` in `C:\me\.t3\shot.png` as an escape. Every backslash in a
+ * Windows path is a separator, so link, image, and definition destinations that are
+ * Windows paths keep the text as written, and so do escapes inside drive paths in prose.
+ * Prose paths end at whitespace: past that, nothing tells a path from a sentence, and
+ * `C:\x and \*this\*` must still read `*this*`.
+ */
+function remarkKeepWindowsPaths(this: Processor) {
   const data = this.data();
   (data.fromMarkdownExtensions ??= []).push({
     exit: {

@@ -242,6 +242,7 @@ export function buildPiRpcLaunch(input: {
   readonly environment: NodeJS.ProcessEnv;
   readonly mcpSession: McpProviderSessionConfig | undefined;
   readonly extensionPath: string | undefined;
+  readonly sessionPath?: string | undefined;
   readonly ephemeral?: boolean;
   readonly disableExtensions?: boolean;
   readonly disableTools?: boolean;
@@ -262,7 +263,11 @@ export function buildPiRpcLaunch(input: {
   const args = [
     "--mode",
     "rpc",
-    ...(input.ephemeral === true ? ["--no-session"] : []),
+    ...(input.ephemeral === true
+      ? ["--no-session"]
+      : input.sessionPath !== undefined
+        ? ["--session", input.sessionPath]
+        : []),
     ...launchArgs,
     // Restrictions must follow launch args so user flags cannot re-enable unattended tools/extensions.
     ...(input.disableExtensions === true ? ["--no-extensions"] : []),

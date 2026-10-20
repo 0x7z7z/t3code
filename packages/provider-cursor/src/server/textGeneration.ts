@@ -53,31 +53,35 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
   const { Agent, SqliteLocalAgentStore } = yield* CursorSdk.CursorSdk;
   const resolvedEnvironment = environment ?? process.env;
 
-  const resolveCursorApiKey = (operation: TextGenerationOperations.Operation) =>
-    Effect.gen(function* () {
-      if (!cursorSettings.enabled) {
-        return yield* new TextGenerationError({
-          operation,
-          detail: "Cursor is disabled in T3 Code settings.",
-        });
-      }
+  const resolveCursorApiKey = Effect.fn("CursorTextGeneration.resolveCursorApiKey")(function* (
+    operation: TextGenerationOperations.Operation,
+  ) {
+    if (!cursorSettings.enabled) {
+      return yield* new TextGenerationError({
+        operation,
+        detail: "Cursor is disabled in T3 Code settings.",
+      });
+    }
 
-      const apiKey = resolveApiKey
-        ? yield* resolveApiKey
-        : resolvedEnvironment.CURSOR_API_KEY?.trim();
-      if (!apiKey) {
-        return yield* new TextGenerationError({
-          operation,
-          detail: "Sign in with Cursor or add CURSOR_API_KEY in provider settings.",
-        });
-      }
+    const apiKey = resolveApiKey
+      ? yield* resolveApiKey
+      : resolvedEnvironment.CURSOR_API_KEY?.trim();
+    if (!apiKey) {
+      return yield* new TextGenerationError({
+        operation,
+        detail: "Sign in with Cursor or add CURSOR_API_KEY in provider settings.",
+      });
+    }
 
-      return apiKey;
-    });
+    return apiKey;
+  });
 
-  const runCursorJson: TextGenerationOperations.Runner = (input) => {
-    const { operation, prompt, modelSelection } = input;
-    return Effect.gen(function* () {
+  const runCursorJson: TextGenerationOperations.Runner = Effect.fn(
+    "CursorTextGeneration.runCursorJson",
+  )(
+    function* (input) {
+      const { operation, prompt, modelSelection } = input;
+
       const apiKey = yield* resolveCursorApiKey(operation);
       // sandbox.json expands writable paths independently of settingSources; the public API cannot override it.
       if (yield* fs.exists(`${yield* HostProcess.HomeDirectory}/.cursor/sandbox.json`)) {
@@ -179,22 +183,25 @@ export const makeCursorTextGeneration = Effect.fn("makeCursorTextGeneration")(fu
       }
 
       return yield* TextGenerationOperations.decodeJsonReply(input, "Cursor SDK", rawResult);
-    }).pipe(
-      // Scope this call inside `withAccess`, so sign-out closes the agent before its store.
-      Effect.scoped,
-      (effect) => (withAccess ? withAccess(effect) : effect),
-      Effect.scoped,
-      Effect.mapError((cause) =>
-        isTextGenerationError(cause)
-          ? cause
-          : new TextGenerationError({
-              operation,
-              detail: "Cursor SDK text generation failed.",
-              cause,
-            }),
-      ),
-    );
-  };
+    },
+    (effect, input) => {
+      const { operation } = input;
+      return effect.pipe(
+        Effect.scoped,
+        (effect) => (withAccess ? withAccess(effect) : effect),
+        Effect.scoped,
+        Effect.mapError((cause) =>
+          isTextGenerationError(cause)
+            ? cause
+            : new TextGenerationError({
+                operation,
+                detail: "Cursor SDK text generation failed.",
+                cause,
+              }),
+        ),
+      );
+    },
+  );
 
   return TextGenerationOperations.fromRunner(
     "CursorTextGeneration",

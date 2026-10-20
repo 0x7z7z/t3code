@@ -256,8 +256,14 @@ export function isXAiMonitorTool(toolCall: AcpToolCallState): boolean {
   return isXAiMonitorStartAck(xAiToolOutputText(toolCall));
 }
 
-// BackgroundTaskStarted settles the tool while work runs; only x.ai/task_completed ends it.
-function xAiBackgroundShellTaskId(toolCall: AcpToolCallState): string | undefined {
+/**
+ * A shell command Grok runs in the background (asked for, or moved there after
+ * its auto-background timeout) acknowledges with
+ * `{ type: "BackgroundTaskStarted", task_id }` and completes its tool call
+ * while the process still runs. Like a monitor, it ends only with
+ * `x.ai/task_completed` for that task id.
+ */
+export function xAiBackgroundShellTaskId(toolCall: AcpToolCallState): string | undefined {
   const rawOutput = unknownRecord(toolCall.data.rawOutput);
   return nonEmptyString(rawOutput?.type) === "BackgroundTaskStarted"
     ? nonEmptyString(rawOutput?.task_id)
@@ -1466,58 +1472,57 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
               );
             })
           : runtime.handleExtNotification(method, payload, handler),
-      prompt: (payload, promptOptions?) =>
-        Effect.gen(function* () {
-          const started = yield* runtime.start();
-          const promptId = yield* allocatePromptFallbackId;
-          const fallback = yield* registerXAiPromptCompletionFallback(
-            pendingXAiPromptCompletionsRef,
-            started.sessionId,
-            promptId,
-          );
-          const cancelledResponse = promptResponseFromXAi({
-            sessionId: started.sessionId,
-            promptId: fallback.promptId,
-            stopReason: "cancelled",
-            agentResult: null,
-          });
-          const promptRpcFiber = yield* runtime
-            .prompt(
-              {
-                ...payload,
-                _meta: {
-                  ...payload._meta,
-                  promptId: fallback.promptId,
-                  requestId: fallback.promptId,
-                },
+      prompt: Effect.fn("xaiAcpExtension.prompt")(function* (payload, promptOptions?) {
+        const started = yield* runtime.start();
+        const promptId = yield* allocatePromptFallbackId;
+        const fallback = yield* registerXAiPromptCompletionFallback(
+          pendingXAiPromptCompletionsRef,
+          started.sessionId,
+          promptId,
+        );
+        const cancelledResponse = promptResponseFromXAi({
+          sessionId: started.sessionId,
+          promptId: fallback.promptId,
+          stopReason: "cancelled",
+          agentResult: null,
+        });
+        const promptRpcFiber = yield* runtime
+          .prompt(
+            {
+              ...payload,
+              _meta: {
+                ...payload._meta,
+                promptId: fallback.promptId,
+                requestId: fallback.promptId,
               },
-              promptOptions,
-            )
-            .pipe(Effect.forkChild);
-          return yield* Effect.raceFirst(
-            Fiber.join(promptRpcFiber).pipe(
-              Effect.catchCause((cause) =>
-                Cause.hasInterruptsOnly(cause)
-                  ? Effect.succeed(cancelledResponse)
-                  : Effect.failCause(cause),
-              ),
+            },
+            promptOptions,
+          )
+          .pipe(Effect.forkChild);
+        return yield* Effect.raceFirst(
+          Fiber.join(promptRpcFiber).pipe(
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? Effect.succeed(cancelledResponse)
+                : Effect.failCause(cause),
             ),
-            Deferred.await(fallback.deferred),
-          ).pipe(
-            Effect.tap((response) =>
-              rememberCompletedXAiPromptId(completedXAiPromptIdsRef, response, fallback.promptId),
-            ),
-            Effect.ensuring(
-              Effect.gen(function* () {
-                yield* Fiber.interrupt(promptRpcFiber).pipe(Effect.ignore);
-                yield* unregisterXAiPromptCompletionFallback(
-                  pendingXAiPromptCompletionsRef,
-                  fallback.deferred,
-                );
-              }),
-            ),
-          );
-        }),
+          ),
+          Deferred.await(fallback.deferred),
+        ).pipe(
+          Effect.tap((response) =>
+            rememberCompletedXAiPromptId(completedXAiPromptIdsRef, response, fallback.promptId),
+          ),
+          Effect.ensuring(
+            Effect.gen(function* () {
+              yield* Fiber.interrupt(promptRpcFiber).pipe(Effect.ignore);
+              yield* unregisterXAiPromptCompletionFallback(
+                pendingXAiPromptCompletionsRef,
+                fallback.deferred,
+              );
+            }),
+          ),
+        );
+      }),
       cancel: Effect.gen(function* () {
         // Cancellation must bypass start so it can reach a stalled runtime.
         yield* abortPendingPromptCompletions(pendingXAiPromptCompletionsRef);

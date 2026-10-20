@@ -56,6 +56,7 @@ import type {
   PullRequestCheckContexts,
   PullRequestCore,
   PullRequestFilesViewed,
+  PullRequestFileStats,
   PullRequestHeads,
   PullRequestPreview as PullRequestPreviewQuery,
   PullRequestSubject,
@@ -1046,11 +1047,13 @@ export function toPullRequestCore(result: PullRequestCore.Result): GitHubPullReq
       canDeleteBranch: toCanWrite(pr.headRepository?.viewerPermission) && pr.headRef !== null,
       canTriage: toCanTriage(repository.viewerPermission),
       ...toPullRequestViewerFields(pr),
+      canMergeNow: IMMEDIATELY_MERGEABLE.has(pr.mergeStateStatus),
       mergeCapabilities: {
         merge: repository.mergeCommitAllowed,
         squash: repository.squashMergeAllowed,
         rebase: repository.rebaseMergeAllowed,
       },
+      autoMergeAllowed: repository.autoMergeAllowed,
     },
     comparison:
       pr.state !== "OPEN" || pr.baseRef?.compare == null
@@ -1400,10 +1403,21 @@ export function toReviewThreadCommentsPage(result: ReviewThreadComments.Result):
 
 export interface GitHubRepositoryAccess {
   readonly mergeCapabilities: PullRequestMergeCapabilities;
+  readonly autoMergeAllowed: boolean;
   readonly canWrite: boolean;
 }
 
-/** App installations report null permissions; let GitHub enforce access. */
+/** States in which `gh pr merge --auto` merges at once instead of arming auto-merge. */
+export const IMMEDIATELY_MERGEABLE: ReadonlySet<string> = new Set([
+  "CLEAN",
+  "HAS_HOOKS",
+  "UNSTABLE",
+]);
+
+/**
+ * GitHub answers null only to a GitHub App installation, and no API says what an installation
+ * may do, so null is granted and GitHub refuses whatever the app was not given.
+ */
 export function toCanWrite(viewerPermission: string | null | undefined): boolean {
   if (viewerPermission === null) return true;
   switch (viewerPermission?.trim().toUpperCase()) {
@@ -1529,6 +1543,8 @@ export interface GitHubViewerAccess {
   readonly didAuthor: boolean;
   /** Permitted and update needed; false also covers current branches. Absent if unread. */
   readonly canUpdateBranch?: boolean;
+  /** Detail-only readiness; omitted by the lightweight action permission read. */
+  readonly canMergeNow?: boolean;
 }
 
 export function toViewerPermissions(
@@ -1542,6 +1558,7 @@ export function toViewerPermissions(
       squash: repository.squashMergeAllowed,
       rebase: repository.rebaseMergeAllowed,
     },
+    autoMergeAllowed: repository.autoMergeAllowed,
     canWrite: toCanWrite(repository.viewerPermission),
     canDeleteBranch: toCanWrite(repository.pullRequest?.headRepository?.viewerPermission),
     canTriage: toCanTriage(repository.viewerPermission),
@@ -1645,6 +1662,29 @@ export function toPullRequestFilesViewedPage(
       node.path.length === 0
         ? []
         : [{ path: node.path, state: toFileViewedState(node.viewerViewedState) }],
+    ),
+    nextCursor: nextCursorOf(files?.pageInfo),
+  };
+}
+
+export interface GitHubPullRequestFileStat {
+  readonly path: string;
+  readonly additions: number;
+  readonly deletions: number;
+}
+
+export interface GitHubPullRequestFileStatsPage {
+  readonly files: ReadonlyArray<GitHubPullRequestFileStat>;
+  readonly nextCursor: string | null;
+}
+
+export function toPullRequestFileStatsPage(
+  result: PullRequestFileStats.Result,
+): GitHubPullRequestFileStatsPage {
+  const files = result.repository?.pullRequest?.files;
+  return {
+    files: nodesOf(files).flatMap(({ path, additions, deletions }) =>
+      path.length === 0 ? [] : [{ path, additions, deletions }],
     ),
     nextCursor: nextCursorOf(files?.pageInfo),
   };

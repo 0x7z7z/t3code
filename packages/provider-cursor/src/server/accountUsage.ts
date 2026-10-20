@@ -174,9 +174,10 @@ export const readCursorAccountUsage = Effect.fn("readCursorAccountUsage")(functi
     let completed = false;
     const pageSize = 1000;
     let total: number | undefined;
-    const readPage = (page: number) =>
-      Effect.gen(function* () {
-        // Counts can overlap page boundaries; leave reconciliation room without a fixed account-size cap.
+    const readPage = Effect.fn("CursorAccountUsage.readPage")(
+      function* (page: number) {
+        // A count can include overlapping page boundaries. Allow room to
+        // reconcile them without imposing a fixed account-size limit.
         if (page > (total === undefined ? 1000 : Math.ceil(total / pageSize) * 2 + 1)) {
           return yield* invalid("Account usage page limit exceeded");
         }
@@ -240,13 +241,14 @@ export const readCursorAccountUsage = Effect.fn("readCursorAccountUsage")(functi
         }
         if (typeof count === "number") total = count;
         return events as unknown[];
-      }).pipe(
-        Effect.timeoutOrElse({
-          duration: Duration.seconds(10),
-          orElse: () => invalid("Account usage request timed out"),
-        }),
-      );
-    // Cursor pages take about a second for up to 1,000 events; fetch six ahead in page order.
+      },
+      Effect.timeoutOrElse({
+        duration: Duration.seconds(10),
+        orElse: () => invalid("Account usage request timed out"),
+      }),
+    );
+    // Cursor caps a page at 1,000 events and takes about a second to answer one, so the pages
+    // the first one's count implies are requested up to six ahead and consumed in page order.
     const ahead: Fiber.Fiber<
       Effect.Success<ReturnType<typeof readPage>>,
       CursorAccountUsageInvalidError

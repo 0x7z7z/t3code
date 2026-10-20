@@ -146,6 +146,11 @@ export interface ProviderListCursor {
   /** Inclusive boundary: equal-time rows can span pages and must not be skipped. */
   readonly updatedBefore: string;
   readonly delivered: number;
+  /**
+   * Rows already handed over at `updatedBefore`. Timestamp-paged hosts can exclude these before
+   * applying their limit so a full page of tied updates does not repeat the same prefix.
+   */
+  readonly seenAt?: ReadonlyArray<number> | undefined;
 }
 
 export interface ProviderBatchedChangeRequest extends ProviderChangeRequest {
@@ -212,7 +217,21 @@ export interface ProviderFilesViewed {
   readonly truncated: boolean;
 }
 
-/** Opaque revisions: empty means deleted; absent means unknown. */
+export interface ProviderFileStats {
+  readonly files: ReadonlyArray<{
+    readonly path: string;
+    readonly additions: number;
+    readonly deletions: number;
+  }>;
+  /** The host has more files than were read. */
+  readonly truncated: boolean;
+}
+
+/**
+ * Opaque strings, compared only against one another, where the empty string is the answer for a
+ * file the change request deletes rather than a gap. A path is absent only where the read could
+ * not say, so a provider converts its host's own absences on the way here.
+ */
 export interface ProviderFileRevisions {
   readonly revisions: ReadonlyMap<string, string>;
   /** All revisions were read and can be reused for other paths. */
@@ -359,7 +378,15 @@ export interface PullRequestProviderApi {
     input: ProviderRepositoryRef & { readonly number: number },
   ) => Effect.Effect<ProviderFilesViewed, PullRequestProviderError>;
 
-  /** Even without a native bulk endpoint, batch these into one host round trip. */
+  /** Line counts for every changed file. Optional: a host without one shows no breakdown. */
+  readonly getFileStats?: (
+    input: ProviderRepositoryRef & { readonly number: number },
+  ) => Effect.Effect<ProviderFileStats, PullRequestProviderError>;
+
+  /**
+   * A host with no bulk form is still owed one round trip for the batch rather than one per
+   * file, since the point of gathering presses is that the host is asked once.
+   */
   readonly setFilesViewed?: (
     input: ProviderRepositoryRef & {
       readonly number: number;
