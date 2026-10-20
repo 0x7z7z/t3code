@@ -257,11 +257,8 @@ export function isXAiMonitorTool(toolCall: AcpToolCallState): boolean {
 }
 
 /**
- * A shell command Grok runs in the background (asked for, or moved there after
- * its auto-background timeout) acknowledges with
- * `{ type: "BackgroundTaskStarted", task_id }` and completes its tool call
- * while the process still runs. Like a monitor, it ends only with
- * `x.ai/task_completed` for that task id.
+ * Grok background shell calls acknowledge with `{ type: "BackgroundTaskStarted", task_id }`
+ * and complete the tool call while the process runs. Only `x.ai/task_completed` for that id ends the task.
  */
 export function xAiBackgroundShellTaskId(toolCall: AcpToolCallState): string | undefined {
   const rawOutput = unknownRecord(toolCall.data.rawOutput);

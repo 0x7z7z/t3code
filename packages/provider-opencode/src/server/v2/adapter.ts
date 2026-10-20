@@ -1602,12 +1602,9 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           yield* settleCall(call, terminal.status);
         }
         if (terminal.status === "failed") {
-          // A background call is settled by the report its parent reads, and a
-          // child that failed has no report to read: every call attached to it
-          // has to end with the failure, or the background ones keep the thread
-          // showing work that is gone. Which of them joined the child last
-          // does not matter: a foreground call is one until it is marked
-          // background, and the earlier background call outlives that window.
+          // Background calls settle when the parent reads a report; failed children have no report.
+          // Fail every attached call so earlier background calls cannot leave phantom work,
+          // regardless of which call joined last or is still foreground.
           for (const attached of callsAttachedTo(state)) {
             yield* settleCall(attached, terminal.status, terminal.failure.message);
           }

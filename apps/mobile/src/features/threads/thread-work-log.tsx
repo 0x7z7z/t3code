@@ -668,11 +668,8 @@ function ThreadWorkGroupList(props: {
     finishPendingAppend();
     rememberPosition();
   });
-  // The native ScrollView reports its content size a frame or more after
-  // LegendList has laid the rows out, so a detail toggle rendered the group
-  // at its old height while the rows below already moved. Read the size
-  // LegendList computes on the JS thread instead; it settles in the same
-  // commit as the row measurement that changed it.
+  // Native ScrollView reports size after LegendList lays out rows. Use LegendList's JS size
+  // so group height and row measurements settle in the same commit.
   useLayoutEffect(() => {
     const list = listRef.current;
     if (!list) return;

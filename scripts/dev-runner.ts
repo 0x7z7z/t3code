@@ -302,21 +302,15 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
     delete output.T3CODE_HOME;
   }
 
-  // A dev-runner server is never launcher-managed. When the shell that runs
-  // this script was itself spawned by the machine's managed t3 service (an
-  // agent working inside T3 Code), these leak through and the child server
-  // fails startup with "The service launcher started a different t3 version"
-  // (serviceLauncherClient.ts resolveStartup).
+  // Managed T3 service shells leak launcher variables that make dev servers fail version checks.
+  // Dev-runner servers are never launcher-managed (serviceLauncherClient.ts resolveStartup).
   delete output.T3_SERVICE_LAUNCHER_CONTEXT;
   delete output.T3_BOOT_SERVICE_UNIT;
 
   if (!isDesktopMode) {
     output.T3CODE_PORT = String(serverPort);
-    // HOST is Vite's own bind address, and the desktop branch below is the
-    // only place we set it. An inherited one (an exported HOST, a container,
-    // a `HOST=0.0.0.0 npm start` habit) would otherwise reach Vite and pin
-    // its HMR socket to that address — see the `explicitHost` gate in
-    // apps/web/vite.config.ts.
+    // An inherited HOST pins Vite's HMR socket via explicitHost in apps/web/vite.config.ts.
+    // Only desktop mode should set it.
     delete output.HOST;
     if (mode === "dev" || mode === "dev:web") {
       // Browser dev is single-origin: everything (including /ws) is proxied

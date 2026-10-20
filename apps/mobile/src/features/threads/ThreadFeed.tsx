@@ -2472,11 +2472,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             contentInsetStartAdjustment={usesNativeAutomaticInsets ? anchorTopInset : 0}
             contentInsetEndAdjustment={props.contentInsetEndAdjustment}
             keyboardOffset={props.keyboardOffset}
-            // UIKit's automatic behavior adds the safe-area bottom on top of the
-            // raw contentInset the keyboard integration writes. The detail screen
-            // under-reports the composer inset by this amount (see
-            // ThreadDetailScreen); this tells LegendList's scroll math about the
-            // extra so programmatic end scrolls land at the true resting offset.
+            // UIKit adds the safe-area bottom to raw contentInset; ThreadDetailScreen under-reports it.
+            // Include that extra inset in LegendList's scroll math so end scrolls reach the resting offset.
             contentInsetEndStaticAdjustment={usesNativeAutomaticInsets ? insets.bottom : 0}
             // Seed composer height until keyboard integration reports it, or Android's initial end scroll runs too early.
             {...(initialContentInset ? { contentInset: initialContentInset } : {})}

@@ -130,11 +130,8 @@ export const ACP_PROTOCOL = "acp.ndjson-jsonrpc" as const;
 const ACP_DEFERRED_FINALIZE_DEBOUNCE: Duration.Input = "3000 millis";
 
 /**
- * Coalescing window for streamed text. A text segment's first chunk and its
- * close emit at once; a later chunk schedules one full-text snapshot this long
- * after it, and the chunks inside the window share it instead of each emitting
- * the whole reply, which grew with the square of the reply length. The flush
- * is scheduled, not a hard deadline, so it can land later under host load.
+ * Emit first chunks and segment-close events immediately; coalesce later chunks into full-text snapshots.
+ * This avoids quadratic output; scheduled flushes can run late under host load.
  */
 const ACP_TEXT_FLUSH_INTERVAL: Duration.Input = "50 millis";
 

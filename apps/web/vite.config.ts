@@ -224,11 +224,8 @@ export default defineConfig(() => {
       port,
       strictPort: true,
       allowedHosts,
-      // Transform the whole module graph at server start instead of on the
-      // first request. Without this, a cold worktree discovers and transforms
-      // modules one import-level at a time while the browser waits — which
-      // over a tailnet origin turns into minutes of waterfall. Bundled dev
-      // ignores this; warmBundledDevPlugin covers it there.
+      // Warm the module graph before first request to avoid serial import transforms over tailnet.
+      // Bundled dev ignores this; warmBundledDevPlugin handles it there.
       warmup: {
         clientFiles: ["./src/main.tsx"],
       },

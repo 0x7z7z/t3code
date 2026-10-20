@@ -276,11 +276,8 @@ function keepWindowsPathEscape(this: EscapeCompileContext) {
 }
 
 /**
- * CommonMark reads the `\.` in `C:\me\.t3\shot.png` as an escape. Every backslash in a
- * Windows path is a separator, so link, image, and definition destinations that are
- * Windows paths keep the text as written, and so do escapes inside drive paths in prose.
- * Prose paths end at whitespace: past that, nothing tells a path from a sentence, and
- * `C:\x and \*this\*` must still read `*this*`.
+ * CommonMark treats backslashes as escapes; preserve them as separators in Windows destinations
+ * and drive-path prose. Prose paths end at whitespace so later escapes still work.
  */
 function remarkKeepWindowsPaths(this: Processor) {
   const data = this.data();

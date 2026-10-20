@@ -49,11 +49,9 @@ const decodeGrokSettings = Schema.decodeSync(GrokSettings);
 const DRIVER_KIND = ProviderDriverKind.make("grok");
 // npm latest matches the stable channel installed by grok update.
 const GROK_NPM_PACKAGE = "@xai-official/grok";
-// `grok update` finds the installer that owns the binary itself, so the
-// resolved executable is its own updater. It installs under `GROK_HOME`, so it
-// runs with the instance's environment. The exception is a Homebrew cask
-// (normally `grok-build`), which brew upgrades and versions: `grok update` would install
-// a second copy beside it, so a cask its brew cannot vouch for stays manual.
+// `grok update` installs under `GROK_HOME`; use the resolved executable and instance environment.
+// Homebrew casks need brew upgrades; `grok update` would install a second copy.
+// Keep casks manual when their brew cannot vouch for them.
 const UPDATE: ProviderMaintenanceCapabilitiesResolver = {
   resolve: Effect.fn("resolveGrokMaintenance")(function* (context) {
     if (!context) {

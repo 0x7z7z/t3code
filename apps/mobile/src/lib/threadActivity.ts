@@ -1894,11 +1894,8 @@ interface ThreadFeedBuild {
 }
 
 /**
- * A streamed chunk changes the newest rows of a thread that can hold thousands.
- * A consumer that keeps one cache across renders lets `buildThreadFeed` and
- * `deriveThreadFeedPresentation` keep the unchanged prefix of their last
- * result instead of redoing the whole thread. Each feed on screen owns its
- * cache, so two threads rendering at once never evict each other.
+ * Keep one cache per on-screen feed across renders to reuse unchanged prefixes during streaming.
+ * Sharing it between threads would make their results evict each other.
  */
 export interface ThreadFeedCache {
   feedBuild: ThreadFeedBuild | null;
