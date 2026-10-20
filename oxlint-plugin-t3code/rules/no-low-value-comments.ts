@@ -11,6 +11,9 @@ const TASK_LINK_PATTERN = /#\d+|https?:\/\//u;
 const BARE_ISSUE_REF_PATTERN = /(?<![\w/&#-])#[1-9]\d{2,4}(?![\w-])/u;
 const CODE_SPAN_PATTERN = /`[^`]*`/gu;
 const PUBLIC_BOILERPLATE_PATTERN = /^@public\s+Service construction is part of the canonical/u;
+// Comments grew back as long why-blocks; past this, the reason needs cutting, not more context.
+const MAX_COMMENT_LINES = 4;
+const LICENSE_PATTERN = /^!|@license|\bcopyright\b|\bSPDX-License-Identifier\b/iu;
 const JSDOC_TYPE_PATTERN = /^@(?:param|returns?|type|typedef)\s+\{/u;
 const EMPTY_JSDOC_TAG_PATTERN = /^@(?:param(?:\s+\[?[\w$.]+\]?)?|returns?)$/u;
 const COMMENTED_CODE_PATTERN =
@@ -111,6 +114,9 @@ export default defineRule({
       }
       if (restatesNextName(comments.at(-1)!.loc.end.line, lines)) {
         return "Drop the comment; it only repeats the name below it. Say why, or say nothing.";
+      }
+      if (lines.length > MAX_COMMENT_LINES && !LICENSE_PATTERN.test(text)) {
+        return `Cut this to ${MAX_COMMENT_LINES} lines or fewer: keep the constraint, drop the background.`;
       }
       return undefined;
     };
