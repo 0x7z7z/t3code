@@ -450,12 +450,8 @@ const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFai
 // distinguishes them with a separate error line.
 const GIT_NOT_A_COMMIT_PATTERN = /^error: .+(?:, not a commit|expected commit type)/im;
 
-// Hooks write to the same stream git does, and nothing distinguishes their text
-// from git's: a pre-push hook echoing "authentication failed" would otherwise
-// be read as a credential failure. `remote:` is deliberately excluded — git
-// prefixes every byte the server sends that way, remote hook output included,
-// so trusting it would reintroduce the same false positive from the other end
-// of the connection.
+// Trust only Git's diagnostic prefixes: local hooks can write indistinguishable text.
+// Exclude `remote:` too, since it prefixes remote hook output as well as server diagnostics.
 const GIT_DIAGNOSTIC_LINE_PATTERN = /^(?:fatal|error):|^!\s|^\s+!\s/;
 // SSH credential refusals are unprefixed; Git's later generic error would otherwise misclassify them as unreachable.
 const SSH_TRANSPORT_REFUSAL_PATTERN =
@@ -4140,12 +4136,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       },
     );
     if (result.exitCode === 0) {
-      // Git for Windows never descends into NTFS junctions, such as pnpm's
-      // node_modules links. It reports success but leaves them and their parent
-      // directories behind, so a resumed thread would find a stub instead of
-      // recreating its checkout. Git has already unregistered the worktree, so
-      // anything left here is logged rather than returned: a retry could never
-      // succeed.
+      // Git for Windows reports success without removing NTFS junctions or their parent directories.
+      // Log leftover cleanup failures: Git already unregistered the worktree, so removal cannot be retried.
       if (yield* fileSystem.exists(target).pipe(Effect.orElseSucceed(() => false))) {
         const removed = yield* removeLeftoverLinks(target).pipe(
           Effect.catch((error) =>

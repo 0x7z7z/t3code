@@ -792,12 +792,7 @@ const handoffTargetIds = (
 };
 
 /**
- * Runs a tool registration against a server that records one anonymous
- * `mcp.tool.invoked` event per call: the tool, the calling agent's provider,
- * the outcome with its failure code, and the duration. A handoff tool also
- * reports the caller's model, origin, and delegation depth, the settings the
- * agent chose, and the provider, model, and modes of each thread that received
- * the work. Ids, prompts, and free text are never recorded.
+ * Tool analytics must exclude ids, prompts, and free text, including for handoff tools.
  */
 const withToolAnalytics =
   /* Request instrumentation already owns the span; keep this helper in that context. */

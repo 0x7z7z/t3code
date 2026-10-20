@@ -497,11 +497,9 @@ export class BootService extends Context.Service<
      */
     readonly restart: Effect.Effect<"restarted" | "queued" | "skipped", BootServiceError>;
     /**
-     * Run `operation` while this home's installed service is stopped, then
-     * start it again when it was enabled (systemd) or loaded (launchd)
-     * beforehand. A service that belongs to another home is left alone. The
-     * service is started again even when stopping it failed; the operation's
-     * own failure is reported ahead of a failure to restart.
+     * Runs the operation with this home's service stopped; other homes are left alone.
+     * Restores a previously enabled or loaded service even if stopping failed.
+     * The operation's failure takes precedence over a restart failure.
      */
     readonly withStopped: <A, E, R>(
       operation: Effect.Effect<A, E, R>,
@@ -911,11 +909,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
     ) {
       return yield* operation;
     }
-    // `is-active` fails while a crash-looping unit sits in `activating
-    // (auto-restart)`, and a throttled launchd job is loaded without a pid;
-    // both would start the server mid-repair. So the unit is always
-    // stopped, and started again when it was active, enabled or loaded
-    // before; a disabled unit caught crash-looping stays stopped.
+    // `is-active` misses crash-looping systemd units; launchd can be loaded without a pid.
+    // Always stop; restore only if previously active, enabled, or loaded,
+    // so disabled crash loops stay stopped.
     const restore =
       manager.kind === "systemd"
         ? yield* Effect.map(
@@ -932,12 +928,9 @@ export const make = Effect.fn("cloud.boot_service.make")(function* (input: {
             yield* probe("launchctl", ["print", `gui/${uid}/${BOOT_SERVICE_LAUNCHD_LABEL}`]),
           );
     return yield* Effect.acquireUseRelease(
-      // Every stop step is required when the service is to be restored: a
-      // step that was fine to skip during uninstall would leave the server
-      // holding the database. A stop that fails (a timeout, say) may still
-      // have stopped the service, so the restore below runs either way.
-      // Nothing to restore means nothing is expected to be loaded, and the
-      // stop is best-effort (launchd's bootout fails on an unloaded job).
+      // Require every stop before repair when restoring, so the server releases the database.
+      // Otherwise stops are best-effort; launchd rejects bootout of an unloaded job.
+      // A failed stop may still stop the service, so restoration runs either way.
       runSteps(manager.stop.map((step) => ({ ...step, optional: !restore }))).pipe(Effect.exit),
       (stopped): Effect.Effect<A, E | BootServiceError, R> =>
         Exit.isSuccess(stopped) ? operation : Effect.failCause(stopped.cause),

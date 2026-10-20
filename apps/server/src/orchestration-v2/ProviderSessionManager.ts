@@ -705,11 +705,8 @@ export const layerWithOptions = (
         }
       });
 
-      // Read as soon as the session leaves the live map: after that, a
-      // replacement session with the same id can open and report tasks of its
-      // own on the same provider threads. OpenCode's background subagents run
-      // on a server shared by its sessions and can outlive this one, so their
-      // roster stays.
+      // Read tasks as soon as the session leaves the live map, before a replacement reports its own.
+      // Keep OpenCode's roster: its background subagents share a server and can outlive the session.
       const readReleasedBackgroundTasks = Effect.fn(
         "ProviderSessionManager.readReleasedBackgroundTasks",
       )(

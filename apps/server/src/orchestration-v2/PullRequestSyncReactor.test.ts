@@ -1455,11 +1455,9 @@ describe("PullRequestSyncReactor", () => {
           const reactor = yield* startAndSweep(fixture);
           yield* applyRecordedSyncs(fixture);
 
-          // Neither summary changes again, so only #83's flag can make #18 read its stack.
-          // #18's stale answer also flags #83, whose fresh read in this sweep would flag #18
-          // back for a third sweep. The assertion sees the regression only because #18, the
-          // earlier group, finishes before #83 runs; the mocks answer synchronously, so it does.
-          // With the flag kept, #18 reads fresh here regardless of that order.
+          // Unchanged summaries require #83's flag to refresh #18's stack.
+          // Synchronous mocks make #18 finish first; otherwise #83's fresh read can hide the lost flag
+          // by flagging #18 for a third sweep.
           yield* sweepAgain(fixture, reactor);
           yield* applyRecordedSyncs(fixture);
 

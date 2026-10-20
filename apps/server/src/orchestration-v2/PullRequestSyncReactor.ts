@@ -376,11 +376,8 @@ export const make = Effect.gen(function* () {
         }
         const fetched = fetchedStack.stack;
         stacksReadThisSweep.set(key, fetched);
-        // A layer pushed above an older member changes none of that member's own fields, so it
-        // would keep its shorter layer list. Members of this stack whose layer list differs read
-        // their stack once, in this sweep if still pending or the next; agreeing ones read none.
-        // Only groups of the same project: another project reads with its own credential and
-        // may see a different layer list, so flagging across projects would never settle.
+        // New upper layers leave older members' fields unchanged; differing layer lists need a stack read.
+        // Only flag siblings in the same project: different credentials can yield lists that never agree.
         if (fetched !== null) {
           const fetchedKey = nativeStackKeyOf(first.link, fetched);
           for (const [siblingKey, siblingEntries] of groups) {

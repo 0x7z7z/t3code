@@ -1757,11 +1757,8 @@ export function makeClaudeUserMessage(input: {
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
   readonly uuid?: SDKUserMessage["uuid"];
 }): SDKUserMessage {
-  // Claude Code expands a skill only from the LAST text block, and only when
-  // `/name` is its first character. A `$skill` chip anywhere in the prompt
-  // therefore becomes [whole request, "/name trailing text"] so the CLI runs
-  // it natively and the model still reads the full request. See
-  // ClaudeSkillDispatch.
+  // Claude expands a skill only when `/name` starts the last text block.
+  // Keep the whole request before that block; see ClaudeSkillDispatch.
   const dispatch =
     input.skills === undefined ? undefined : planClaudeSkillDispatch(input.text, input.skills);
   return {
@@ -3279,11 +3276,9 @@ interface ActiveClaudeTurnContext {
       { readonly startedAt: DateTime.Utc; readonly ordinal: number; text: string }
     >;
   };
-  // Usage of the latest root request, merged from its stream events. Its
-  // assistant snapshots repeat message_start usage, which some proxies send
-  // as zeros, so they only fill in input the stream has not reported. A
-  // compaction makes the usage stale (null) without forgetting the request.
-  // `requestedAt` is when a streamed request started; its prompt cache lifetime starts then.
+  // Snapshots repeat message_start input, sometimes as zeros, so only fill gaps in streamed usage.
+  // Compaction clears usage without forgetting the root request.
+  // `requestedAt` starts the request's prompt cache lifetime.
   streamUsage: {
     readonly messageId: string;
     requestedAt?: DateTime.Utc;

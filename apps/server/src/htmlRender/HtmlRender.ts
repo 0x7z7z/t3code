@@ -77,11 +77,8 @@ export class HtmlRenderViewportHeightError extends Schema.TaggedError<HtmlRender
   }
 }
 
-// Only stylesheets and style attributes are checked, so page text that mentions
-// a unit passes; comments match first so their contents are skipped. Scripts
-// are still checked, since markup they insert applies. An unclosed comment,
-// tag, or quote runs to the end of the page, which keeps both patterns linear
-// on hostile input.
+// Check only stylesheets and style attributes, even inside scripts; skip comments whole.
+// Consume unclosed comments, tags, or quotes through EOF to keep both patterns linear.
 const CSS_SOURCE =
   /<!--[\s\S]*?(?:-->|$)|<style\b[^>]*(?:>|$)([\s\S]*?)(?:<\/style\s*>|$)|\sstyle\s*=\s*(?:"([^"]*)(?:"|$)|'([^']*)(?:'|$)|([^\s>]+))/gi;
 // The lookbehind skips base64 runs, such as an inlined image that happens to contain "1vh".

@@ -631,11 +631,8 @@ export const layer = Layer.effect(
         ),
       );
 
-    // Best-effort escape hatch: if anything fails between markRunning and
-    // markCompleted, write a full terminal record so runDueTasks neither skips
-    // the task forever (it filters out 'running' rows) nor re-fires it
-    // immediately: the dispatch may already have gone out, so next_run_at must
-    // advance and run_count must count the attempt.
+    // On failure after markRunning, write a terminal record so the task cannot stay stuck.
+    // Advance next_run_at and run_count because dispatch may already have happened.
     const releaseStuckRun = Effect.fn("ScheduledTaskService.releaseStuckRun")(
       function* (task: ScheduledTask, message: string) {
         const now = yield* localNow;

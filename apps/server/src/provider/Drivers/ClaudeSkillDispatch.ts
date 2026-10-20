@@ -1,11 +1,9 @@
 import type { ServerProviderSkill } from "@t3tools/contracts";
 
 /**
- * Claude Code's only user-side invocation is a text block whose first character
- * is `/`: the harness expands `/name args` into the SKILL.md body, and every
- * character after the name (newlines included) arrives as `ARGUMENTS`. Only one
- * skill expands per message; a second `/x` becomes argument text
- *    ([#87113](https://github.com/anthropics/claude-code/issues/87113)).
+ * Claude expands one skill per message only when `/name` starts the text block.
+ * Everything after the name, including newlines or a second `/x`, becomes `ARGUMENTS`.
+ * https://github.com/anthropics/claude-code/issues/87113
  */
 
 /** Match packages/shared/src/composerInlineTokens.ts so displayed chips and dispatched skills accept the same tokens. */

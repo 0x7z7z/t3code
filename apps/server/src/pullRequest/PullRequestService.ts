@@ -1245,11 +1245,8 @@ export const make = Effect.gen(function* () {
               chunk,
               (project): Effect.Effect<RepositoryBatch> => {
                 const fetched = rows.get(project.repository.trim().toLowerCase()) ?? [];
-                // GitHub does not index every repository for search — a renamed one answers for
-                // its old name with silence rather than with an error — so a repository the
-                // search said nothing at all about is read on its own, once, before it is
-                // believed. Only on its first slice: after that it has a boundary to carry on
-                // from, and silence past one means the rows are older rather than absent.
+                // GitHub search can silently omit repositories, including renamed ones; read an absent repo once.
+                // Only fall back on its first slice: later silence beyond a boundary means older rows.
                 const lastVisible = searchVisibleAt.get(
                   searchVisibilityKey(project.host, project.repository),
                 );

@@ -5178,14 +5178,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       dispatchMode.type === "start_immediately" ||
       dispatchMode.type === "queue_after_active";
     const shouldQueue = queueBehindRun !== undefined && startsOrQueuesRun;
-    // A message the user sends from a client means they are back, so the
-    // queue a stop or a restart held runs again, in its order, rather than
-    // waiting for a Resume.
-    // Continuations and scheduled tasks the server sends for them are not
-    // them coming back. Starting the queue still re-holds it for a failed
-    // provider or a usage limit; a queue held after worktree setup failed
-    // keeps its hold until a worktree exists, even once later messages have
-    // run, since its messages would start in the project checkout.
+    // Client messages resume held queues; server continuations and scheduled tasks do not.
+    // Provider failure or usage limits re-hold the queue. Failed worktree setup keeps it held
+    // until a worktree exists, so queued messages cannot start in the project checkout.
     const worktreeSetupUnresolved =
       projection.thread.worktreePath === null &&
       projection.runs.some(
@@ -9543,11 +9538,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
       const runOrdinalOf = (item: (typeof projection.turnItems)[number]) =>
         item.runId === null ? -1 : (runOrdinals.get(item.runId) ?? -1);
-      // Each provider thread is interrupted at its latest pending work: that
-      // turn's run bounds the settle follow-up, which must cover all of the
-      // thread's work. The target comes from the item's provider turn, since
-      // a native subagent item names its own provider thread but its
-      // parent's turn; interrupting the parent's turn reaches the subagent.
+      // Interrupt each provider thread at its latest pending turn so settlement covers all its work.
+      // Use the item's provider turn: native subagent items name the child thread but the parent turn,
+      // and interrupting the parent turn reaches the subagent.
       const latestTurnByProviderThread = new Map<
         OrchestrationV2ProviderThread["id"],
         { readonly turn: (typeof projection.providerTurns)[number]; readonly runOrdinal: number }
@@ -10424,12 +10417,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   /**
-   * Every mutation here targets the PARENT thread, so callers must hold the
-   * parent thread's dispatch lock rather than the child's: the
-   * delegated_task.wake-policy handler rewrites the same subagent row under
-   * that lock with a full-row payload, and unserialized writers clobber each
-   * other (stale policy on the terminal row, or a terminal row regressed to
-   * running).
+   * Callers must hold the parent thread's dispatch lock: wake-policy updates the same
+   * subagent row with full-row payloads, so unserialized writers clobber policy or terminal status.
    */
   const finalizeAppOwnedSubagentTask = Effect.fn("Orchestrator.finalizeAppOwnedSubagentTask")(
     function* (
@@ -11591,12 +11580,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       if (stored.event.type !== "run.updated") return;
       const threadId = stored.event.threadId;
       const run = stored.event.payload;
-      // finalize writes the parent thread and startNextQueuedRun writes this
-      // thread, so each takes its own thread's lock, sequentially and never
-      // nested: dispatchDelegatedTaskRequest already writes child events
-      // while holding the parent lock, so nesting the parent lock inside the
-      // child lock here would invert that order, and the keyed executor's
-      // semaphores are neither reentrant nor deadlock-aware.
+      // Take parent and child locks sequentially, never nested: delegation holds the parent
+      // while writing child events, so nesting parent inside child would invert the order.
+      // The keyed semaphores are neither reentrant nor deadlock-aware.
       if (delegatedTaskTerminalStatus(run.status) !== null) {
         yield* threadDispatch.withLock(
           threadId,
