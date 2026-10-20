@@ -402,7 +402,7 @@ export function upgradeLegacyContextMessage(text: string): UpgradedLegacyContext
     let at = body.indexOf(label);
     // Alternation instead of a character class: on Electron 44's V8 (15.2) a class
     // directly before `$` with the `u` flag never matches a code point outside the
-    // BMP, so `𐐀@build:7` would become a chip (#18272).
+    // BMP, so `𐐀@build:7` would become a chip.
     while (
       at !== -1 &&
       (/(?:\p{L}|\p{N}|\p{M}|[_@.-])$/u.test(body.slice(0, at)) ||

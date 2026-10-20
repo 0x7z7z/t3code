@@ -4391,7 +4391,7 @@ export default function ChatView(props: ChatViewProps) {
           }
         };
         // Input inside an embedded frame reaches none of the listeners above,
-        // but its scroll still chains out to the timeline (#17056).
+        // but its scroll still chains out to the timeline.
         const scrolledUp = createUpwardScrollDetector({
           top: scrollNode.scrollTop,
           height: scrollNode.scrollHeight,
