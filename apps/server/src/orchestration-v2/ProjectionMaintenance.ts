@@ -54,7 +54,7 @@ type ProjectionMetadataRow = {
 };
 
 /** Thread events older than this are pruned down to anchors. Projections hold their state. */
-export const EVENT_HISTORY_RETENTION = Duration.hours(24);
+const EVENT_HISTORY_RETENTION = Duration.hours(24);
 
 const encodeEntityKey = Schema.encodeSync(
   Schema.fromJsonString(Schema.Tuple([Schema.String, Schema.String, Schema.NullOr(Schema.String)])),
@@ -120,10 +120,20 @@ export const layer: Layer.Layer<
     const rebuild = Effect.gen(function* () {
       yield* sql.withTransaction(
         Effect.gen(function* () {
-          // Retention deleted history that projections alone still hold.
-          const pruned = yield* sql<{ readonly pruned: number }>`
-            SELECT EXISTS (SELECT 1 FROM orchestration_v2_event_retention) AS pruned
+          // Retention deleted history that projections alone still hold. A
+          // schema from before retention has no floor table and nothing pruned.
+          const floorTable = yield* sql<{ readonly present: number }>`
+            SELECT EXISTS (
+              SELECT 1 FROM sqlite_master
+              WHERE type = 'table' AND name = 'orchestration_v2_event_retention'
+            ) AS present
           `;
+          const pruned =
+            floorTable[0]?.present === 1
+              ? yield* sql<{ readonly pruned: number }>`
+                  SELECT EXISTS (SELECT 1 FROM orchestration_v2_event_retention) AS pruned
+                `
+              : [];
           if (pruned[0]?.pruned === 1) {
             return yield* new ProjectionMaintenanceError({
               operation: "rebuild from pruned event history",
