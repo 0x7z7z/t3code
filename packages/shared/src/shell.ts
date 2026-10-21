@@ -769,11 +769,8 @@ export const XcodeGitLocation = Context.Reference<XcodeGitLocator>(
 const MACOS_GIT_SHIM = "/usr/bin/git";
 
 /**
- * /usr/bin/git is an xcrun shim that finds the active developer directory on
- * every run: about 8 ms per spawn, against under 3 ms for the git behind it.
- * Only the shim is replaced, so a git the user put first on PATH (Homebrew,
- * Nix) still wins, and git's own children keep the same PATH. Any lookup
- * failure keeps plain `git`.
+ * Skip the xcrun shim's per-spawn lookup only when git resolves to /usr/bin/git.
+ * User-selected git on PATH still wins, children keep PATH, and lookup failures use `git`.
  */
 const resolveMacosGit = Effect.fnUntraced(function* (
   env: NodeJS.ProcessEnv,

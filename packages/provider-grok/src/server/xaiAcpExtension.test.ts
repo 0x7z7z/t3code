@@ -675,7 +675,7 @@ describe("XAiAcpExtension", () => {
     ]);
   });
 
-  // Oracle: #15888 reports KillTask replies with killed and already_exited outcomes.
+  // KillTask replies can report killed and already_exited outcomes.
   it.each([
     { rawInput: { task_id: "call-bg-1" }, rawOutput: { type: "KillTask" } },
     { rawInput: { task_id: "call-bg-1" }, rawOutput: { type: "KillTask", outcome: "killed" } },

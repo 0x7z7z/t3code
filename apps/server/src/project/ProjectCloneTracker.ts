@@ -226,11 +226,8 @@ export const make = Effect.gen(function* () {
   }, Effect.scoped);
 
   /**
-   * Runs in its own fiber; the tracker records the outcome through `onExit`,
-   * which still runs when the fiber is interrupted (a `matchCause` handler
-   * would be skipped). Once git has finished the clone is marked done before
-   * the post-clone hook runs, so a late Cancel cannot tear down a complete
-   * checkout.
+   * `onExit` records outcomes even on interruption; `matchCause` would be skipped.
+   * Mark the clone done before the post-clone hook so a late Cancel cannot remove it.
    */
   const runClone = (projectId: ProjectId, tracked: TrackedClone) =>
     cloneWatchingForStall(projectId, tracked).pipe(
