@@ -789,12 +789,7 @@ export function collectUserMessageBlobPreviewUrls(message: ChatMessage): string[
 
 export { readFileAsDataUrl } from "../lib/imageCompression";
 
-export function resolveSendEnvMode(input: {
-  requestedEnvMode: DraftThreadEnvMode;
-  isGitRepo: boolean;
-}): DraftThreadEnvMode {
-  return input.isGitRepo ? input.requestedEnvMode : "local";
-}
+export { resolveSendEnvMode } from "@t3tools/shared/projectSettings";
 
 export function resolveBackgroundDraftWorkspaceOptions(input: {
   envMode: DraftThreadEnvMode;
@@ -1339,18 +1334,4 @@ export function mergeDirectPreviewAnnotation(input: {
   return { images, previewAnnotations };
 }
 
-/** Completion after the last visit counts as seen because the user watched it finish. */
-export function isThreadWokeUnseen(input: {
-  readonly wokeAt: string | null;
-  readonly settled: boolean;
-  readonly lastVisitedAt: string | null | undefined;
-  readonly latestRunCompletedAt: string | null;
-}): boolean {
-  if (input.wokeAt === null || input.settled) return false;
-  const wokeAtMs = Date.parse(input.wokeAt);
-  if (Number.isNaN(wokeAtMs)) return false;
-  const seenAt = [input.lastVisitedAt, input.latestRunCompletedAt]
-    .map((value) => (value ? Date.parse(value) : NaN))
-    .filter((ms) => !Number.isNaN(ms));
-  return seenAt.every((ms) => ms < wokeAtMs);
-}
+export { isThreadWokeUnseen } from "@t3tools/client-runtime/state/thread-settled";

@@ -27,6 +27,8 @@ import {
   STAGE_INSTALL_ARGS,
 } from "./build-desktop-artifact.ts";
 import { selectCliRuntimeExternalDependencies } from "./lib/cli-external-packages.ts";
+import { signWithJsign } from "./lib/windows-jsign.ts";
+import { windowsSystemTar } from "./lib/windows-tar.ts";
 import { resolveCatalogDependencies } from "./lib/resolve-catalog.ts";
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -89,11 +91,6 @@ export function cliArchiveStem(version: string, platform: BuildPlatform, arch: B
 export function cliArchiveFileName(version: string, platform: BuildPlatform, arch: BuildArch) {
   // Minimal hosts may lack xz, but tar and Node zlib handle gzip without it.
   return `${cliArchiveStem(version, platform, arch)}.${platform === "win" ? "zip" : "tar.gz"}`;
-}
-
-export function windowsSystemTar(): string {
-  const systemRoot = process.env.SystemRoot ?? process.env.windir ?? "C:\\Windows";
-  return `${systemRoot}\\System32\\tar.exe`;
 }
 
 const runCommand = Effect.fn("runCommand")(function* (
@@ -386,6 +383,11 @@ const signWindowsExecutable = Effect.fn("signWindowsExecutable")(function* (
     return;
   }
   yield* stripStaleAuthenticodeEntry(executablePath);
+  if ((yield* HostProcess.Platform) !== "win32") {
+    yield* signWithJsign(executablePath);
+    yield* Effect.log("[cli-archive] Signed t3.exe (Azure Trusted Signing via jsign).");
+    return;
+  }
   const quote = (value: string) => `'${value.replaceAll("'", "''")}'`;
   const script = [
     "$ErrorActionPreference = 'Stop';",
@@ -480,8 +482,17 @@ const buildCliArchive = Effect.fn("buildCliArchive")(function* (input: {
     cliArchiveFileName(input.version, input.platform, input.arch),
   );
   yield* fs.remove(archivePath, { force: true });
-  if (input.platform === "win") {
-    // Use Windows bsdtar explicitly; Git Bash's GNU tar cannot write zip or accept drive-letter paths.
+  if (input.platform === "win" && hostPlatform !== "win32") {
+    yield* runCommand(
+      ChildProcess.make("zip", ["-q", "-r", "-X", path.resolve(archivePath), stem], {
+        cwd: stageRoot,
+      }),
+      "zip",
+    );
+  } else if (input.platform === "win") {
+    // Windows ships bsdtar, which writes zip natively. Name it by path: under
+    // the Git Bash shell CI uses, a bare `tar` is GNU tar, which neither
+    // writes zip nor accepts a drive-letter path.
     yield* runCommand(
       ChildProcess.make(windowsSystemTar(), ["-a", "-c", "-f", archivePath, "-C", stageRoot, stem]),
       "tar (zip)",

@@ -48,7 +48,7 @@ import {
   alertForAttentionTransition,
   alertForNewlyTerminal,
   alertForTerminalAggregate,
-  newlyTerminalRows,
+  rowPhasesChanged,
   shouldAlertForActivity,
 } from "./agentActivityAlerts.ts";
 export {
@@ -176,8 +176,9 @@ function shouldUpdateLiveActivity(input: {
   if (aggregateNeedsAttention(input.nextAggregate)) {
     return true;
   }
-  // Completion plus a new start can preserve activeCount; terminal transitions must bypass throttling.
-  if (newlyTerminalRows(input.previousAggregate, input.nextAggregate, true).length > 0) {
+  // Phase and row changes may be the last update until the next transition.
+  // Throttling them would leave the card showing a stale state indefinitely.
+  if (rowPhasesChanged(input.previousAggregate, input.nextAggregate)) {
     return true;
   }
   const lastDeliveryAtMs =

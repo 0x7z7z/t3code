@@ -68,7 +68,18 @@ export interface ComposerEditorProps {
   readonly onPasteText?: (paste: ComposerTextPaste) => void;
   readonly onFocus?: () => void;
   readonly onBlur?: () => void;
-  /** iOS hardware Return behavior; Android has no hardware Return handling. */
+  /**
+   * Size of the laid-out text in dp, without insets. Width is the widest line, so a
+   * one-line draft reports its natural width; only fires when the size changes.
+   */
+  readonly onContentSizeChange?: (size: {
+    readonly width: number;
+    readonly height: number;
+  }) => void;
+  /**
+   * Hardware-keyboard Return behavior on iOS. No-op on Android, which has no
+   * hardware Return handling.
+   */
   readonly enterBehavior?: ComposerEnterBehavior;
   readonly submitTitle?: string;
   readonly alternateSubmitTitle?: string;
