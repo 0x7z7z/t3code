@@ -554,7 +554,11 @@ export class EnvironmentAuth extends Context.Service<
       readonly access: AuthMcpClientAccess;
       readonly client: AuthClientMetadata;
     }) => Effect.Effect<
-      { readonly token: string; readonly expiresAt: DateTime.DateTime },
+      {
+        readonly sessionId: AuthSessionId;
+        readonly token: string;
+        readonly expiresAt: DateTime.DateTime;
+      },
       ServerAuthInternalError
     >;
     /** Spends a code covering all granted scopes. Rejects desktop grants and leaves refused proof-bound codes unspent. */
@@ -1275,7 +1279,11 @@ export const make = Effect.gen(function* () {
         client: { ...input.client, label: input.label, deviceType: "bot" },
       })
       .pipe(
-        Effect.map((issued) => ({ token: issued.token, expiresAt: issued.expiresAt })),
+        Effect.map((issued) => ({
+          sessionId: issued.sessionId,
+          token: issued.token,
+          expiresAt: issued.expiresAt,
+        })),
         Effect.mapError((cause) => new ServerAuthSessionTokenIssueError({ cause })),
         Effect.withSpan("EnvironmentAuth.issueMcpClientSession"),
       );
