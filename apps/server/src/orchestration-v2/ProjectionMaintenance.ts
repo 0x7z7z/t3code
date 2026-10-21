@@ -339,6 +339,7 @@ export const layer: Layer.Layer<
               ) THEN 1
               WHEN event.event_type IN ('subagent.updated', 'turn-item.updated')
                 AND json_type(event.payload_json, '$.prompt') = 'text'
+                AND json_type(event.payload_json, '$.promptSequence') IS NULL
               THEN 1
               ELSE 0
             END AS retention_anchor,

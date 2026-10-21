@@ -297,8 +297,8 @@ it.effect(
     `;
       // Slimmed payloads restore their prompt from this row.
       yield* insertRaw("thread:retention-prompt", 0, { id: "item", prompt: "full prompt" });
-      yield* insertRaw("thread:retention-prompt", 1, { id: "item", promptSequence: 1 });
-      yield* insertRaw("thread:retention-prompt", 2, { id: "item", promptSequence: 1 });
+      yield* insertRaw("thread:retention-prompt", 1, { id: "item", prompt: "", promptSequence: 1 });
+      yield* insertRaw("thread:retention-prompt", 2, { id: "item", prompt: "", promptSequence: 1 });
       // The transcript import still reads its imported event IDs.
       yield* insertRaw("thread:retention-importing", 0, { id: "imported-1" });
       yield* insertRaw("thread:retention-importing", 1, { id: "imported-2" });
