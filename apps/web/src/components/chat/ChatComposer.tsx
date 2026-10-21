@@ -3105,11 +3105,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         ),
       openModelPicker: openModelPickerStable,
       stepReasoningEffort: (direction) => {
-        if (
-          noProviderAvailable ||
-          pendingUserInputs.length > 0 ||
-          isEditingQueuedMessage
-        ) {
+        if (noProviderAvailable || pendingUserInputs.length > 0 || isEditingQueuedMessage) {
           return;
         }
         const change = getComposerReasoningStep({
