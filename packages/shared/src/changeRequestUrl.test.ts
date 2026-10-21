@@ -6,6 +6,7 @@ import {
   canonicalizeChangeRequestUrl,
   matchesLinkedPullRequestUrl,
   parseChangeRequestUrl,
+  parseGitCafePullRequestUrl,
   pullRequestCandidateUrlFromReferenceAutolink,
   siblingPullRequestUrl,
 } from "./changeRequestUrl.ts";
@@ -23,6 +24,7 @@ describe("parseChangeRequestUrl", () => {
       expect(canonicalizeChangeRequestUrl(url)).toBe(
         `https://${host}/pingdotgg/t3code/pulls/21353`,
       );
+      expect(parseGitCafePullRequestUrl(url)).toEqual(parseChangeRequestUrl(url));
     }
   });
 
@@ -96,6 +98,8 @@ describe("parseChangeRequestUrl", () => {
         repository,
         number: 123,
       });
+      expect.soft(parseGitCafePullRequestUrl(linked.url), host).toBeNull();
+      expect.soft(canonicalizeChangeRequestUrl(linked.url), host).toBe(linked.url);
       expect.soft(matchesLinkedPullRequestUrl(linked, `${linked.url}?view=files`), host).toBe(true);
       expect.soft(matchesLinkedPullRequestUrl(linked, other.url), host).toBe(false);
       expect.soft([linked, other].map(normalizeThreadPullRequestKey), host).toEqual([

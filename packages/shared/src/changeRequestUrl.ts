@@ -56,16 +56,18 @@ export function parseChangeRequestUrl(targetUrl: string): ChangeRequestLink | nu
   return link === null || url.port === "" ? link : { ...link, authority: url.host.toLowerCase() };
 }
 
-export function canonicalizeChangeRequestUrl(targetUrl: string): string {
+export function parseGitCafePullRequestUrl(targetUrl: string): ChangeRequestLink | null {
   const link = parseChangeRequestUrl(targetUrl);
-  if (
-    link !== null &&
+  return link !== null &&
     (link.host === "git.cafe" || link.host === "staging.git.cafe") &&
     gitCafePullRequestPath.test(new URL(targetUrl).pathname)
-  ) {
-    return `https://${link.host}/${link.repository}/pulls/${link.number}`;
-  }
-  return targetUrl;
+    ? link
+    : null;
+}
+
+export function canonicalizeChangeRequestUrl(targetUrl: string): string {
+  const link = parseGitCafePullRequestUrl(targetUrl);
+  return link === null ? targetUrl : `https://${link.host}/${link.repository}/pulls/${link.number}`;
 }
 
 function claim(host: string, match: RegExpExecArray | null): ChangeRequestLink | null {

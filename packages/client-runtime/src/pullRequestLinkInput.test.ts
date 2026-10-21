@@ -15,17 +15,25 @@ const project = {
 
 describe("resolveLinkPullRequestInput", () => {
   it.each(["git.cafe", "staging.git.cafe"])("canonicalizes both GitCafe routes on %s", (host) => {
-    for (const route of ["pull", "pulls"]) {
-      const url = `https://${host}/acme/web/${route}/42`;
+    for (const [repository, route] of [
+      ["web", "pull"],
+      ["web", "pulls"],
+      ["pull", "pull"],
+      ["pull", "pulls"],
+      ["pulls", "pull"],
+      ["pulls", "pulls"],
+    ]) {
+      const url = `https://${host}/acme/${repository}/${route}/42`;
       expect(sourceControlClients.get("gitcafe").isChangeRequestUrl(url)).toBe(true);
+      expect(parsePullRequestReference(url)).toBe(url);
       expect(
         resolveLinkPullRequestInput({ reference: url, project: null, hasProject: () => true }),
       ).toEqual({
         link: {
           host,
-          repository: "acme/web",
+          repository: `acme/${repository}`,
           number: 42,
-          url: `https://${host}/acme/web/pulls/42`,
+          url: `https://${host}/acme/${repository}/pulls/42`,
         },
       });
     }

@@ -1,5 +1,5 @@
 import { SourceControlProviderKind } from "@t3tools/contracts";
-import { parseChangeRequestUrl } from "@t3tools/shared/changeRequestUrl";
+import { parseGitCafePullRequestUrl } from "@t3tools/shared/changeRequestUrl";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -241,7 +241,7 @@ export const make = Effect.gen(function* () {
     readonly context?: SourceControlProvider.SourceControlProviderContext;
     readonly reference: string;
   }) {
-    const match = parseChangeRequestUrl(input.reference.trim());
+    const match = parseGitCafePullRequestUrl(input.reference.trim());
     const urlHost = match === null ? null : GitCafeHosts.gitCafeHost(match.host);
     const target: Target =
       urlHost && match
