@@ -1395,11 +1395,9 @@ const program = Effect.gen(function* () {
             const detachedCommand = runningCommandIgnoresTerm
               ? 'trap "" TERM; bash -c \'trap "" TERM; while :; do sleep 1; done\' & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; echo published; wait "$child"'
               : 'sleep 120 & child=$!; printf "%s %s %s\n" "$PPID" "$$" "$child" > "$1"; echo published; wait "$child"';
-            // Nested bash publishes "$PPID $$ $child" once it starts. Do not
-            // write the launcher PID alone here: that races with bash and can
-            // clobber the triple that interrupt tests wait for. It then prints a
-            // line, so an agent that exits after launch only exits once the
-            // triple exists instead of racing a slow launcher start.
+            // Only nested bash writes the "$PPID $$ $child" triple; writing the launcher PID
+            // here would race it. The launcher's printed line keeps the agent alive until the
+            // triple exists.
             const detachedLauncher = NodeChildProcess.spawn(
               process.execPath,
               ["-e", launcher, "bash", "-c", detachedCommand, "bash", runningCommandPidPath],

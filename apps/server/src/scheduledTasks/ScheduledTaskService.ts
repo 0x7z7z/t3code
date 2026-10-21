@@ -673,12 +673,9 @@ export const layer = Layer.effect(
         ),
       );
 
-    // Best-effort escape hatch: if anything fails between markRunning and
-    // markCompleted, write a full terminal record so runDueTasks neither skips
-    // the task forever (it filters out 'running' rows) nor re-fires it
-    // immediately: the dispatch may already have gone out, so next_run_at must
-    // advance. Pending webhook attempts count only with their completion state;
-    // other attempts count here.
+    // A failure between markRunning and markCompleted must still write a terminal record:
+    // runDueTasks skips 'running' rows forever, and the dispatch may already have gone out,
+    // so next_run_at must advance. Pending webhook attempts count only with their completion.
     const releaseStuckRun = Effect.fn("ScheduledTaskService.releaseStuckRun")(
       function* (task: ScheduledTask, message: string, pendingDeliveryId?: string) {
         const now = yield* localNow;

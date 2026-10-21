@@ -496,14 +496,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const isVoiceInputPresented = voicePresentation.statusLabel !== null;
   const isExpanded = isFocused || settingsSheetPresentation.keepsComposerExpanded;
   const { setComposerEditing } = useAdaptiveWorkspaceLayout();
-  // The composer stays one row, with the model picker in it, until the draft would
-  // wrap. Then the draft stacks above the controls and returns to the row once it
-  // fits again. The native editor reports its laid-out text size: more than one
-  // line means the draft wrapped where it is, and the widest line is a one-line
-  // draft's natural width, which is compared with the row's text area so a draft
-  // laid out in the wider card still returns to the row when it fits, including
-  // when the pane widens. The measurements live in refs and only the verdict is
-  // state, so a keystroke that keeps the verdict costs no extra render.
+  // The draft stacks above the controls once it wraps and returns to the row when its widest
+  // line fits the row's text area, including after the pane widens. Measurements live in refs
+  // and only the verdict is state, so most keystrokes cost no render.
   const draftSizeRef = useRef({ width: 0, height: 0 });
   const rowGeometryRef = useRef({ surfaceWidth: 0, leadingWidth: 0, trailingWidth: 0 });
   const [draftOverflowsRow, setDraftOverflowsRow] = useState(false);
