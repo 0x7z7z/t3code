@@ -94,11 +94,9 @@ function collectMentionTokens(text: string): ComposerInlineToken[] {
 }
 
 /**
- * Formulas in composer text, ignoring the `$` and `\[` that file names such as
- * `posts.$postId.tsx` or `[id].tsx` put into a file link. File links are masked with letters,
- * not spaces, so a link at the start of a line cannot become an indented code block.
- * Bare `@path` mentions are not masked: one such as `@README.md$` can run into a formula's
- * closing delimiter, and a mention written inside a real formula stays covered by it.
+ * Formulas in composer text, ignoring `$` and `\[` inside file links such as `posts.$postId.tsx`.
+ * Links are masked with letters, not spaces, so a leading link cannot become an indented code
+ * block. Bare `@path` mentions stay unmasked so `@README.md$` can still close a formula.
  */
 export function composerMathRanges(
   text: string,
