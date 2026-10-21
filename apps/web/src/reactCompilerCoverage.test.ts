@@ -28,4 +28,4 @@ describe("React Compiler coverage", () => {
     const bailouts = result.errors.map((error) => error.codeframe ?? error.message);
     expect(bailouts).toEqual([]);
   });
-}, 120_000);
+});

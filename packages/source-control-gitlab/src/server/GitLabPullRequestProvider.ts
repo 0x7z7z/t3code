@@ -62,7 +62,7 @@ export function gitLabViewerPermissions(input: {
   };
 }
 
-export function gitLabProviderFailure(
+function gitLabProviderFailure(
   error: GitLabPullRequestCli.GitLabPullRequestCliError,
 ): PullRequestProviderFailure {
   if (error._tag === "GitLabCliUnavailableError") return { reason: "missing-tool" };

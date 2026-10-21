@@ -38,11 +38,13 @@ export class OrchestrationEffectExecutionError extends Schema.TaggedError<Orches
   },
 ) {}
 
-/** Exclude provider-turn.restart: it also detaches and starts, and swallowing start failures would lose the replacement. */
-export function isNonRetryableProviderTurnControlFailure(
-  effectType: string,
-  errorText: string,
-): boolean {
+/**
+ * Do not apply this to `provider-turn.restart`: that compound effect also runs
+ * detach and start. Swallowing a start failure that happens to mention
+ * "is not active" would drop the outbox item without ever starting the
+ * replacement turn.
+ */
+function isNonRetryableProviderTurnControlFailure(effectType: string, errorText: string): boolean {
   if (effectType !== "provider-turn.interrupt") {
     return false;
   }

@@ -28,9 +28,11 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 
 /** Output bypasses orchestration events; expanded rows receive tails, coalesced appends, then persisted output. */
 
-export const COMMAND_OUTPUT_FRAME_INTERVAL_MS = 100;
-/** Milliseconds between replacements after a subscriber falls behind. */
-export const COMMAND_OUTPUT_REPLACE_INTERVAL_MS = 500;
+/** Fastest a subscriber receives frames while output flows. */
+const COMMAND_OUTPUT_FRAME_INTERVAL_MS = 100;
+/** After a subscriber falls behind and is sent the whole tail, it waits this long. */
+const COMMAND_OUTPUT_REPLACE_INTERVAL_MS = 500;
+/** Raw text a subscriber may accumulate before it is sent the tail instead. */
 const COMMAND_OUTPUT_MAX_APPEND_CHARS = 16 * 1024;
 /** Evict the least recently written command beyond this limit. */
 const MAX_LIVE_COMMANDS = 64;

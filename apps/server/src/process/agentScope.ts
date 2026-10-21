@@ -27,8 +27,13 @@ export function ownedAgentSlice(stateDir: string): string {
 
 const GiB = 1024 ** 3;
 
-/** Agents leave 6 GB before throttling and 4 GB before kills; minimum budgets are 1/2 and 3/4 of RAM. */
-export function agentSliceMemoryLimits(totalBytes: number) {
+/**
+ * Agents together leave about 6 GB free before they are throttled and 4 GB
+ * before the kernel kills one, so the server, sshd, and tailscaled keep
+ * working. Small machines still give agents at least half of RAM before
+ * throttling and three quarters before a kill.
+ */
+function agentSliceMemoryLimits(totalBytes: number) {
   return {
     high: Math.max(totalBytes - 6 * GiB, Math.floor(totalBytes / 2)),
     max: Math.max(totalBytes - 4 * GiB, Math.floor(totalBytes * 0.75)),

@@ -20,9 +20,7 @@ function getTimestampFormatOptions(
   };
 }
 
-export function resolveTimestampLocale(
-  systemLocale: string | null | undefined,
-): string | undefined {
+function resolveTimestampLocale(systemLocale: string | null | undefined): string | undefined {
   const tag = systemLocale?.trim();
   if (!tag) return undefined;
 
@@ -50,8 +48,12 @@ type LocaleWithWeekInfo = Intl.Locale & {
   getWeekInfo?: () => { readonly firstDay: number };
 };
 
-/** First weekday as Date#getDay (Sunday=0), or undefined when runtime week data is unavailable. */
-export function resolveWeekStartsOn(locale: string | undefined): WeekdayIndex | undefined {
+/**
+ * First weekday of a locale as a `Date#getDay` index (0 is Sunday), or
+ * `undefined` when the runtime has no week data, so callers keep their own
+ * default.
+ */
+function resolveWeekStartsOn(locale: string | undefined): WeekdayIndex | undefined {
   try {
     const resolved: LocaleWithWeekInfo = new Intl.Locale(
       locale ?? Intl.DateTimeFormat().resolvedOptions().locale,
@@ -95,13 +97,9 @@ export function parseTimestampDate(isoDate: string): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function formatTimestamp(isoDate: string, timestampFormat: TimestampFormat): string {
-  const date = parseTimestampDate(isoDate);
-  if (!date) return "";
-  return getTimestampFormatter(timestampFormat, true).format(date);
-}
-
-// The tooltip uses English ordinals and order, so its month must also be English.
+// Deliberately not the host locale: the tooltip's ordinal suffix and
+// day-before-month order below are English, so a localized month alone would
+// read "4th Juni 2026".
 const monthNameFormatter = new Intl.DateTimeFormat("en-US", { month: "long" });
 
 function ordinalSuffix(day: number): string {
@@ -275,7 +273,7 @@ export function formatElapsedDurationLabel(isoDate: string, nowMs: number = Date
   return `${days}d`;
 }
 
-export function formatRelativeTimeUntil(isoDate: string): RelativeTimeParts | null {
+function formatRelativeTimeUntil(isoDate: string): RelativeTimeParts | null {
   const date = parseTimestampDate(isoDate);
   if (!date) return null;
   const diffMs = date.getTime() - Date.now();

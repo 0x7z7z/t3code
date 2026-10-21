@@ -172,7 +172,7 @@ export const BROWSER_IMPORT_SOURCES: ReadonlyArray<BrowserImportSourceDefinition
   },
 ];
 
-export const cookieDatabaseCandidatePaths = (
+const cookieDatabaseCandidatePaths = (
   definition: BrowserImportSourceDefinition,
   context: BrowserImportPathContext,
   profileDirectory: string,
@@ -550,7 +550,7 @@ export const chromiumSingletonLockIsHeld = Effect.fnUntraced(function* (
 });
 
 /** Windows sharing and lock violations are translated by libuv to `Busy`. */
-export const isWindowsLockHeldError = (error: PlatformError.PlatformError): boolean =>
+const isWindowsLockHeldError = (error: PlatformError.PlatformError): boolean =>
   error.reason._tag === "Busy";
 
 /** Windows leaves parent.lock after exit; only opening it for write reveals a live holder as Busy. */
@@ -616,8 +616,15 @@ const FCNTL_PROBE_SCRIPT =
   "else:\n" +
   "  print('free')";
 
-/** An unavailable interpreter says nothing about locks; permit SQLite's WAL-safe snapshot instead of blocking import. */
-export const posixLockIsHeld = Effect.fnUntraced(function* (
+/**
+ * Anything else — no interpreter on any candidate path, or one that refused to
+ * run the script (Apple's shim without the developer tools) — is the probe
+ * being unavailable, not evidence about the lock. That case falls back to "not
+ * held" rather than "held": reporting every profile as locked forever would
+ * block Firefox import outright on such machines, and the SQLite snapshot
+ * already copes with a live database's WAL, as it does for every other engine.
+ */
+const posixLockIsHeld = Effect.fnUntraced(function* (
   path: string,
   interpreters: ReadonlyArray<string> = FCNTL_PROBE_INTERPRETERS,
 ) {

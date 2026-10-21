@@ -1,5 +1,5 @@
-export const COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX = 620;
-export const COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX = 780;
+const COMPOSER_FOOTER_COMPACT_BREAKPOINT_PX = 620;
+const COMPOSER_FOOTER_WIDE_ACTIONS_COMPACT_BREAKPOINT_PX = 780;
 const RESTING_COMPOSER_IMAGE_THUMBNAIL_LIMIT = 3;
 
 export function getRestingComposerImagePreviewCounts(imageCount: number): {
@@ -41,8 +41,13 @@ export function shouldUseRestingComposerLayout(input: {
   );
 }
 
-/** Minimum empty-composer expansion at desktop widths, in pixels. */
-export const COMPOSER_RESTING_EXPANSION_MIN_PX = 94;
+/**
+ * How much taller the empty expanded composer is than its resting row on
+ * desktop widths, from the layout classes in ChatComposer: the body loses
+ * 8px of top padding, the prompt clamps from min-h-17.5 (70px) to 32px, and
+ * the 48px footer leaves flow.
+ */
+const COMPOSER_RESTING_EXPANSION_MIN_PX = 94;
 
 /** Reserve expansion height because the timeline does not move when footer growth covers its last rows. */
 export function resolveComposerTimelineInset(input: {

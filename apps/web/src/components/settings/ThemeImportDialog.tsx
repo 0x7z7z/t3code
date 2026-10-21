@@ -24,8 +24,12 @@ import { Button } from "../ui/button";
 import { Dialog, DialogHeader, DialogPanel, DialogPopup, DialogTitle } from "../ui/dialog";
 import { ThemeSearchSection } from "./ThemeSearchSection";
 
-/** Check file size before reading; loading and highlighting oversized themes locks the UI. */
-export const MAX_THEME_FILE_BYTES = 256 * 1024;
+/**
+ * The guard runs on the size before the bytes are ever read: a large file
+ * would otherwise be pulled into memory, highlighted, and rendered, which
+ * locks the UI for as long as that takes.
+ */
+const MAX_THEME_FILE_BYTES = 256 * 1024;
 
 /** Highlighting rebuilds markup per keystroke; fall back to plain text for oversized pastes. */
 const MAX_HIGHLIGHTED_JSON_LENGTH = 20_000;
@@ -36,7 +40,7 @@ function formatByteSize(bytes: number): string {
   return `${bytes} bytes`;
 }
 
-export function describeOversizedThemeFile(bytes: number): string | null {
+function describeOversizedThemeFile(bytes: number): string | null {
   if (bytes <= MAX_THEME_FILE_BYTES) return null;
   return `That file is ${formatByteSize(bytes)}. Theme files are only a few KB, so this one was not read (limit ${formatByteSize(MAX_THEME_FILE_BYTES)}).`;
 }

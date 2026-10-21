@@ -33,10 +33,12 @@ import * as McpToolAccess from "../../McpToolAccess.ts";
 import * as PreviewAutomationBroker from "../../PreviewAutomationBroker.ts";
 import { PreviewSnapshotToolkit, PreviewStandardToolkit, PreviewToolkit } from "./tools.ts";
 
-/** Leave visibility unspecified so the desktop-local browserAutoShowFloatingPreview decides. */
-export function normalizePreviewOpenInput(
-  input: PreviewAutomationOpenInput,
-): PreviewAutomationOpenInput {
+/** Whether a preview the agent
+ * said nothing about surfaces is the user's `browserAutoShowFloatingPreview`
+ * preference, which is desktop-local and unreadable from here — filling in
+ * `true` would silently override it for every `preview_open`.
+ */
+function normalizePreviewOpenInput(input: PreviewAutomationOpenInput): PreviewAutomationOpenInput {
   const open = input.open ?? input.show;
   return {
     ...input,

@@ -4,10 +4,14 @@ import type { QuitConfirmationMode, QuitShortcutHintEvent } from "@t3tools/contr
 
 export const QUIT_HOLD_DURATION_MS = 1200;
 export const QUIT_DOUBLE_PRESS_MS = 500;
-// macOS can suppress Q keyUp while Cmd is held; only auto-repeat proves a hold.
-// After a hold, wait for keyUp or a quiet grace period so repeats cannot reach the next app.
-export const QUIT_HOLD_RELEASE_GRACE_MS = 600;
-// Two observed repeat cadences accommodate rates slower than the fixed grace.
+// "Still held" is proven by auto-repeat keydowns, not by the absence of a
+// release: macOS suppresses a letter keyUp while the command key is down, so a
+// tap release can go completely unseen and a release-based timer would quit
+// anyway. Once held, quitting waits for Q keyUp or a quiet grace period after
+// repeats stop so they cannot reach the next app.
+const QUIT_HOLD_RELEASE_GRACE_MS = 600;
+// A slow repeat rate can exceed the fixed grace. Waiting for two observed
+// cadences keeps the timer behind the next repeat without slowing normal rates.
 const QUIT_HOLD_REPEAT_CADENCE_MULTIPLIER = 2;
 
 export interface QuitHoldKeyInput {

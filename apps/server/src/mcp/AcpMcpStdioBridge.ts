@@ -10,7 +10,7 @@ import { discardResponseBody, responsePayloads } from "@t3tools/shared/mcpRespon
 
 /** ACP mandates stdio MCP support; HTTP/SSE support varies. */
 
-export class AcpMcpBridgeError extends Error {
+class AcpMcpBridgeError extends Error {
   readonly _tag = "AcpMcpBridgeError";
 }
 
@@ -57,10 +57,12 @@ export interface AcpMcpToolCallOptions {
   readonly fetchImplementation?: (url: string, init?: RequestInit) => Promise<Response>;
 }
 
-/** Terminal fallback for ACP agents that accept mcpServers but never expose the tools to their model. */
-export function callAcpMcpTool(
-  options: AcpMcpToolCallOptions,
-): Effect.Effect<unknown, AcpMcpBridgeError> {
+/**
+ * This is the terminal fallback for ACP agents that accept `mcpServers` in
+ * `session/new` but fail to expose those tools to their model. Compliant ACP
+ * agents continue to use the stdio bridge above.
+ */
+function callAcpMcpTool(options: AcpMcpToolCallOptions): Effect.Effect<unknown, AcpMcpBridgeError> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   return Effect.gen(function* () {
     let sessionId: string | null = null;

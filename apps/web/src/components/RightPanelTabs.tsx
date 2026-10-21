@@ -150,9 +150,7 @@ export interface PullRequestTabStatus {
 
 export type PullRequestTabStatusSeed = Pick<PullRequestTabStatus, "state" | "isDraft">;
 
-export function shouldOpenDefaultBrowserProfileFromMenuClick(
-  pointerType: string | undefined,
-): boolean {
+function shouldOpenDefaultBrowserProfileFromMenuClick(pointerType: string | undefined): boolean {
   return pointerType !== "touch";
 }
 
@@ -214,9 +212,12 @@ function previewTabIdOf(
   return sessions[surface.resourceId]?.tabId ?? null;
 }
 
-/** Disable until desktop overlay state arrives; server ids can resolve before createTab, causing silent
- * mute failures. */
-export function tabMuteMenuItem(input: {
+/**
+ * Stays disabled until desktop overlay state arrives: a server session id can
+ * resolve while the preview manager's createTab is still in flight, and muting
+ * then fails with a PreviewTabNotFoundError nothing surfaces to the user.
+ */
+function tabMuteMenuItem(input: {
   overlay: DesktopPreviewOverlay | null;
   canResolveRuntimeTabId: boolean;
 }): { label: string; disabled: boolean } {

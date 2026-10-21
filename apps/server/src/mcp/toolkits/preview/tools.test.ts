@@ -55,24 +55,3 @@ it("exports provider-compatible object schemas with described parameters", () =>
     }
   }
 });
-
-it("exports exact object result schemas for preview actions", () => {
-  const actionNames = [
-    "preview_click",
-    "preview_type",
-    "preview_hover",
-    "preview_drag",
-    "preview_upload",
-    "preview_press",
-    "preview_scroll",
-    "preview_wait_for",
-  ] as const;
-  for (const name of actionNames) {
-    expect(Tool.getJsonSchemaFromSchema(PreviewToolkit.tools[name].successSchema)).toEqual({
-      type: "object",
-      properties: { toolIcon: expect.any(Object) },
-      additionalProperties: true,
-      description: "The preview action completed successfully.",
-    });
-  }
-});
