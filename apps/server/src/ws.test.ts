@@ -288,7 +288,7 @@ it.live.each(["thread", "shell"] as const)(
     }).pipe(Effect.scoped, Effect.provide(ReplayTestLayer)),
 );
 
-it.live("shell resume below the history replay floor sends a snapshot", () =>
+it.effect("shell resume below the history replay floor sends a snapshot", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const now = "2026-01-05T00:00:00.000Z";
