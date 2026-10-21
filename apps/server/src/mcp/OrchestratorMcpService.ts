@@ -2328,7 +2328,7 @@ const make = Effect.gen(function* () {
           ),
         ),
       );
-      // A follow-up that lost its child run (#19002) stays running on the parent, while its
+      // A follow-up that lost its child run stays running on the parent, while its
       // status here comes from the child's last run. The parent cancels it, and any other
       // orphan of the same child, when that child is idle.
       const cancelOrphan = Effect.gen(function* () {

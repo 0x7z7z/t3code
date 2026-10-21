@@ -6,6 +6,8 @@ const DIRECTIVE_PATTERN =
 const DIVIDER_LINE_PATTERN = /^(?:[-=*#~_/+]{3,}.*|.*[-=*#~_]{3,})$/u;
 const TEST_STEP_PATTERN = /^(?:arrange|act|assert|given|when|then)\s*[:.]?$/iu;
 const TASK_MARKER_PATTERN = /\b(?:TODO|FIXME|XXX|HACK)\b/u;
+// `regression: #123` marks the fix a test pins, so its number is the point.
+const REGRESSION_MARKER_PATTERN = /^\s*regression:/u;
 const TASK_LINK_PATTERN = /#\d+|https?:\/\//u;
 // `owner/repo#123` names an external tracker; a bare `#123` is our own history.
 const BARE_ISSUE_REF_PATTERN = /(?<![\w/&#-])#[1-9]\d{2,4}(?![\w-])/u;
@@ -96,6 +98,7 @@ export default defineRule({
       }
       if (
         !TASK_MARKER_PATTERN.test(text) &&
+        !REGRESSION_MARKER_PATTERN.test(text) &&
         BARE_ISSUE_REF_PATTERN.test(text.replace(CODE_SPAN_PATTERN, ""))
       ) {
         return "Drop the PR or issue number; git history records it. Keep the reason.";

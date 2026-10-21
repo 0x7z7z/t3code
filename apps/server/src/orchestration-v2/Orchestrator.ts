@@ -9351,7 +9351,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const run = projection.runs.find((candidate) => candidate.id === command.runId);
     const subagent = projection.subagents.find((candidate) => candidate.id === command.subagentId);
     // An app-owned task stops through its child thread. Here the parent only cancels the child's
-    // orphaned tasks: the child is idle and no child run is bound to them (#19002).
+    // orphaned tasks: the child is idle and no child run is bound to them.
     if (
       subagent?.origin === "app_owned" &&
       subagent.childThreadId !== null &&

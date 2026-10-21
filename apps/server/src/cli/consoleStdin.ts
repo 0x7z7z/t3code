@@ -5,14 +5,9 @@ import * as NodeTty from "node:tty";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 
 /**
- * Whether this process is the desktop app's `t3.cmd` running the CLI in a
- * terminal with no stdin. The launcher runs the app's executable with
- * `ELECTRON_RUN_AS_NODE`, and Electron's Windows executable is a GUI program:
- * on start it points stdout and stderr at the parent's console but leaves
- * stdin unset, so prompts see no terminal and children such as the agent
- * `t3 triage` starts inherit nothing to read from. Input the user piped or
- * redirected is a valid descriptor and is left alone, as is any run whose
- * output is not a console (the desktop backend, scripts).
+ * Electron's Windows executable is a GUI program, so `t3.cmd` under
+ * `ELECTRON_RUN_AS_NODE` gets the console for stdout and stderr but no stdin.
+ * Piped or redirected input and runs whose output is not a console are left alone.
  */
 function needsConsoleStdin(input: {
   readonly platform: NodeJS.Platform;

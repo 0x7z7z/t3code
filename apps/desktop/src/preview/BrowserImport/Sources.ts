@@ -617,12 +617,9 @@ const FCNTL_PROBE_SCRIPT =
   "  print('free')";
 
 /**
- * Anything else — no interpreter on any candidate path, or one that refused to
- * run the script (Apple's shim without the developer tools) — is the probe
- * being unavailable, not evidence about the lock. That case falls back to "not
- * held" rather than "held": reporting every profile as locked forever would
- * block Firefox import outright on such machines, and the SQLite snapshot
- * already copes with a live database's WAL, as it does for every other engine.
+ * A missing or refusing interpreter (Apple's shim without developer tools) means
+ * the probe is unavailable, so report "not held": "held" would block Firefox import
+ * forever, and the SQLite snapshot already copes with a live WAL.
  */
 const posixLockIsHeld = Effect.fnUntraced(function* (
   path: string,

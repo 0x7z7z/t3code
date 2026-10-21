@@ -184,11 +184,8 @@ const PR_THREAD_COMMAND_OUTPUT_CHARS = 2_000;
 const isSourceControlProviderError = Schema.is(SourceControlProviderError);
 
 /**
- * A hosting provider rejects a throttled request immediately, so caching every
- * failure for a flat 20s made a rate-limited poller re-ask *faster* than a
- * healthy one does (which waits PR_LOOKUP_CACHE_TTL), turning a transient 429
- * into sustained pressure. Backing off per branch keeps the retry rate below
- * the healthy rate once a branch has failed more than a couple of times.
+ * Throttled lookups fail fast, so a flat failure TTL would retry faster than a healthy
+ * lookup refreshes. Backing off per branch keeps a 429 from becoming sustained pressure.
  */
 function prLookupFailureTtl(consecutiveFailures: number): Duration.Duration {
   const exponent = Math.max(0, consecutiveFailures - 1);
