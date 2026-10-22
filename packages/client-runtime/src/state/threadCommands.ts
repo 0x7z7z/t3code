@@ -168,6 +168,8 @@ export function createThreadEnvironmentAtoms<R, E>(
 
   // Runs whether or not the server accepted the interrupt, so a stale cached item still
   // settles when Stop had nothing to interrupt; the interrupt's own failure still surfaces.
+  // The repair is detached: its lookups must not hold the thread's serial command key, and
+  // closing the thread cancels the repair, not the Stop that triggered it.
   const interruptTurn = Effect.fn("ThreadCommands.interruptTurn")(function* (
     input: InterruptThreadTurnInput,
   ) {
@@ -178,7 +180,9 @@ export function createThreadEnvironmentAtoms<R, E>(
         Option.match(controller, {
           onNone: () => Effect.void,
           onSome: (value) =>
-            value.reconcilePendingWork(supervisor.target.environmentId, input.threadId),
+            value
+              .reconcilePendingWork(supervisor.target.environmentId, input.threadId)
+              .pipe(Effect.forkDetach, Effect.asVoid),
         }),
       ),
     );

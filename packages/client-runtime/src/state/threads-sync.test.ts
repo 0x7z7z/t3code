@@ -867,6 +867,58 @@ describe("EnvironmentThreads", () => {
       }),
     );
 
+    // The event is newer than any reply, so the saved copy follows it however the lookup ends.
+    it.effect.each(["running", "missing", "timed out"] as const)(
+      "saves a completion event that overtakes a %s lookup reply",
+      (reply) =>
+        Effect.gen(function* () {
+          const asked = yield* Deferred.make<void>();
+          const answer = yield* Deferred.make<void>();
+          const scope = yield* Scope.make();
+          const harness = yield* expandedHarness(scope, {
+            getTurnItem: () =>
+              Deferred.succeed(asked, undefined).pipe(
+                Effect.andThen(reply === "timed out" ? Effect.never : Deferred.await(answer)),
+                Effect.as({
+                  item: reply === "running" ? command("cached-command", "running") : null,
+                }),
+              ),
+          });
+          yield* expand(harness);
+          const reconciling = yield* harness.reconcilePendingWork.pipe(Effect.forkChild);
+          yield* Deferred.await(asked);
+          const fromEvent = command("cached-command", "completed", 1);
+          yield* Queue.offer(harness.inputs, {
+            kind: "event",
+            sequence: CACHED_SNAPSHOT_SEQUENCE + 1,
+            event: {
+              id: EventId.make("event-cached-command-completed"),
+              type: "turn-item.updated",
+              threadId: THREAD_ID,
+              occurredAt: at,
+              payload: fromEvent,
+            },
+          });
+          yield* awaitThreadState(harness.observed, (value) =>
+            Option.getOrThrow(value.data).turnItems.some(
+              (item) => item.id === fromEvent.id && item.status === "completed",
+            ),
+          );
+
+          if (reply === "timed out") yield* TestClock.adjust("10 seconds");
+          else yield* Deferred.succeed(answer, undefined);
+          yield* Fiber.join(reconciling);
+          yield* Scope.close(scope, Exit.void);
+
+          const saved = yield* lastSaved(harness);
+          expect(saved).toMatchObject({ historyCursor: "older", hasMoreHistory: true });
+          expect(projectionStatuses(saved!.projection)).toEqual(settledStatuses);
+          expect(saved!.projection.turnItems.find((item) => item.id === fromEvent.id)).toEqual(
+            fromEvent,
+          );
+        }),
+    );
+
     it.effect("saves the repair for an expanded thread resumed in the same session", () =>
       Effect.gen(function* () {
         const resumeCache: NonNullable<Parameters<typeof makeEnvironmentThreadState>[1]> = {

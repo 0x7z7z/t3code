@@ -767,11 +767,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
       if (current.status === "deleted" || Option.isNone(current.data)) return;
       const pending = pendingBackgroundTurnItems(current.data.value);
       if (pending.length === 0) return;
+      const queried = new Set<string>(pending.map((item) => item.id));
       const fetched = yield* Effect.forEach(
         pending,
         (item) =>
           request(ORCHESTRATION_V2_WS_METHODS.getTurnItem, { threadId, itemId: item.id }).pipe(
-            // Stop holds the thread's serial command key until this finishes.
             Effect.timeout("10 seconds"),
             Effect.map((result) => result.item),
             Effect.orElseSucceed(() => null),
@@ -783,7 +783,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           item === null || isOrchestrationV2WorkActive(item.status) ? [] : [[item.id, item]],
         ),
       );
-      if (settled.size === 0) return;
       yield* applyLock.withPermits(1)(
         Effect.gen(function* () {
           const latest = yield* SubscriptionRef.get(state);
@@ -797,6 +796,15 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           // Repair the snapshot last handed to the cache instead, keeping its window and cursor.
           // A resumed state skipped the cache load, so read the saved snapshot then.
           if (shouldPersistThread(thread, latest.history)) return;
+          // A terminal event that landed during the lookup is newer than any reply, and the
+          // expanded live state never saves it, whatever the lookup returned.
+          const latestItems = new Map(settled);
+          for (const item of thread.turnItems) {
+            if (queried.has(item.id) && !isOrchestrationV2WorkActive(item.status)) {
+              latestItems.set(item.id, item);
+            }
+          }
+          if (latestItems.size === 0) return;
           const saved =
             queuedSnapshot ??
             Option.getOrUndefined(
@@ -805,13 +813,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 .pipe(Effect.orElseSucceed(() => Option.none())),
             );
           if (saved === undefined) return;
-          // A terminal event that landed during the lookup is newer than the server's reply.
-          const latestItems = new Map(settled);
-          for (const item of thread.turnItems) {
-            if (settled.has(item.id) && !isOrchestrationV2WorkActive(item.status)) {
-              latestItems.set(item.id, item);
-            }
-          }
           const projection = settleTurnItems(threadId, saved.projection, latestItems);
           if (projection !== saved.projection) yield* queuePersist({ ...saved, projection });
         }),
