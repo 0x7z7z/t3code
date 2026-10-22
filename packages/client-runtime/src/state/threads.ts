@@ -269,6 +269,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
   const persistence = yield* Queue.sliding<OrchestrationV2ThreadDetailSnapshot>(1);
   let queuedSnapshot = Option.getOrUndefined(cached);
+  let savedSnapshot = queuedSnapshot;
   const queuePersist = (snapshot: OrchestrationV2ThreadDetailSnapshot) =>
     Effect.suspend(() => {
       queuedSnapshot = snapshot;
@@ -293,6 +294,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     yield* cache.saveThread(environmentId, snapshot).pipe(
       Effect.tap(() =>
         Effect.sync(() => {
+          savedSnapshot = snapshot;
           if (
             !matchesThreadSnapshot(
               committed,
@@ -333,7 +335,11 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                   committed.acceptsBoundedSnapshots === true,
                 ),
               )
-            : Effect.void,
+            : // The consumer may still be waiting out its delay; an expanded thread queues
+              // only cache repairs, which must survive leaving the thread.
+              queuedSnapshot !== undefined && queuedSnapshot !== savedSnapshot
+              ? persist(queuedSnapshot)
+              : Effect.void,
       });
     }),
   );
@@ -781,9 +787,10 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
           const latest = yield* SubscriptionRef.get(state);
           if (latest.status === "deleted" || Option.isNone(latest.data)) return;
           const thread = settleTurnItems(threadId, latest.data.value, settled);
-          if (thread === latest.data.value) return;
-          yield* setThread(thread);
-          yield* remember;
+          if (thread !== latest.data.value) {
+            yield* setThread(thread);
+            yield* remember;
+          }
           // An expanded timeline is never saved, so reload would bring the stale row back.
           // Repair the snapshot last handed to the cache instead, keeping its window and cursor.
           // A resumed state skipped the cache load, so read the saved snapshot then.
@@ -796,7 +803,14 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                 .pipe(Effect.orElseSucceed(() => Option.none())),
             );
           if (saved === undefined) return;
-          const projection = settleTurnItems(threadId, saved.projection, settled);
+          // A terminal event that landed during the lookup is newer than the server's reply.
+          const latestItems = new Map(settled);
+          for (const item of thread.turnItems) {
+            if (settled.has(item.id) && !isOrchestrationV2WorkActive(item.status)) {
+              latestItems.set(item.id, item);
+            }
+          }
+          const projection = settleTurnItems(threadId, saved.projection, latestItems);
           if (projection !== saved.projection) yield* queuePersist({ ...saved, projection });
         }),
       );
