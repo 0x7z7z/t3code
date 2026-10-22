@@ -5,6 +5,7 @@ import {
   type OrchestrationV2ThreadDetailSnapshot,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2ThreadStreamItem,
+  type OrchestrationV2TurnItem,
   type ThreadId as ThreadIdType,
 } from "@t3tools/contracts";
 import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
@@ -120,6 +121,29 @@ function shouldPersistThread(
   return !thread.runs.some(
     (run) => run.status === "preparing" || run.status === "starting" || run.status === "running",
   );
+}
+
+// Only still-active local copies take the server's item: events applied meanwhile win,
+// and inherited rows belong to another thread.
+function settleTurnItems(
+  threadId: ThreadIdType,
+  projection: OrchestrationV2ThreadProjection,
+  settled: ReadonlyMap<string, OrchestrationV2TurnItem>,
+): OrchestrationV2ThreadProjection {
+  let changed = false;
+  const settle = (item: OrchestrationV2TurnItem, id: string) => {
+    const server = settled.get(id);
+    if (server === undefined || !isOrchestrationV2WorkActive(item.status)) return item;
+    changed = true;
+    return server;
+  };
+  const turnItems = projection.turnItems.map((item) => settle(item, item.id));
+  const visibleTurnItems = projection.visibleTurnItems.map((row) => {
+    if (row.sourceThreadId !== threadId) return row;
+    const item = settle(row.item, row.sourceItemId);
+    return item === row.item ? row : { ...row, item };
+  });
+  return changed ? { ...projection, turnItems, visibleTurnItems } : projection;
 }
 
 interface ThreadResumeSnapshot {
@@ -244,6 +268,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (resumeCache?.owner === owner) resumeCache.snapshot = committed;
   });
   const persistence = yield* Queue.sliding<OrchestrationV2ThreadDetailSnapshot>(1);
+  let queuedSnapshot = Option.getOrUndefined(cached);
+  const queuePersist = (snapshot: OrchestrationV2ThreadDetailSnapshot) =>
+    Effect.suspend(() => {
+      queuedSnapshot = snapshot;
+      return Queue.offer(persistence, snapshot);
+    });
 
   const persist = Effect.fn("EnvironmentThreadState.persist")(function* (
     snapshot: OrchestrationV2ThreadDetailSnapshot,
@@ -382,8 +412,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     // streaming path. Progressive meta rides along when the window is incomplete.
     if (shouldPersistThread(thread, next.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
-      yield* Queue.offer(
-        persistence,
+      yield* queuePersist(
         snapshotToPersist(
           snapshotSequence,
           thread,
@@ -537,8 +566,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     }
     if (result._tag === "applied" && shouldPersistThread(result.projection, result.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
-      yield* Queue.offer(
-        persistence,
+      yield* queuePersist(
         snapshotToPersist(
           snapshotSequence,
           result.projection,
@@ -752,17 +780,24 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         Effect.gen(function* () {
           const latest = yield* SubscriptionRef.get(state);
           if (latest.status === "deleted" || Option.isNone(latest.data)) return;
-          let changed = false;
-          const turnItems = latest.data.value.turnItems.map((item) => {
-            const server = settled.get(item.id);
-            // Events applied during the fetch win; only still-pending copies are stale.
-            if (server === undefined || !isOrchestrationV2WorkActive(item.status)) return item;
-            changed = true;
-            return server;
-          });
-          if (!changed) return;
-          yield* setThread({ ...latest.data.value, turnItems });
+          const thread = settleTurnItems(threadId, latest.data.value, settled);
+          if (thread === latest.data.value) return;
+          yield* setThread(thread);
           yield* remember;
+          // An expanded timeline is never saved, so reload would bring the stale row back.
+          // Repair the snapshot last handed to the cache instead, keeping its window and cursor.
+          // A resumed state skipped the cache load, so read the saved snapshot then.
+          if (shouldPersistThread(thread, latest.history)) return;
+          const saved =
+            queuedSnapshot ??
+            Option.getOrUndefined(
+              yield* cache
+                .loadThread(environmentId, threadId)
+                .pipe(Effect.orElseSucceed(() => Option.none())),
+            );
+          if (saved === undefined) return;
+          const projection = settleTurnItems(threadId, saved.projection, settled);
+          if (projection !== saved.projection) yield* queuePersist({ ...saved, projection });
         }),
       );
     },

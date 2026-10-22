@@ -24,6 +24,7 @@ import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
+import { pendingBackgroundTurnItems } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
@@ -37,6 +38,7 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as Persistence from "../platform/persistence.ts";
 import * as RpcSession from "../rpc/session.ts";
 import { v2Projection, v2ThreadId } from "./orchestrationV2TestFixtures.ts";
+import { EMPTY_THREAD_HISTORY_META } from "./threadHistoryMerge.ts";
 import * as ThreadHistoryController from "./threadHistoryController.ts";
 import {
   EMPTY_ENVIRONMENT_THREAD_STATE,
@@ -586,10 +588,12 @@ describe("EnvironmentThreads", () => {
 
   describe("Stop on cached work the server already finished (#18188)", () => {
     const at = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");
+    const parentThreadId = ThreadId.make("thread:parent");
     const command = (
       id: string,
       status: "running" | "completed",
       exitCode?: number,
+      ordinal = id === "older-command" ? 1 : 2,
     ): OrchestrationV2TurnItem => ({
       id: TurnItemId.make(id),
       threadId: THREAD_ID,
@@ -599,7 +603,7 @@ describe("EnvironmentThreads", () => {
       providerTurnId: null,
       nativeItemRef: null,
       parentItemId: null,
-      ordinal: id === "older-command" ? 1 : 2,
+      ordinal,
       status,
       title: null,
       startedAt: at,
@@ -610,14 +614,55 @@ describe("EnvironmentThreads", () => {
       output: "",
       ...(exitCode === undefined ? {} : { exitCode }),
     });
-    // Loaded older history the bounded window would drop, next to the stale item.
-    const cached: OrchestrationV2ThreadProjection = {
-      ...BASE_PROJECTION,
-      turnItems: [command("older-command", "completed", 0), command("cached-command", "running")],
+    const localRow = (item: OrchestrationV2TurnItem, position: number) => ({
+      position,
+      visibility: "local" as const,
+      sourceThreadId: THREAD_ID,
+      sourceItemId: item.id,
+      item,
+    });
+    // A fork's parent row keeps its own source; the child's Stop must not touch it.
+    const inheritedRow = {
+      position: 0,
+      visibility: "inherited" as const,
+      sourceThreadId: parentThreadId,
+      sourceItemId: TurnItemId.make("cached-command"),
+      item: { ...command("cached-command", "running"), threadId: parentThreadId },
     };
+    const cachedProjection = (items: ReadonlyArray<OrchestrationV2TurnItem>) => ({
+      ...BASE_PROJECTION,
+      turnItems: items,
+      visibleTurnItems: [inheritedRow, ...items.map((item, index) => localRow(item, index + 1))],
+    });
+    // Loaded older history the bounded window would drop, next to the stale item.
+    const cached: OrchestrationV2ThreadProjection = cachedProjection([
+      command("older-command", "completed", 0),
+      command("cached-command", "running"),
+    ]);
     const cachedHistory = { historyCursor: "older", hasMoreHistory: true };
+    const projectionStatuses = (projection: OrchestrationV2ThreadProjection) => ({
+      items: projection.turnItems.map((item) => [String(item.id), item.status]),
+      rows: projection.visibleTurnItems.map((row) => [
+        row.visibility,
+        String(row.sourceItemId),
+        row.item.status,
+      ]),
+      pending: pendingBackgroundTurnItems(projection).map((item) => String(item.id)),
+    });
     const statuses = (state: EnvironmentThreadState) =>
-      Option.getOrThrow(state.data).turnItems.map((item) => [String(item.id), item.status]);
+      projectionStatuses(Option.getOrThrow(state.data));
+    const settledStatuses = {
+      items: [
+        ["older-command", "completed"],
+        ["cached-command", "completed"],
+      ],
+      rows: [
+        ["inherited", "cached-command", "running"],
+        ["local", "older-command", "completed"],
+        ["local", "cached-command", "completed"],
+      ],
+      pending: [],
+    };
     const serverItems = (items: Record<string, OrchestrationV2TurnItem | null>) => ({
       getTurnItem: ({ itemId }: { readonly itemId: TurnItemId }) =>
         Effect.succeed({ item: items[itemId] ?? null }),
@@ -637,35 +682,110 @@ describe("EnvironmentThreads", () => {
         yield* harness.reconcilePendingWork;
 
         const after = yield* SubscriptionRef.get(harness.threadState);
-        expect(statuses(after)).toEqual([
-          ["older-command", "completed"],
-          ["cached-command", "completed"],
-        ]);
+        expect(statuses(after)).toEqual(settledStatuses);
+        const settled = Option.getOrThrow(after.data);
+        expect(settled.visibleTurnItems[0]).toBe(inheritedRow);
+        expect(settled.visibleTurnItems[2]!.item).toBe(settled.turnItems[1]);
         expect(after.history).toEqual(before.history);
         yield* TestClock.adjust("500 millis");
         const saved = yield* Deferred.await(written);
-        expect(saved.projection.turnItems.map((item) => item.status)).toEqual([
-          "completed",
-          "completed",
-        ]);
+        expect(projectionStatuses(saved.projection)).toEqual(settledStatuses);
         expect(saved).toMatchObject({ historyCursor: "older", hasMoreHistory: true });
+      }),
+    );
+
+    it.effect("saves the repair after older history was loaded, without the expansion", () =>
+      Effect.gen(function* () {
+        const evenOlder = command("even-older-command", "completed", 0, 0);
+        const scope = yield* Scope.make();
+        const harness = yield* makeHarness({
+          cached,
+          cachedHistory,
+          historyHttpClient: HttpClient.make((request) =>
+            Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                Response.json({
+                  snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+                  items: [localRow(evenOlder, 0)],
+                  nextCursor: null,
+                  hasMoreHistory: false,
+                }),
+              ),
+            ),
+          ),
+          ...serverItems({ "cached-command": command("cached-command", "completed", 0) }),
+        }).pipe(Scope.provide(scope));
+        expect(yield* harness.loadEarlier()).toEqual({ _tag: "loaded" });
+        expect((yield* SubscriptionRef.get(harness.threadState)).history.expanded).toBe(true);
+
+        yield* harness.reconcilePendingWork;
+        const after = yield* SubscriptionRef.get(harness.threadState);
+        expect(after.history).toMatchObject({ expanded: true, historyCursor: null });
+        expect(statuses(after).pending).toEqual([]);
+        yield* TestClock.adjust("500 millis");
+        yield* Scope.close(scope, Exit.void);
+
+        const saved = (yield* Ref.get(harness.savedThreads)).at(-1);
+        expect(saved).toMatchObject({
+          snapshotSequence: CACHED_SNAPSHOT_SEQUENCE,
+          historyCursor: "older",
+          hasMoreHistory: true,
+        });
+        expect(projectionStatuses(saved!.projection)).toEqual(settledStatuses);
+
+        const reloaded = yield* makeHarness({
+          cached: saved!.projection,
+          cachedHistory: { historyCursor: saved!.historyCursor!, hasMoreHistory: true },
+        });
+        expect(statuses(yield* SubscriptionRef.get(reloaded.threadState))).toEqual(settledStatuses);
+      }),
+    );
+
+    it.effect("saves the repair for an expanded thread resumed in the same session", () =>
+      Effect.gen(function* () {
+        const resumeCache: NonNullable<Parameters<typeof makeEnvironmentThreadState>[1]> = {
+          snapshot: {
+            state: {
+              data: Option.some(cached),
+              status: "cached",
+              error: Option.none(),
+              history: { ...EMPTY_THREAD_HISTORY_META, historyCursor: null, expanded: true },
+            },
+            sequence: CACHED_SNAPSHOT_SEQUENCE,
+            persisted: true,
+          },
+          owner: undefined,
+        };
+        const scope = yield* Scope.make();
+        const harness = yield* makeHarness({
+          cached,
+          cachedHistory,
+          resumeCache,
+          ...serverItems({ "cached-command": command("cached-command", "completed", 0) }),
+        }).pipe(Scope.provide(scope));
+
+        yield* harness.reconcilePendingWork;
+        yield* TestClock.adjust("500 millis");
+        yield* Scope.close(scope, Exit.void);
+
+        const saved = (yield* Ref.get(harness.savedThreads)).at(-1);
+        expect(saved).toMatchObject({ historyCursor: "older", hasMoreHistory: true });
+        expect(projectionStatuses(saved!.projection)).toEqual(settledStatuses);
       }),
     );
 
     it.effect("keeps items the server still runs or does not return", () =>
       Effect.gen(function* () {
         const harness = yield* makeHarness({
-          cached: {
-            ...cached,
-            turnItems: [...cached.turnItems, command("missing-command", "running")],
-          },
+          cached: cachedProjection([...cached.turnItems, command("missing-command", "running")]),
           cachedHistory,
           ...serverItems({ "cached-command": command("cached-command", "running") }),
         });
 
         yield* harness.reconcilePendingWork;
 
-        expect(statuses(yield* SubscriptionRef.get(harness.threadState))).toEqual([
+        expect(statuses(yield* SubscriptionRef.get(harness.threadState)).items).toEqual([
           ["older-command", "completed"],
           ["cached-command", "running"],
           ["missing-command", "running"],
@@ -699,10 +819,7 @@ describe("EnvironmentThreads", () => {
 
         const after = yield* SubscriptionRef.get(harness.threadState);
         expect(Option.getOrThrow(after.data).thread.title).toBe("Renamed");
-        expect(statuses(after)).toEqual([
-          ["older-command", "completed"],
-          ["cached-command", "completed"],
-        ]);
+        expect(statuses(after)).toEqual(settledStatuses);
       }),
     );
   });
