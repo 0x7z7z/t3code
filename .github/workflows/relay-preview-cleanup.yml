@@ -1,0 +1,141 @@
+name: Clean up relay preview
+
+# Tears down stage `pr-<n>` when `relay:preview` is removed or the PR closes,
+# and sweeps stages left behind by a failed teardown.
+#
+# This runs under pull_request_target, so the workflow and the Alchemy program
+# come from the default branch. No PR code runs here, which is why it needs no
+# reviewer approval and why a PR cannot edit its own teardown to reach secrets.
+on:
+  pull_request_target:
+    types: [unlabeled, closed]
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: relay-preview-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: false
+
+jobs:
+  cleanup_pr:
+    name: Tear down relay preview
+    if: >-
+      github.event_name == 'pull_request_target' &&
+      (
+        (github.event.action == 'unlabeled' && github.event.label.name == 'relay:preview') ||
+        (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'relay:preview'))
+      )
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 30
+    environment:
+      name: relay-preview-cleanup
+    env:
+      STAGE: pr-${{ github.event.pull_request.number }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      PLANETSCALE_ORGANIZATION: ${{ vars.PLANETSCALE_ORGANIZATION }}
+      AXIOM_ORG_ID: ${{ vars.AXIOM_ORG_ID }}
+      RELAY_API_ZONE_NAME: ${{ vars.RELAY_API_ZONE_NAME }}
+      RELAY_TUNNEL_ZONE_NAME: ${{ vars.RELAY_TUNNEL_ZONE_NAME }}
+      CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
+      APNS_ENABLED: "false"
+      ALCHEMY_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=t3code-relay...
+
+      # Destroy first, so the Worker that creates tunnels is gone before the
+      # sweep runs. If destroy fails the sweep is skipped, and the nightly
+      # sweep retries both.
+      - name: Destroy preview stage
+        run: vp run --filter t3code-relay destroy --stage "$STAGE" --yes --no-input
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PLANETSCALE_API_TOKEN_ID: ${{ secrets.PLANETSCALE_API_TOKEN_ID }}
+          PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
+          AXIOM_TOKEN: ${{ secrets.AXIOM_TOKEN }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+
+      - name: Sweep preview tunnels and DNS
+        run: vp run --filter t3code-relay sweep:preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PREVIEW_STAGE: ${{ env.STAGE }}
+          APPLY: "true"
+
+  sweep_orphans:
+    name: Sweep orphaned relay previews
+    if: github.event_name != 'pull_request_target'
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 60
+    environment:
+      name: relay-preview-cleanup
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      PLANETSCALE_ORGANIZATION: ${{ vars.PLANETSCALE_ORGANIZATION }}
+      AXIOM_ORG_ID: ${{ vars.AXIOM_ORG_ID }}
+      RELAY_API_ZONE_NAME: ${{ vars.RELAY_API_ZONE_NAME }}
+      RELAY_TUNNEL_ZONE_NAME: ${{ vars.RELAY_TUNNEL_ZONE_NAME }}
+      CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+      CLERK_JWT_AUDIENCE: ${{ vars.CLERK_JWT_AUDIENCE }}
+      APNS_ENABLED: "false"
+      ALCHEMY_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: true
+          run-install: |
+            args:
+              - --filter=t3code-relay...
+
+      - name: Destroy and sweep stages of closed labeled PRs
+        env:
+          APPLY: "true"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PLANETSCALE_API_TOKEN_ID: ${{ secrets.PLANETSCALE_API_TOKEN_ID }}
+          PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
+          AXIOM_TOKEN: ${{ secrets.AXIOM_TOKEN }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+        run: |
+          failed=0
+          for number in $(gh pr list --repo "$GITHUB_REPOSITORY" --state closed \
+            --label "relay:preview" --limit 200 --json number --jq '.[].number'); do
+            stage="pr-$number"
+            echo "::group::$stage"
+            vp run --filter t3code-relay destroy --stage "$stage" --yes --no-input \
+              && PREVIEW_STAGE="$stage" vp run --filter t3code-relay sweep:preview \
+              || { echo "Cleanup failed for $stage" >&2; failed=1; }
+            echo "::endgroup::"
+          done
+          exit "$failed"
