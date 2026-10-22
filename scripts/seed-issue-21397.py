@@ -14,6 +14,7 @@ are seeded unchanged, reproducing the PR captures. After that reset, pass --now
 (current time) or --now ISO to shift every timestamp so the failure happens then.
 """
 import argparse
+import contextlib
 import datetime
 import json
 import pathlib
@@ -74,7 +75,8 @@ try:
     if wal.is_file() and not wal.is_symlink():
         shutil.copyfile(wal, path.with_name(path.name + '-wal'))
     fixture = json.loads((root / 'scripts/fixtures/issue-21397.json').read_text())
-    with sqlite3.connect(path) as db:
+    # closing() outlives the transaction so cleanup below never deletes an open database.
+    with contextlib.closing(sqlite3.connect(path)) as db, db:
         # Drop copied conversations, including V1 tables the server could re-import.
         tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")]
         for table in tables:
@@ -100,7 +102,6 @@ try:
                 columns = ','.join(f'"{k}"' for k in row)
                 placeholders = ','.join('?' for _ in row)
                 db.execute(f'INSERT INTO "{table}" ({columns}) VALUES ({placeholders})', list(row.values()))
-    db.close()
     settings = dict(snoozeLimitedThreads=False, autoResumeLimitedThreads=False)
     (userdata / 'settings.json').write_text(json.dumps(settings, indent=2) + '\n')
 except BaseException:

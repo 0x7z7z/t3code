@@ -13,6 +13,25 @@ import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().with_name('seed-issue-21397.py')
 FIXTURE = json.loads(SCRIPT.with_name('fixtures').joinpath('issue-21397.json').read_text())
+# Windows cannot delete a file SQLite still holds open, so cleanup must close connections first.
+OPEN_DB_PROBE = '''
+import runpy, shutil, sqlite3, sys
+opened, connect, rmtree = [], sqlite3.connect, shutil.rmtree
+def tracked(*args, **kwargs):
+    opened.append(connect(*args, **kwargs))
+    return opened[-1]
+def checked(*args, **kwargs):
+    for db in opened:
+        try:
+            db.total_changes
+        except sqlite3.ProgrammingError:
+            continue
+        sys.exit('rmtree ran while a SQLite connection was open')
+    return rmtree(*args, **kwargs)
+sqlite3.connect, shutil.rmtree = tracked, checked
+sys.argv = sys.argv[1:]
+runpy.run_path(sys.argv[0], run_name='__main__')
+'''
 
 
 def snapshot(directory):
@@ -49,9 +68,9 @@ class SeederTest(unittest.TestCase):
         (self.source_home / 'settings.json').write_text('{"sentinel": true}\n')
         self.before = snapshot(self.source_home)
 
-    def run_seeder(self, *args):
+    def run_seeder(self, *args, probe=()):
         env = {**os.environ, 'HOME': str(self.fake_home)}
-        return subprocess.run([sys.executable, '-I', str(SCRIPT), '--source', str(self.source), *args],
+        return subprocess.run([sys.executable, '-I', *probe, str(SCRIPT), '--source', str(self.source), *args],
                               env=env, capture_output=True, text=True)
 
     def assertSourceUnchanged(self):
@@ -151,9 +170,10 @@ class SeederTest(unittest.TestCase):
         db.close()
         self.before = snapshot(self.source_home)
         home = self.tmp / 'broken'
-        result = self.run_seeder('--home', str(home))
+        result = self.run_seeder('--home', str(home), probe=('-c', OPEN_DB_PROBE))
         self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(home.exists())
+        self.assertIn('orchestration_v2_effect_outbox', result.stderr)
+        self.assertFalse(home.exists(), result.stderr)
         self.assertSourceUnchanged()
 
 
