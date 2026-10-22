@@ -112,6 +112,9 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
   readonly saveThread?: Persistence.EnvironmentCacheStore["Service"]["saveThread"];
   readonly historyPaging?: "enabled" | "no-http" | "no-controller";
   readonly historyHttpClient?: HttpClient.HttpClient;
+  readonly getTurnItem?: (input: {
+    readonly itemId: TurnItemId;
+  }) => Effect.Effect<{ readonly item: OrchestrationV2TurnItem | null }>;
 }) {
   const inputs = yield* Queue.unbounded<TestThreadInput>();
   const observed = yield* Queue.unbounded<EnvironmentThreadState>();
@@ -153,6 +156,8 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
           Effect.as(streamFrom(inputs)),
         ),
       ),
+    [ORCHESTRATION_V2_WS_METHODS.getTurnItem]: (input: { readonly itemId: TurnItemId }) =>
+      options?.getTurnItem?.(input) ?? Effect.die("Unexpected getTurnItem request"),
   } as unknown as WsRpcProtocolClient;
   const supervisorSession = yield* SubscriptionRef.make<Option.Option<RpcSession.RpcSession>>(
     Option.some(testSession(client, options)),
@@ -256,6 +261,7 @@ const makeHarness = Effect.fn("TestEnvironmentThreads.makeHarness")(function* (o
     threadState,
     loadEarlier: (throughEntryId?: string) =>
       historyController.loadEarlier(TARGET.environmentId, THREAD_ID, throughEntryId),
+    reconcilePendingWork: historyController.reconcilePendingWork(TARGET.environmentId, THREAD_ID),
     inputs,
     observed,
     latest,
@@ -580,72 +586,123 @@ describe("EnvironmentThreads", () => {
 
   describe("Stop on cached work the server already finished (#18188)", () => {
     const at = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");
-    const command = (status: "running" | "completed") =>
-      ({
-        id: TurnItemId.make("cached-command"),
-        threadId: THREAD_ID,
-        runId: null,
-        nodeId: null,
-        providerThreadId: null,
-        providerTurnId: null,
-        nativeItemRef: null,
-        parentItemId: null,
-        ordinal: 1,
-        status,
-        title: null,
-        startedAt: at,
-        completedAt: status === "completed" ? at : null,
-        updatedAt: at,
-        type: "command_execution" as const,
-        input: "pip install pyarrow",
-        output: "",
-        ...(status === "completed" ? { exitCode: 0 } : {}),
-      }) satisfies OrchestrationV2TurnItem;
-    const stopReached: OrchestrationV2ThreadStreamItem = {
-      kind: "event",
-      sequence: CACHED_SNAPSHOT_SEQUENCE + 1,
-      event: {
-        id: EventId.make("event-stop"),
-        type: "turn-item.updated",
-        threadId: THREAD_ID,
-        occurredAt: at,
-        payload: {
-          ...command("completed"),
-          id: TurnItemId.make("stop-request"),
-          ordinal: 2,
-          type: "run_interrupt_request",
-          message: "Interrupt requested",
-        } as unknown as OrchestrationV2TurnItem,
-      },
+    const command = (
+      id: string,
+      status: "running" | "completed",
+      exitCode?: number,
+    ): OrchestrationV2TurnItem => ({
+      id: TurnItemId.make(id),
+      threadId: THREAD_ID,
+      runId: null,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      parentItemId: null,
+      ordinal: id === "older-command" ? 1 : 2,
+      status,
+      title: null,
+      startedAt: at,
+      completedAt: status === "completed" ? at : null,
+      updatedAt: at,
+      type: "command_execution",
+      input: `run ${id}`,
+      output: "",
+      ...(exitCode === undefined ? {} : { exitCode }),
+    });
+    // Loaded older history the bounded window would drop, next to the stale item.
+    const cached: OrchestrationV2ThreadProjection = {
+      ...BASE_PROJECTION,
+      turnItems: [command("older-command", "completed", 0), command("cached-command", "running")],
     };
-    const runningCommands = (state: EnvironmentThreadState) =>
-      Option.getOrThrow(state.data).turnItems.filter(
-        (item) => item.type === "command_execution" && item.status === "running",
-      );
-    const stopWith = Effect.fn(function* (server: OrchestrationV2ThreadProjection) {
-      const harness = yield* makeHarness({
-        cached: { ...BASE_PROJECTION, turnItems: [command("running")] },
-        httpSnapshot: {
-          _tag: "present",
-          snapshot: { snapshotSequence: CACHED_SNAPSHOT_SEQUENCE + 1, projection: server },
-          history: { historyCursor: "older", hasMoreHistory: true },
-        },
-      });
-      yield* Queue.offer(harness.inputs, stopReached);
-      return yield* awaitThreadState(harness.observed, (value) => value.history.hasMoreHistory);
+    const cachedHistory = { historyCursor: "older", hasMoreHistory: true };
+    const statuses = (state: EnvironmentThreadState) =>
+      Option.getOrThrow(state.data).turnItems.map((item) => [String(item.id), item.status]);
+    const serverItems = (items: Record<string, OrchestrationV2TurnItem | null>) => ({
+      getTurnItem: ({ itemId }: { readonly itemId: TurnItemId }) =>
+        Effect.succeed({ item: items[itemId] ?? null }),
     });
 
-    it.effect("settles a command the server's bounded snapshot no longer lists", () =>
+    it.effect("settles an item the server finished without any new event, keeping history", () =>
       Effect.gen(function* () {
-        const state = yield* stopWith(BASE_PROJECTION);
-        expect(runningCommands(state)).toEqual([]);
+        const written = yield* Deferred.make<OrchestrationV2ThreadDetailSnapshot>();
+        const harness = yield* makeHarness({
+          cached,
+          cachedHistory,
+          saveThread: (_environmentId, thread) => Deferred.succeed(written, thread),
+          ...serverItems({ "cached-command": command("cached-command", "completed", 0) }),
+        });
+        const before = yield* SubscriptionRef.get(harness.threadState);
+
+        yield* harness.reconcilePendingWork;
+
+        const after = yield* SubscriptionRef.get(harness.threadState);
+        expect(statuses(after)).toEqual([
+          ["older-command", "completed"],
+          ["cached-command", "completed"],
+        ]);
+        expect(after.history).toEqual(before.history);
+        yield* TestClock.adjust("500 millis");
+        const saved = yield* Deferred.await(written);
+        expect(saved.projection.turnItems.map((item) => item.status)).toEqual([
+          "completed",
+          "completed",
+        ]);
+        expect(saved).toMatchObject({ historyCursor: "older", hasMoreHistory: true });
       }),
     );
 
-    it.effect("keeps a command the server still runs", () =>
+    it.effect("keeps items the server still runs or does not return", () =>
       Effect.gen(function* () {
-        const state = yield* stopWith({ ...BASE_PROJECTION, turnItems: [command("running")] });
-        expect(runningCommands(state).map((item) => String(item.id))).toEqual(["cached-command"]);
+        const harness = yield* makeHarness({
+          cached: {
+            ...cached,
+            turnItems: [...cached.turnItems, command("missing-command", "running")],
+          },
+          cachedHistory,
+          ...serverItems({ "cached-command": command("cached-command", "running") }),
+        });
+
+        yield* harness.reconcilePendingWork;
+
+        expect(statuses(yield* SubscriptionRef.get(harness.threadState))).toEqual([
+          ["older-command", "completed"],
+          ["cached-command", "running"],
+          ["missing-command", "running"],
+        ]);
+      }),
+    );
+
+    it.effect("keeps events that land while the server is asked", () =>
+      Effect.gen(function* () {
+        const asked = yield* Deferred.make<void>();
+        const answer = yield* Deferred.make<OrchestrationV2TurnItem>();
+        const harness = yield* makeHarness({
+          cached,
+          cachedHistory,
+          getTurnItem: () =>
+            Deferred.succeed(asked, undefined).pipe(
+              Effect.andThen(Deferred.await(answer)),
+              Effect.map((item) => ({ item })),
+            ),
+        });
+        const reconciling = yield* harness.reconcilePendingWork.pipe(Effect.forkChild);
+        yield* Deferred.await(asked);
+        yield* Queue.offer(harness.inputs, titleUpdated("Renamed", CACHED_SNAPSHOT_SEQUENCE + 1));
+        yield* awaitThreadState(
+          harness.observed,
+          (value) => Option.getOrThrow(value.data).thread.title === "Renamed",
+        );
+
+        yield* Deferred.succeed(answer, command("cached-command", "completed", 0));
+        yield* Fiber.join(reconciling);
+
+        const after = yield* SubscriptionRef.get(harness.threadState);
+        expect(Option.getOrThrow(after.data).thread.title).toBe("Renamed");
+        expect(statuses(after)).toEqual([
+          ["older-command", "completed"],
+          ["cached-command", "completed"],
+        ]);
       }),
     );
   });
