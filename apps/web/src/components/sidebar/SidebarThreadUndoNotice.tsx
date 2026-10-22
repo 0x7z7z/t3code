@@ -3,7 +3,7 @@ import { useEffect } from "react";
 
 import { undoLatestThreadAction, useThreadUndoNotice } from "../../hooks/showThreadUndoNotice";
 import { shortcutLabelForCommand } from "../../keybindings";
-import { announce } from "../../lib/announce";
+import { announce, cancelAnnouncement } from "../../lib/announce";
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { Alert, AlertDescription } from "../ui/alert";
 import { InlineButton } from "../ui/button";
@@ -22,6 +22,7 @@ export function SidebarThreadUndoNotice() {
   // usually moves focus to the next thread at the same moment.
   useEffect(() => {
     if (summary) announce(`${summary}, ${undoLabel}`, "thread-undo-notice");
+    else cancelAnnouncement("thread-undo-notice");
   }, [summary, undoLabel]);
 
   if (!summary) return null;

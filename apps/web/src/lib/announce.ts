@@ -47,3 +47,8 @@ export function announce(message: string, source?: string) {
   if (pending.at(-1)?.message !== message) pending.push({ message, source });
   scheduleFlush();
 }
+
+/** Drops a message from `source` that hasn't been spoken yet, once it no longer applies. */
+export function cancelAnnouncement(source: string) {
+  pending = pending.filter((entry) => entry.source !== source);
+}

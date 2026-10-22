@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { fakeTimers } from "../../test/render";
-import { announce } from "./announce";
+import { announce, cancelAnnouncement } from "./announce";
 
 function spokenText() {
   return Array.from(document.querySelectorAll('[aria-live="polite"]'), (region) =>
@@ -10,30 +10,36 @@ function spokenText() {
 }
 
 describe("announce", () => {
-  it("speaks once focus settles, after the focus change that would cut it off", () => {
+  it("waits for focus to settle, then speaks waiting messages together", () => {
     using _timers = fakeTimers();
     const composer = document.createElement("textarea");
     document.body.append(composer);
     using _composer = { [Symbol.dispose]: () => composer.remove() };
 
     announce("Settled 1 thread, Ctrl+Z to undo");
-    expect(spokenText()).toEqual([]);
-
+    announce("Model: Claude Sonnet 5.5");
     vi.advanceTimersByTime(200);
     composer.focus();
-    announce("Fix login bug");
     vi.advanceTimersByTime(200);
     expect(spokenText()).toEqual([]);
 
     vi.advanceTimersByTime(50);
-    expect(spokenText()).toEqual(["Settled 1 thread, Ctrl+Z to undo. Fix login bug"]);
+    expect(spokenText()).toEqual(["Settled 1 thread, Ctrl+Z to undo. Model: Claude Sonnet 5.5"]);
+  });
 
-    // A repeat lands in the other region so screen readers notice the change.
-    announce("Fix login bug");
+  it("speaks the same message twice in a row through the other region", () => {
+    using _timers = fakeTimers();
+    const regionTexts = () =>
+      Array.from(document.querySelectorAll('[aria-live="polite"]'), (region) => region.textContent);
+
+    announce("Claude");
     vi.runAllTimers();
-    const regions = document.querySelectorAll('[aria-live="polite"]');
-    expect(regions[0]?.textContent).toBe("");
-    expect(regions[1]?.textContent).toBe("Fix login bug");
+    const first = regionTexts();
+    announce("Claude");
+    vi.runAllTimers();
+
+    expect(regionTexts()).toEqual([...first].reverse());
+    expect(regionTexts()).toContain("Claude");
   });
 
   it("replaces a waiting message from the same source", () => {
@@ -45,5 +51,12 @@ describe("announce", () => {
     vi.runAllTimers();
 
     expect(spokenText()).toEqual(["Opening in VS Code. Settled 2 threads, Ctrl+Z to undo"]);
+
+    announce("Settled 1 thread, Ctrl+Z to undo", "undo");
+    announce("Opening in Zed");
+    cancelAnnouncement("undo");
+    vi.runAllTimers();
+
+    expect(spokenText()).toEqual(["Opening in Zed"]);
   });
 });
