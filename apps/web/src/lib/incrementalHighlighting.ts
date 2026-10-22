@@ -61,7 +61,7 @@ export function createIncrementalHighlightedDocument(
   theme: DiffThemeName,
 ) {
   const options = { lang: language, theme };
-  const shell = highlighter.codeToTokens("", options);
+  let shell: TokensResult | undefined;
   let tokenizer: ReturnType<DiffsHighlighter["createStreamTokenizer"]> | undefined;
   let previous = "";
   const completedLines: ReturnType<typeof renderTokenLines> = [];
@@ -81,6 +81,8 @@ export function createIncrementalHighlightedDocument(
         return highlightCodeToHast(highlighter, code, language, theme);
       }
       if (!code.startsWith(previous)) dispose();
+      // Created on first use so an unknown language throws inside the caller's fallback.
+      shell ??= highlighter.codeToTokens("", options);
       tokenizer ??= highlighter.createStreamTokenizer(options);
       const update = tokenizer.enqueue(code.slice(previous.length));
       if (update instanceof Promise) {

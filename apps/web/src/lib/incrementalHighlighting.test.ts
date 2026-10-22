@@ -75,6 +75,17 @@ describe.each(["shiki-wasm", "highlights"] as const)(
       highlight.dispose();
     });
 
+    // MarkdownCodeBlock creates the document outside its plain-text fallback.
+    it("creates a document for a language the highlighter has not loaded", async () => {
+      const highlighter = await getSharedHighlighter({
+        ...highlighterOptions,
+        preferredHighlighter: engine,
+      });
+      expect(() =>
+        createIncrementalHighlightedDocument(highlighter, "cobol", "pierre-dark").dispose(),
+      ).not.toThrow();
+    });
+
     it("preserves partial CRLF and CR line endings", async () => {
       const highlighter = await getSharedHighlighter({
         ...highlighterOptions,
