@@ -70,8 +70,10 @@ describe("nextThreadAnnouncement", () => {
         idle(firstRun, "completed"),
         busy("working", firstRun, "completed"),
         idle(firstRun, "completed"),
+        busy(),
+        idle(secondRun, "completed"),
       ]),
-    ).toEqual(["Working"]);
+    ).toEqual(["Working", "Working", "Done"]);
     // The previous run finished while this client looked idle.
     expect(
       speak([

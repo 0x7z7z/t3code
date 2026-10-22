@@ -75,8 +75,10 @@ export function nextThreadAnnouncement(
     const settledRunId = outcome === null ? previous.settledRunId : next.runId;
     return { memory: { ...memory, settledRunId }, announcement: null };
   }
-  if (outcome === null || next.runId === previous.settledRunId) {
-    return { memory, announcement: null };
+  if (outcome === null) return { memory, announcement: null };
+  // Work stopped without a new run, e.g. a send that failed; the retry is a new turn.
+  if (next.runId === previous.settledRunId) {
+    return { memory: { ...memory, outcomePending: false }, announcement: null };
   }
   return {
     memory: { ...memory, outcomePending: false, settledRunId: next.runId },
