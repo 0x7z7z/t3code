@@ -14,7 +14,16 @@ export interface ThreadAnnouncementMemory {
   readonly outcomePending: boolean;
   /** The run whose ending is already known, so a stale run is never announced as this turn's. */
   readonly settledRunId: RunId | null;
+  /** The run seen doing this turn's work; another one taking over is a new turn. */
+  readonly activeRunId: RunId | null;
 }
+
+const ACTIVE_RUN_STATUSES: ReadonlySet<OrchestrationV2RunStatus | null> = new Set([
+  "preparing",
+  "starting",
+  "running",
+  "waiting",
+]);
 
 function runOutcomeText(status: OrchestrationV2RunStatus | null): string | null {
   switch (status) {
@@ -45,16 +54,29 @@ export function nextThreadAnnouncement(
         snapshot: next,
         outcomePending: next.status !== "idle",
         settledRunId: runOutcomeText(next.runStatus) === null ? null : next.runId,
+        activeRunId: ACTIVE_RUN_STATUSES.has(next.runStatus) ? next.runId : null,
       },
       announcement: null,
     };
   }
   const before = previous.snapshot.status;
-  const memory = { ...previous, snapshot: next };
+  const memory = {
+    ...previous,
+    snapshot: next,
+    activeRunId: next.status === "idle" ? null : previous.activeRunId,
+  };
 
   if (next.status !== "idle") {
+    const nextActiveRunId = ACTIVE_RUN_STATUSES.has(next.runStatus)
+      ? next.runId
+      : previous.activeRunId;
+    // A queued message can start as the last turn ends, without an idle moment.
+    const queuedTurnStarted =
+      next.status === "working" &&
+      previous.activeRunId !== null &&
+      nextActiveRunId !== previous.activeRunId;
     const announcement =
-      next.status === before
+      next.status === before && !queuedTurnStarted
         ? null
         : next.status === "approval"
           ? "Needs approval"
@@ -62,10 +84,13 @@ export function nextThreadAnnouncement(
             ? "Needs your input"
             : // Sending can look idle for a moment before the server reports the
               // run; that flicker is still the same turn.
-              before === "idle" && !previous.outcomePending
+              queuedTurnStarted || (before === "idle" && !previous.outcomePending)
               ? "Working"
               : null;
-    return { memory: { ...memory, outcomePending: true }, announcement };
+    return {
+      memory: { ...memory, outcomePending: true, activeRunId: nextActiveRunId },
+      announcement,
+    };
   }
 
   // Work can stop a moment before the run settles; the ending waits for the run.

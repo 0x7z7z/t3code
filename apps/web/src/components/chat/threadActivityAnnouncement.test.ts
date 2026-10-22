@@ -44,6 +44,20 @@ describe("nextThreadAnnouncement", () => {
     ).toEqual(["Working", "Done"]);
   });
 
+  it("announces a queued message that starts as the last turn ends", () => {
+    const thirdRun = RunId.make("run-3");
+    expect(
+      speak([
+        idle(firstRun, "completed"),
+        busy("working", firstRun, "completed"),
+        busy(),
+        busy("working", secondRun, "completed"),
+        busy("working", thirdRun, "starting"),
+        idle(thirdRun, "completed"),
+      ]),
+    ).toEqual(["Working", "Working", "Done"]);
+  });
+
   it("stays silent when a thread opens mid-turn or after one", () => {
     expect(speak([idle(firstRun, "completed"), idle(firstRun, "completed")])).toEqual([]);
     expect(speak([busy(), busy()])).toEqual([]);
