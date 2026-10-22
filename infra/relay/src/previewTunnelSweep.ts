@@ -70,7 +70,7 @@ const collectPages = Effect.fn("PreviewTunnelSweep.collectPages")(function* <T, 
 });
 
 // Idempotent: a second run lists nothing and deletes nothing.
-const sweepPreviewStage = Effect.fn("PreviewTunnelSweep.sweep")(function* (input: {
+export const sweepPreviewStage = Effect.fn("PreviewTunnelSweep.sweep")(function* (input: {
   readonly stage: string;
   readonly tunnelZoneName: string;
   readonly accountId: string;
@@ -87,6 +87,18 @@ const sweepPreviewStage = Effect.fn("PreviewTunnelSweep.sweep")(function* (input
     send(HttpClientRequest.get(url, { urlParams: params })).pipe(
       Effect.flatMap(HttpClientResponse.schemaBodyJson(schema)),
     );
+  // A 404 means the object is already gone, which is the outcome teardown wants.
+  // Any other failure, including 429, fails the step so the next run retries it.
+  const remove = (url: string) =>
+    HttpClientRequest.make("DELETE")(url).pipe(
+      HttpClientRequest.bearerToken(Redacted.value(input.token)),
+      client.execute,
+      Effect.flatMap((response) =>
+        response.status === 404
+          ? Effect.void
+          : HttpClientResponse.filterStatusOk(response).pipe(Effect.asVoid),
+      ),
+    );
 
   const listedTunnels = yield* collectPages((page) =>
     getJson(
@@ -101,19 +113,22 @@ const sweepPreviewStage = Effect.fn("PreviewTunnelSweep.sweep")(function* (input
     ).pipe(Effect.map((body) => body.result)),
   );
 
+  // No tunnels means nothing to clean, so the zone is not needed and may be gone.
+  if (listedTunnels.length === 0) return;
+
   const zone = yield* getJson(`${API}/zones`, { name: input.tunnelZoneName }, ZonePage);
   const zoneId = zone.result[0]?.id;
-  if (zoneId === undefined) {
-    return yield* Effect.die(`No Cloudflare zone named ${input.tunnelZoneName}`);
-  }
-
-  const listedRecords = yield* collectPages((page) =>
-    getJson(
-      `${API}/zones/${zoneId}/dns_records`,
-      { type: "CNAME", per_page: String(PAGE_SIZE), page: String(page) },
-      DnsRecordPage,
-    ).pipe(Effect.map((body) => body.result)),
-  );
+  // Without the zone there are no CNAMEs to remove, but the tunnels still must go.
+  const listedRecords =
+    zoneId === undefined
+      ? []
+      : yield* collectPages((page) =>
+          getJson(
+            `${API}/zones/${zoneId}/dns_records`,
+            { type: "CNAME", per_page: String(PAGE_SIZE), page: String(page) },
+            DnsRecordPage,
+          ).pipe(Effect.map((body) => body.result)),
+        );
 
   const targets = previewSweepTargets({
     stage: input.stage,
@@ -123,25 +138,17 @@ const sweepPreviewStage = Effect.fn("PreviewTunnelSweep.sweep")(function* (input
   });
 
   // Records first, so no hostname points at a tunnel that is about to vanish.
-  for (const record of targets.records) {
-    yield* send(
-      HttpClientRequest.make("DELETE")(`${API}/zones/${zoneId}/dns_records/${record.id}`),
-    );
+  if (zoneId !== undefined) {
+    for (const record of targets.records) {
+      yield* remove(`${API}/zones/${zoneId}/dns_records/${record.id}`);
+    }
   }
   // Cloudflare refuses to delete a tunnel that still has connectors attached.
   for (const tunnel of targets.tunnels) {
-    yield* send(
-      HttpClientRequest.make("DELETE")(
-        `${API}/accounts/${input.accountId}/cfd_tunnel/${tunnel.id}/connections`,
-      ),
-    );
-    yield* send(
-      HttpClientRequest.make("DELETE")(
-        `${API}/accounts/${input.accountId}/cfd_tunnel/${tunnel.id}`,
-      ),
-    );
+    yield* remove(`${API}/accounts/${input.accountId}/cfd_tunnel/${tunnel.id}/connections`);
+    yield* remove(`${API}/accounts/${input.accountId}/cfd_tunnel/${tunnel.id}`);
   }
-}, Effect.provide(FetchHttpClient.layer));
+});
 
 export const PreviewTunnelSweepProvider = () =>
   Provider.succeed(
@@ -170,7 +177,7 @@ export const PreviewTunnelSweepProvider = () =>
           tunnelZoneName: output.tunnelZoneName,
           accountId,
           token,
-        });
+        }).pipe(Effect.provide(FetchHttpClient.layer));
       }),
     }),
   );
