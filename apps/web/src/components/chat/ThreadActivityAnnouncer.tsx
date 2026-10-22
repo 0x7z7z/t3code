@@ -48,7 +48,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       return;
     }
     const previous = memoryRef.current?.threadKey === threadKey ? memoryRef.current.memory : null;
-    const { memory, announcement } = nextThreadAnnouncement(previous, {
+    const { memory, announcements } = nextThreadAnnouncement(previous, {
       status,
       activity,
       runId,
@@ -61,7 +61,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       lastSpokenRef.current = { at: Number.NEGATIVE_INFINITY, text: "" };
       return;
     }
-    if (announcement === null) {
+    if (announcements.length === 0) {
       // A queued label is stale once nothing is live, e.g. during compaction or
       // while a finished turn waits for its run to settle.
       if (status !== "working" || activity === null) cancelPending();
@@ -69,17 +69,19 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
     }
     // A newer update replaces one still waiting, so only current activity is read.
     cancelPending();
-    if (announcement.kind === "status") {
-      speak(announcement.text);
-      return;
+    for (const announcement of announcements) {
+      if (announcement.kind === "status") {
+        speak(announcement.text);
+        continue;
+      }
+      const wait = lastSpokenRef.current.at + ACTIVITY_ANNOUNCEMENT_INTERVAL_MS - Date.now();
+      const speakActivity = () => {
+        pendingRef.current = null;
+        if (lastSpokenRef.current.text !== announcement.text) speak(announcement.text);
+      };
+      if (wait <= 0) speakActivity();
+      else pendingRef.current = setTimeout(speakActivity, wait);
     }
-    const wait = lastSpokenRef.current.at + ACTIVITY_ANNOUNCEMENT_INTERVAL_MS - Date.now();
-    const speakActivity = () => {
-      pendingRef.current = null;
-      if (lastSpokenRef.current.text !== announcement.text) speak(announcement.text);
-    };
-    if (wait <= 0) speakActivity();
-    else pendingRef.current = setTimeout(speakActivity, wait);
   }, [threadKey, status, activity, runId, runStatus]);
 
   useEffect(

@@ -65,7 +65,10 @@ function runOutcomeText(status: OrchestrationV2RunStatus | null): string | null 
 export function nextThreadAnnouncement(
   previous: ThreadAnnouncementMemory | null,
   next: ThreadActivitySnapshot,
-): { readonly memory: ThreadAnnouncementMemory; readonly announcement: ThreadAnnouncement | null } {
+): {
+  readonly memory: ThreadAnnouncementMemory;
+  readonly announcements: ReadonlyArray<ThreadAnnouncement>;
+} {
   if (previous === null) {
     return {
       memory: {
@@ -73,32 +76,36 @@ export function nextThreadAnnouncement(
         outcomePending: next.status !== "idle",
         settledRunId: runOutcomeText(next.runStatus) === null ? null : next.runId,
       },
-      announcement: null,
+      announcements: [],
     };
   }
   const before = previous.snapshot.status;
   const memory = { ...previous, snapshot: next };
   const status = (text: string) => ({ kind: "status", text }) as const;
+  const activity =
+    next.activity === null ? [] : [{ kind: "activity", text: next.activity } as const];
 
   if (next.status === "approval") {
     return {
       memory: { ...memory, outcomePending: true },
-      announcement: before === "approval" ? null : status("Needs approval"),
+      announcements: before === "approval" ? [] : [status("Needs approval")],
     };
   }
   if (next.status === "input") {
     return {
       memory: { ...memory, outcomePending: true },
-      announcement: before === "input" ? null : status("Needs your input"),
+      announcements: before === "input" ? [] : [status("Needs your input")],
     };
   }
   if (next.status === "working") {
     const working = { ...memory, outcomePending: true };
-    if (before === "idle") return { memory: working, announcement: status("Working") };
-    if (next.activity !== null && next.activity !== previous.snapshot.activity) {
-      return { memory: working, announcement: { kind: "activity", text: next.activity } };
+    if (before === "idle") {
+      return { memory: working, announcements: [status("Working"), ...activity] };
     }
-    return { memory: working, announcement: null };
+    return {
+      memory: working,
+      announcements: next.activity === previous.snapshot.activity ? [] : activity,
+    };
   }
 
   // Work can stop a moment before the run settles; the ending waits for the run.
@@ -106,13 +113,13 @@ export function nextThreadAnnouncement(
   if (!previous.outcomePending) {
     // A run that settled unseen is history too, or the next failed send would claim it.
     const settledRunId = outcome === null ? previous.settledRunId : next.runId;
-    return { memory: { ...memory, settledRunId }, announcement: null };
+    return { memory: { ...memory, settledRunId }, announcements: [] };
   }
   if (outcome === null || next.runId === previous.settledRunId) {
-    return { memory, announcement: null };
+    return { memory, announcements: [] };
   }
   return {
     memory: { ...memory, outcomePending: false, settledRunId: next.runId },
-    announcement: status(outcome),
+    announcements: [status(outcome)],
   };
 }

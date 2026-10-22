@@ -23,7 +23,7 @@ function speak(snapshots: ReadonlyArray<ThreadActivitySnapshot>) {
   for (const snapshot of snapshots) {
     const result = nextThreadAnnouncement(memory, snapshot);
     memory = result.memory;
-    if (result.announcement) spoken.push(result.announcement.text);
+    spoken.push(...result.announcements.map((announcement) => announcement.text));
   }
   return spoken;
 }
@@ -43,6 +43,13 @@ describe("nextThreadAnnouncement", () => {
     ).toEqual(["Working", "Thinking", "Reading ChatView.tsx", "Running vp", "Done"]);
   });
 
+  it("announces the label that is already live when a turn starts", () => {
+    expect(speak([idle(firstRun, "completed"), working("Running vp")])).toEqual([
+      "Working",
+      "Running vp",
+    ]);
+  });
+
   it("stays silent when a thread opens mid-turn or after one", () => {
     expect(speak([idle(firstRun, "completed"), idle(firstRun, "completed")])).toEqual([]);
     expect(speak([working("Running vp"), working("Running vp")])).toEqual([]);
@@ -56,7 +63,7 @@ describe("nextThreadAnnouncement", () => {
     expect(
       speak([
         idle(firstRun, "completed"),
-        working("Thinking"),
+        working(null),
         idle(secondRun, "running"),
         idle(secondRun, "interrupted"),
       ]),
