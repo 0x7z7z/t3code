@@ -771,6 +771,8 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
         pending,
         (item) =>
           request(ORCHESTRATION_V2_WS_METHODS.getTurnItem, { threadId, itemId: item.id }).pipe(
+            // Stop holds the thread's serial command key until this finishes.
+            Effect.timeout("10 seconds"),
             Effect.map((result) => result.item),
             Effect.orElseSucceed(() => null),
           ),

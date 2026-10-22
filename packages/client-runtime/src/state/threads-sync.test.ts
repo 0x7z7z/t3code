@@ -900,6 +900,35 @@ describe("EnvironmentThreads", () => {
       }),
     );
 
+    it.effect("gives up on a lookup the server never answers, settling the rest", () =>
+      Effect.gen(function* () {
+        const askedCached = yield* Deferred.make<void>();
+        const askedSilent = yield* Deferred.make<void>();
+        const harness = yield* makeHarness({
+          cached: cachedProjection([...cached.turnItems, command("silent-command", "running")]),
+          cachedHistory,
+          getTurnItem: ({ itemId }) =>
+            itemId === "silent-command"
+              ? Deferred.succeed(askedSilent, undefined).pipe(Effect.andThen(Effect.never))
+              : Deferred.succeed(askedCached, undefined).pipe(
+                  Effect.as({ item: command("cached-command", "completed", 0) }),
+                ),
+        });
+        const reconciling = yield* harness.reconcilePendingWork.pipe(Effect.forkChild);
+        yield* Deferred.await(askedCached);
+        yield* Deferred.await(askedSilent);
+
+        yield* TestClock.adjust("10 seconds");
+
+        expect(reconciling.pollUnsafe()).toEqual(Exit.void);
+        expect(statuses(yield* SubscriptionRef.get(harness.threadState)).items).toEqual([
+          ["older-command", "completed"],
+          ["cached-command", "completed"],
+          ["silent-command", "running"],
+        ]);
+      }),
+    );
+
     it.effect("keeps items the server still runs or does not return", () =>
       Effect.gen(function* () {
         const harness = yield* makeHarness({
