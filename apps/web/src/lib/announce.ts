@@ -4,7 +4,7 @@
 const FOCUS_SETTLE_MS = 250;
 
 let regions: readonly [HTMLElement, HTMLElement] | null = null;
-let pending: string[] = [];
+let pending: { message: string; source: string | undefined }[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 
 function scheduleFlush() {
@@ -19,7 +19,7 @@ function flush() {
   const target = first.textContent ? second : first;
   first.textContent = "";
   second.textContent = "";
-  target.textContent = pending.join(". ");
+  target.textContent = pending.map((entry) => entry.message).join(". ");
   pending = [];
 }
 
@@ -32,14 +32,18 @@ function createRegion() {
   return region;
 }
 
-/** Tells screen reader users what an action did when focus alone doesn't show it. */
-export function announce(message: string) {
+/**
+ * Tells screen reader users what an action did when focus alone doesn't show it. A message
+ * replaces one still waiting from the same `source`, so a superseded status isn't read out.
+ */
+export function announce(message: string, source?: string) {
   if (!regions) {
     regions = [createRegion(), createRegion()];
     document.addEventListener("focusin", () => {
       if (pending.length > 0) scheduleFlush();
     });
   }
-  if (pending.at(-1) !== message) pending.push(message);
+  if (source !== undefined) pending = pending.filter((entry) => entry.source !== source);
+  if (pending.at(-1)?.message !== message) pending.push({ message, source });
   scheduleFlush();
 }

@@ -35,4 +35,15 @@ describe("announce", () => {
     expect(regions[0]?.textContent).toBe("");
     expect(regions[1]?.textContent).toBe("Fix login bug");
   });
+
+  it("replaces a waiting message from the same source", () => {
+    using _timers = fakeTimers();
+
+    announce("Settled 1 thread, Ctrl+Z to undo", "undo");
+    announce("Opening in VS Code");
+    announce("Settled 2 threads, Ctrl+Z to undo", "undo");
+    vi.runAllTimers();
+
+    expect(spokenText()).toEqual(["Opening in VS Code. Settled 2 threads, Ctrl+Z to undo"]);
+  });
 });

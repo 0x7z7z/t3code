@@ -776,6 +776,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       handleSelectInstance(next);
       announce(
         next === "favorites" ? "Favorites" : (entryByInstanceId.get(next)?.displayName ?? next),
+        "model-picker",
       );
       return;
     }
@@ -799,7 +800,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     const name = flatModels.find(
       (item) => item.slug === selectedSlug && item.instanceId === model.instanceId,
     )?.name;
-    announce(`Model: ${name ?? selectedSlug}`);
+    announce(`Model: ${name ?? selectedSlug}`, "model-picker");
   };
 
   return (

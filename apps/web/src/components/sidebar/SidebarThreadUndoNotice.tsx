@@ -21,7 +21,7 @@ export function SidebarThreadUndoNotice() {
   // A live region that mounts already filled is skipped by screen readers, and settling
   // usually moves focus to the next thread at the same moment.
   useEffect(() => {
-    if (summary) announce(`${summary}, ${undoLabel}`);
+    if (summary) announce(`${summary}, ${undoLabel}`, "thread-undo-notice");
   }, [summary, undoLabel]);
 
   if (!summary) return null;
