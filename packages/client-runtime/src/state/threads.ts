@@ -7,6 +7,7 @@ import {
   type ThreadId as ThreadIdType,
 } from "@t3tools/contracts";
 import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
+import { pendingBackgroundTurnItems } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -176,6 +177,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   const remoteAuthorization = yield* Effect.serviceOption(
     RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization,
   );
+  const scope = yield* Scope.Scope;
   const wakeups = yield* Effect.serviceOption(ConnectionWakeups.ConnectionWakeups);
   const environmentId = supervisor.target.environmentId;
   const retained = resumeCache?.snapshot;
@@ -421,6 +423,48 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     );
   });
 
+  // Atomic projection + progressive meta so a settled bounded window never
+  // persists as a complete full-timeline cache entry. Socket snapshots still go
+  // through applyItem (resetHistory). Callers hold applyLock.
+  const installHttpSnapshot = Effect.fn("EnvironmentThreadState.installHttpSnapshot")(function* (
+    httpResult: Extract<ThreadSnapshotLoader.ThreadSnapshotLoadResult, { _tag: "present" }>,
+  ) {
+    if (canLoadHistory && httpResult.history !== undefined) {
+      yield* Ref.set(acceptsBoundedSocketSnapshots, true);
+    }
+    yield* SubscriptionRef.set(lastSequence, httpResult.snapshot.snapshotSequence);
+    const history: ThreadHistoryMeta =
+      httpResult.history !== undefined
+        ? {
+            historyCursor: httpResult.history.historyCursor,
+            hasMoreHistory: httpResult.history.hasMoreHistory,
+            loading: false,
+            error: null,
+            expanded: false,
+            latestLocalTurnOrdinal: httpResult.history.latestLocalTurnOrdinal ?? null,
+          }
+        : EMPTY_THREAD_HISTORY_META;
+    yield* setThread(httpResult.snapshot.projection, { history });
+    yield* remember;
+  });
+
+  // A cached item can stay running after the server finished it, and no later event
+  // names it, so only the server's record can settle it once Stop lands (#18188).
+  const reconcileStoppedWork = Effect.gen(function* () {
+    const prepared = yield* SubscriptionRef.get(supervisor.prepared);
+    if (Option.isNone(prepared)) return;
+    const httpResult = yield* snapshotLoader.load(prepared.value, threadId);
+    if (httpResult._tag !== "present") return;
+    yield* applyLock.withPermits(1)(
+      Effect.gen(function* () {
+        // Newer events already applied would be lost behind an older snapshot.
+        if (httpResult.snapshot.snapshotSequence < (yield* SubscriptionRef.get(lastSequence)))
+          return;
+        yield* installHttpSnapshot(httpResult);
+      }),
+    );
+  });
+
   type EventItem = Extract<OrchestrationV2ThreadStreamItem, { kind: "event" }>;
   type SequencedItem = Extract<
     OrchestrationV2ThreadStreamItem,
@@ -532,6 +576,17 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
     if (result._tag === "delete") {
       yield* setDeleted();
       return;
+    }
+    if (
+      result._tag === "applied" &&
+      fresh.some(
+        (item) =>
+          item.event.type === "turn-item.updated" &&
+          item.event.payload.type === "run_interrupt_request",
+      ) &&
+      pendingBackgroundTurnItems(result.projection).length > 0
+    ) {
+      yield* Effect.forkIn(reconcileStoppedWork, scope);
     }
     if (result._tag === "applied" && shouldPersistThread(result.projection, result.history)) {
       const snapshotSequence = yield* SubscriptionRef.get(lastSequence);
@@ -722,7 +777,6 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
   });
 
   if (Option.isSome(historyController)) {
-    const scope = yield* Scope.Scope;
     const registration = yield* historyController.value.register(environmentId, threadId, {
       loadEarlier: (throughEntryId) =>
         loadEarlier(throughEntryId).pipe(Effect.forkIn(scope), Effect.flatMap(Fiber.join)),
@@ -803,30 +857,7 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
             yield* snapshotLoader.load(prepared, threadId);
           switch (httpResult._tag) {
             case "present": {
-              if (canLoadHistory && httpResult.history !== undefined) {
-                yield* Ref.set(acceptsBoundedSocketSnapshots, true);
-              }
-              // Atomic projection + progressive meta so a settled bounded window
-              // never persists as a complete full-timeline cache entry. Socket
-              // snapshots still go through applyItem (resetHistory).
-              yield* applyLock.withPermits(1)(
-                Effect.gen(function* () {
-                  yield* SubscriptionRef.set(lastSequence, httpResult.snapshot.snapshotSequence);
-                  const history: ThreadHistoryMeta =
-                    httpResult.history !== undefined
-                      ? {
-                          historyCursor: httpResult.history.historyCursor,
-                          hasMoreHistory: httpResult.history.hasMoreHistory,
-                          loading: false,
-                          error: null,
-                          expanded: false,
-                          latestLocalTurnOrdinal: httpResult.history.latestLocalTurnOrdinal ?? null,
-                        }
-                      : EMPTY_THREAD_HISTORY_META;
-                  yield* setThread(httpResult.snapshot.projection, { history });
-                  yield* remember;
-                }),
-              );
+              yield* applyLock.withPermits(1)(installHttpSnapshot(httpResult));
               current = yield* SubscriptionRef.get(state);
               break;
             }

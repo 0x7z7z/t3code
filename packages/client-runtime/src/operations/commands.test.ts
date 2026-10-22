@@ -692,27 +692,4 @@ describe("V2 environment commands", () => {
       ]);
     }).pipe(Effect.provide(layerTestCrypto)),
   );
-
-  // #18188: a cached command still marked running survives reload, and Stop emits nothing
-  // for work the server already finished, so only the server's record can clear it.
-  it.effect("reads the server's record after Stop so stale cached work can settle", () =>
-    Effect.gen(function* () {
-      const commands: OrchestrationV2Command[] = [];
-      const projectionRequests: ThreadId[] = [];
-      const supervisor = yield* makeSupervisor({
-        commands,
-        projects: [],
-        projectionRequests,
-        advertiseThreadStop: true,
-      });
-
-      yield* interruptThreadTurn({
-        commandId: CommandId.make("stop-stale-cached-command"),
-        threadId: v2ThreadId,
-      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
-
-      expect(commands.map((command) => command.type)).toEqual(["thread.stop"]);
-      expect(projectionRequests).toEqual([v2ThreadId]);
-    }).pipe(Effect.provide(layerTestCrypto)),
-  );
 });

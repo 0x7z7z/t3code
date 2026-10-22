@@ -578,6 +578,78 @@ describe("EnvironmentThreads", () => {
     }),
   );
 
+  describe("Stop on cached work the server already finished (#18188)", () => {
+    const at = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");
+    const command = (status: "running" | "completed") =>
+      ({
+        id: TurnItemId.make("cached-command"),
+        threadId: THREAD_ID,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 1,
+        status,
+        title: null,
+        startedAt: at,
+        completedAt: status === "completed" ? at : null,
+        updatedAt: at,
+        type: "command_execution" as const,
+        input: "pip install pyarrow",
+        output: "",
+        ...(status === "completed" ? { exitCode: 0 } : {}),
+      }) satisfies OrchestrationV2TurnItem;
+    const stopReached: OrchestrationV2ThreadStreamItem = {
+      kind: "event",
+      sequence: CACHED_SNAPSHOT_SEQUENCE + 1,
+      event: {
+        id: EventId.make("event-stop"),
+        type: "turn-item.updated",
+        threadId: THREAD_ID,
+        occurredAt: at,
+        payload: {
+          ...command("completed"),
+          id: TurnItemId.make("stop-request"),
+          ordinal: 2,
+          type: "run_interrupt_request",
+          message: "Interrupt requested",
+        } as unknown as OrchestrationV2TurnItem,
+      },
+    };
+    const runningCommands = (state: EnvironmentThreadState) =>
+      Option.getOrThrow(state.data).turnItems.filter(
+        (item) => item.type === "command_execution" && item.status === "running",
+      );
+    const stopWith = Effect.fn(function* (server: OrchestrationV2ThreadProjection) {
+      const harness = yield* makeHarness({
+        cached: { ...BASE_PROJECTION, turnItems: [command("running")] },
+        httpSnapshot: {
+          _tag: "present",
+          snapshot: { snapshotSequence: CACHED_SNAPSHOT_SEQUENCE + 1, projection: server },
+          history: { historyCursor: "older", hasMoreHistory: true },
+        },
+      });
+      yield* Queue.offer(harness.inputs, stopReached);
+      return yield* awaitThreadState(harness.observed, (value) => value.history.hasMoreHistory);
+    });
+
+    it.effect("settles a command the server's bounded snapshot no longer lists", () =>
+      Effect.gen(function* () {
+        const state = yield* stopWith(BASE_PROJECTION);
+        expect(runningCommands(state)).toEqual([]);
+      }),
+    );
+
+    it.effect("keeps a command the server still runs", () =>
+      Effect.gen(function* () {
+        const state = yield* stopWith({ ...BASE_PROJECTION, turnItems: [command("running")] });
+        expect(runningCommands(state).map((item) => String(item.id))).toEqual(["cached-command"]);
+      }),
+    );
+  });
+
   it.effect("keeps progressive history metadata from a bounded socket fallback", () =>
     Effect.gen(function* () {
       const olderItem = {
