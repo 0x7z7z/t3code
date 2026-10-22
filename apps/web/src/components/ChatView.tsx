@@ -3285,6 +3285,13 @@ export default function ChatView(props: ChatViewProps) {
                         ? "input"
                         : null
                 }
+                awaitingRequestId={
+                  paintOnlyDisplayedTimeline
+                    ? null
+                    : (activePendingApproval?.requestId ??
+                      activePendingUserInput?.requestId ??
+                      null)
+                }
                 activeTurnStartedAt={paintOnlyDisplayedTimeline ? null : activeWorkStartedAt}
                 worktreeSetup={paintOnlyDisplayedTimeline ? null : worktreeSetup}
                 onCancelWorktreeSetup={onCancelWorktreeSetupStable}

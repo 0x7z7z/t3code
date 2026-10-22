@@ -13,12 +13,13 @@ const secondRun = RunId.make("run-2");
 const idle = (
   runId: RunId | null,
   runStatus: ThreadActivitySnapshot["runStatus"],
-): ThreadActivitySnapshot => ({ status: "idle", runId, runStatus });
+): ThreadActivitySnapshot => ({ status: "idle", requestId: null, runId, runStatus });
 const busy = (
   status: Exclude<ThreadActivitySnapshot["status"], "idle"> = "working",
   runId: RunId | null = secondRun,
   runStatus: ThreadActivitySnapshot["runStatus"] = "running",
-): ThreadActivitySnapshot => ({ status, runId, runStatus });
+  requestId: string | null = status === "working" ? null : "request-1",
+): ThreadActivitySnapshot => ({ status, requestId, runId, runStatus });
 
 function speak(snapshots: ReadonlyArray<ThreadActivitySnapshot>) {
   let memory: ThreadAnnouncementMemory | null = null;
@@ -170,5 +171,15 @@ describe("nextThreadAnnouncement", () => {
         idle(secondRun, "completed"),
       ]),
     ).toEqual(["Needs approval", "Needs your input", "Done"]);
+  });
+
+  it("announces a second request of the same kind once the first is answered", () => {
+    expect(
+      speak([
+        busy(),
+        busy("approval", secondRun, "running", "request-1"),
+        busy("approval", secondRun, "running", "request-2"),
+      ]),
+    ).toEqual(["Needs approval", "Needs approval"]);
   });
 });

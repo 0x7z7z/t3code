@@ -194,6 +194,8 @@ interface MessagesTimelineProps {
   isPreparingWorktree?: boolean;
   isCompacting?: boolean;
   awaitingUser?: "approval" | "input" | null;
+  /** Which request is waiting, so a second one of the same kind is announced too. */
+  awaitingRequestId?: string | null;
   footer?: ReactNode;
 
   listRef: React.RefObject<LegendListRef | null>;
@@ -303,6 +305,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   isPreparingWorktree = false,
   isCompacting = false,
   awaitingUser = null,
+  awaitingRequestId = null,
   listRef,
   timelineEntries,
   findExpanded = false,
@@ -961,6 +964,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
     <ThreadActivityAnnouncer
       threadKey={paintOnly || !announceTurnStatus ? null : listIdentityKey}
       status={awaitingUser ?? (isWorking ? "working" : "idle")}
+      requestId={awaitingRequestId}
       runId={latestRun?.runId ?? null}
       runStatus={latestRun?.status ?? null}
     />

@@ -4,6 +4,8 @@ export type ThreadActivityStatus = "working" | "approval" | "input" | "idle";
 
 export interface ThreadActivitySnapshot {
   readonly status: ThreadActivityStatus;
+  /** The pending approval or question, when there is one. */
+  readonly requestId: string | null;
   readonly runId: RunId | null;
   readonly runStatus: OrchestrationV2RunStatus | null;
 }
@@ -93,11 +95,11 @@ export function nextThreadAnnouncement(
       turnStarted || turnRunId === "unknown" ? (newRunId ?? "unknown") : turnRunId;
     const announcement =
       next.status === "approval"
-        ? previous.snapshot.status === "approval"
+        ? previous.snapshot.status === "approval" && previous.snapshot.requestId === next.requestId
           ? null
           : "Needs approval"
         : next.status === "input"
-          ? previous.snapshot.status === "input"
+          ? previous.snapshot.status === "input" && previous.snapshot.requestId === next.requestId
             ? null
             : "Needs your input"
           : turnStarted

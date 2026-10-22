@@ -13,6 +13,7 @@ import {
 export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
   threadKey,
   status,
+  requestId,
   runId,
   runStatus,
 }: ThreadActivitySnapshot & {
@@ -26,11 +27,13 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
     const region = regionRef.current;
     if (threadKey === null) {
       memoryRef.current = null;
+      if (region !== null) region.textContent = "";
       return;
     }
     const previous = memoryRef.current?.threadKey === threadKey ? memoryRef.current.memory : null;
     const { memory, announcement } = nextThreadAnnouncement(previous, {
       status,
+      requestId,
       runId,
       runStatus,
     });
@@ -43,7 +46,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       // repeated "Done" gets a trailing non-breaking space to count as new.
       region.textContent = region.textContent === announcement ? `${announcement} ` : announcement;
     }
-  }, [threadKey, status, runId, runStatus]);
+  }, [threadKey, status, requestId, runId, runStatus]);
 
   return <div ref={regionRef} role="status" aria-live="polite" className="sr-only" />;
 });
