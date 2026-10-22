@@ -3,7 +3,7 @@
  * Seed only IndexedDB; authoritative server state remains unchanged.
  * Await completion, then reload before exercising Stop.
  */
-async function seedStaleThreadCommand({ environmentId, threadId, itemId }) {
+globalThis.seedStaleThreadCommand = async function ({ environmentId, threadId, itemId }) {
   const response = await fetch(`/api/orchestration/threads/${threadId}`, {
     headers: { "x-t3-orchestration-protocol": "2" },
   });
@@ -20,21 +20,23 @@ async function seedStaleThreadCommand({ environmentId, threadId, itemId }) {
   }
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("t3code:connection-runtime", 4);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => {
+    request.addEventListener("error", () => reject(request.error));
+    request.addEventListener("success", () => {
       const db = request.result;
       const transaction = db.transaction("thread", "readwrite");
       const store = transaction.objectStore("thread");
       const key = `${environmentId}:${threadId}`;
       const read = store.get(key);
       let assertion;
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error ?? new Error("Seed aborted"));
-      transaction.oncomplete = () => {
+      transaction.addEventListener("error", () => reject(transaction.error));
+      transaction.addEventListener("abort", () =>
+        reject(transaction.error ?? new Error("Seed aborted")),
+      );
+      transaction.addEventListener("complete", () => {
         db.close();
         resolve(assertion);
-      };
-      read.onsuccess = () => {
+      });
+      read.addEventListener("success", () => {
         if (!read.result) {
           transaction.abort();
           return;
@@ -60,7 +62,7 @@ async function seedStaleThreadCommand({ environmentId, threadId, itemId }) {
           ...projection.visibleTurnItems.filter((row) => row.item.id !== itemId),
         ];
         store.put(JSON.stringify(saved), key);
-      };
-    };
+      });
+    });
   });
-}
+};
