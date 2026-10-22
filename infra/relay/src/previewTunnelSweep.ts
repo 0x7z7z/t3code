@@ -58,17 +58,16 @@ const DnsRecordPage = Schema.Struct({
   ),
 });
 
-const collectPages = <T, E, R>(
+const collectPages = Effect.fn("PreviewTunnelSweep.collectPages")(function* <T, E, R>(
   fetchPage: (page: number) => Effect.Effect<ReadonlyArray<T>, E, R>,
-) =>
-  Effect.gen(function* () {
-    const items: Array<T> = [];
-    for (let page = 1; ; page += 1) {
-      const batch = yield* fetchPage(page);
-      items.push(...batch);
-      if (batch.length < PAGE_SIZE) return items;
-    }
-  });
+) {
+  const items: Array<T> = [];
+  for (let page = 1; ; page += 1) {
+    const batch = yield* fetchPage(page);
+    items.push(...batch);
+    if (batch.length < PAGE_SIZE) return items;
+  }
+});
 
 // Idempotent: a second run lists nothing and deletes nothing.
 const sweepPreviewStage = Effect.fn("PreviewTunnelSweep.sweep")(function* (input: {
@@ -148,13 +147,12 @@ export const PreviewTunnelSweepProvider = () =>
   Provider.succeed(
     PreviewTunnelSweep,
     PreviewTunnelSweep.Provider.of({
-      reconcile: Effect.fn(function* ({ news }) {
-        return {
+      reconcile: ({ news }) =>
+        Effect.succeed({
           stage: news.stage,
           tunnelZoneName: news.tunnelZoneName,
           workerName: news.workerName,
-        };
-      }),
+        }),
       // Nothing in Cloudflare is created for this resource, so there is nothing to list.
       list: () => Effect.succeed([]),
       delete: Effect.fn(function* ({ output }) {
