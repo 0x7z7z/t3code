@@ -91,6 +91,13 @@ jobs:
         if: github.event.action == 'closed'
         run: gh pr edit "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --remove-label relay:preview
 
+      # An unlabeled event has already removed the label, so a failed teardown
+      # must put it back or no retry will ever see the stage. Labels added with
+      # GITHUB_TOKEN do not start new runs, so this does not redeploy.
+      - name: Restore the teardown marker after a failed destroy
+        if: failure() && github.event.action == 'unlabeled'
+        run: gh pr edit "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --add-label relay:preview
+
   list_closed_previews:
     name: List closed relay previews
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request_target'
