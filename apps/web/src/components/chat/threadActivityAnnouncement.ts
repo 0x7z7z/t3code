@@ -28,6 +28,12 @@ const ACTIVE_RUN_STATUSES: ReadonlySet<OrchestrationV2RunStatus | null> = new Se
   "waiting",
 ]);
 
+const STARTING_RUN_STATUSES: ReadonlySet<OrchestrationV2RunStatus | null> = new Set([
+  "queued",
+  "preparing",
+  "starting",
+]);
+
 function runOutcomeText(status: OrchestrationV2RunStatus | null): string | null {
   switch (status) {
     case "completed":
@@ -52,7 +58,10 @@ export function nextThreadAnnouncement(
   next: ThreadActivitySnapshot,
 ): { readonly memory: ThreadAnnouncementMemory; readonly announcement: string | null } {
   const idle = next.status === "idle";
-  const idleRunId = idle ? next.runId : (previous?.idleRunId ?? null);
+  // A run still starting up while the thread looks idle (a queued message,
+  // a resume) is the next turn's, not a leftover from the last one.
+  const idleRunId =
+    idle && !STARTING_RUN_STATUSES.has(next.runStatus) ? next.runId : (previous?.idleRunId ?? null);
   // A run doing new work; the run left over from the last turn doesn't count.
   const newRunId =
     !idle && ACTIVE_RUN_STATUSES.has(next.runStatus) && next.runId !== idleRunId

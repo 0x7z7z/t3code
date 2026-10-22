@@ -83,6 +83,30 @@ describe("nextThreadAnnouncement", () => {
     ).toEqual(["Working"]);
   });
 
+  it("treats a run that starts while the thread looks idle as the next turn", () => {
+    const thirdRun = RunId.make("run-3");
+    // A resume or a turn started from another device.
+    expect(
+      speak([
+        idle(firstRun, "completed"),
+        idle(secondRun, "starting"),
+        busy("working", secondRun, "running"),
+        idle(secondRun, "completed"),
+      ]),
+    ).toEqual(["Working", "Done"]);
+    // A queued message waiting to start after the last turn.
+    expect(
+      speak([
+        idle(firstRun, "completed"),
+        busy(),
+        idle(thirdRun, "queued"),
+        idle(thirdRun, "starting"),
+        busy("working", thirdRun, "running"),
+        idle(thirdRun, "completed"),
+      ]),
+    ).toEqual(["Working", "Working", "Done"]);
+  });
+
   it("stays silent when a thread opens mid-turn or after one", () => {
     expect(speak([idle(firstRun, "completed"), idle(firstRun, "completed")])).toEqual([]);
     expect(speak([busy(), busy()])).toEqual([]);
