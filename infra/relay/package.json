@@ -7,7 +7,6 @@
     "push:android:smoke": "node scripts/android-push-smoke.ts",
     "push:android:watch": "node scripts/android-push-watch.ts",
     "tunnels:census": "node scripts/tunnel-census.ts",
-    "sweep:preview": "node scripts/sweep-preview-tunnels.ts",
     "destroy": "alchemy destroy",
     "test": "vp test run --config ../../vite.config.ts --dir .",
     "typecheck": "tsc --noEmit"

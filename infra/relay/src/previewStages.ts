@@ -39,3 +39,36 @@ export function isPreviewTunnelRecordName(
 export function tunnelCnameContent(tunnelId: string): string {
   return `${tunnelId}.cfargotunnel.com`;
 }
+
+export interface SweepTunnel {
+  readonly id: string;
+  readonly name?: string | null | undefined;
+}
+
+export interface SweepRecord {
+  readonly id: string;
+  readonly name: string;
+  readonly content?: string | null | undefined;
+}
+
+// Records are matched through the tunnel they point at, not just by name, so a
+// record that happens to share the label is never deleted unless it targets one
+// of this stage's tunnels.
+export function previewSweepTargets(input: {
+  readonly stage: string;
+  readonly tunnelZoneName: string;
+  readonly tunnels: ReadonlyArray<SweepTunnel>;
+  readonly records: ReadonlyArray<SweepRecord>;
+}): { readonly tunnels: ReadonlyArray<SweepTunnel>; readonly records: ReadonlyArray<SweepRecord> } {
+  const tunnels = input.tunnels.filter(
+    (tunnel) => tunnel.name != null && isPreviewTunnelName(tunnel.name, input.stage),
+  );
+  const tunnelContents = new Set(tunnels.map((tunnel) => tunnelCnameContent(tunnel.id)));
+  const records = input.records.filter(
+    (record) =>
+      isPreviewTunnelRecordName(record.name, input.stage, input.tunnelZoneName) &&
+      record.content != null &&
+      tunnelContents.has(record.content),
+  );
+  return { tunnels, records };
+}

@@ -64,9 +64,7 @@ jobs:
             args:
               - --filter=t3code-relay...
 
-      # Destroy first, so the Worker that creates tunnels is gone before the
-      # sweep runs. If destroy fails the sweep is skipped, and the nightly
-      # sweep retries both.
+      # Destroy also runs the preview tunnel sweep, which is part of the stack.
       - name: Destroy preview stage
         run: vp run --filter t3code-relay destroy --stage "$STAGE" --yes --no-input
         env:
@@ -75,13 +73,6 @@ jobs:
           PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
           AXIOM_TOKEN: ${{ secrets.AXIOM_TOKEN }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-
-      - name: Sweep preview tunnels and DNS
-        run: vp run --filter t3code-relay sweep:preview
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PREVIEW_STAGE: ${{ env.STAGE }}
-          APPLY: "true"
 
   sweep_orphans:
     name: Sweep orphaned relay previews
@@ -119,9 +110,8 @@ jobs:
             args:
               - --filter=t3code-relay...
 
-      - name: Destroy and sweep stages of closed labeled PRs
+      - name: Destroy stages of closed labeled PRs
         env:
-          APPLY: "true"
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           PLANETSCALE_API_TOKEN_ID: ${{ secrets.PLANETSCALE_API_TOKEN_ID }}
           PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
@@ -134,7 +124,6 @@ jobs:
             stage="pr-$number"
             echo "::group::$stage"
             vp run --filter t3code-relay destroy --stage "$stage" --yes --no-input \
-              && PREVIEW_STAGE="$stage" vp run --filter t3code-relay sweep:preview \
               || { echo "Cleanup failed for $stage" >&2; failed=1; }
             echo "::endgroup::"
           done
