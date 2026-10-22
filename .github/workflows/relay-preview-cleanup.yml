@@ -118,9 +118,18 @@ jobs:
           AXIOM_TOKEN: ${{ secrets.AXIOM_TOKEN }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
         run: |
+          # A failed listing must fail the step, not look like an empty sweep.
+          limit=1000
+          numbers=$(gh pr list --repo "$GITHUB_REPOSITORY" --state closed \
+            --label "relay:preview" --limit "$limit" --json number --jq '.[].number') \
+            || { echo "Could not list closed relay:preview PRs" >&2; exit 1; }
+          # gh silently truncates at --limit, which would skip the oldest stages.
+          if [ "$(printf '%s\n' "$numbers" | grep -c .)" -ge "$limit" ]; then
+            echo "Reached the $limit-PR listing limit; paginate before trusting this sweep" >&2
+            exit 1
+          fi
           failed=0
-          for number in $(gh pr list --repo "$GITHUB_REPOSITORY" --state closed \
-            --label "relay:preview" --limit 200 --json number --jq '.[].number'); do
+          for number in $numbers; do
             stage="pr-$number"
             echo "::group::$stage"
             vp run --filter t3code-relay destroy --stage "$stage" --yes --no-input \
