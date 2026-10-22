@@ -249,7 +249,7 @@ export const DEFAULT_BROWSER_RECORDING_FRAME_RATE: BrowserRecordingFrameRate = 3
 export const PreviewReportProfilesInput = Schema.Struct({
   profiles: Schema.Array(BrowserProfile).check(Schema.isMaxLength(BROWSER_PROFILE_MAX_COUNT)),
   defaultProfileId: BrowserProfileId,
-  /** Optional so older clients keep reporting; the server then records at the default. */
+  /** Optional so older clients keep reporting; omitting it keeps the last reported rate. */
   recordingFrameRate: Schema.optional(BrowserRecordingFrameRate),
 });
 export type PreviewReportProfilesInput = typeof PreviewReportProfilesInput.Type;

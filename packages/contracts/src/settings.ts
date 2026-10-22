@@ -259,6 +259,11 @@ export type DefaultThemePreference = typeof DefaultThemePreference.Type;
 
 export const DEFAULT_BROWSER_VIEWPORT: PreviewViewportSetting = FILL_PREVIEW_VIEWPORT;
 export const DEFAULT_BROWSER_AUTO_SHOW_FLOATING_PREVIEW = true;
+export {
+  BROWSER_RECORDING_FRAME_RATES,
+  BrowserRecordingFrameRate,
+  DEFAULT_BROWSER_RECORDING_FRAME_RATE,
+} from "./preview.ts";
 export const BrowserLinkTarget = Schema.Literals(["system", "app"]);
 export type BrowserLinkTarget = typeof BrowserLinkTarget.Type;
 export const DEFAULT_BROWSER_LINK_TARGET: BrowserLinkTarget = "system";

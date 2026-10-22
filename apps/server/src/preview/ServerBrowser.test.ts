@@ -7,6 +7,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { it } from "@effect/vitest";
 import {
+  type BrowserRecordingFrameRate,
   EnvironmentId,
   PreviewTabId,
   ProviderInstanceId,
@@ -219,14 +220,17 @@ function makeEncoderPage() {
     width: 0,
     height: 0,
     getContext: () => ({ drawImage() {}, fillRect() {} }),
-    captureStream: (frameRate?: number) => {
-      encoderStreamFrameRates.push(frameRate);
-      return { getTracks: () => [] };
-    },
+    captureStream: (frameRate?: number) => ({ frameRate, getTracks: () => [] }),
   };
   class FakeMediaRecorder {
     static isTypeSupported = (type: string) => type === "video/webm";
     onstart: (() => void) | null = null;
+    constructor(stream: { frameRate?: number }, options: { videoBitsPerSecond: number }) {
+      encoderStreams.push({
+        frameRate: stream.frameRate,
+        bitsPerSecond: options.videoBitsPerSecond,
+      });
+    }
     start() {
       this.onstart?.();
     }
@@ -253,7 +257,7 @@ function makeEncoderPage() {
 }
 
 const contexts: ReturnType<typeof makeContext>[] = [];
-const encoderStreamFrameRates: Array<number | undefined> = [];
+const encoderStreams: Array<{ frameRate: number | undefined; bitsPerSecond: number }> = [];
 const contextRequests: Array<{ profileId: string; isolated: boolean }> = [];
 let contextGate: PromiseWithResolvers<void> | null = null;
 let pageCopy = "";
@@ -361,7 +365,7 @@ const viewerInput = (tabId: string, canOperate: boolean) => ({
 
 beforeEach(() => {
   contexts.length = 0;
-  encoderStreamFrameRates.length = 0;
+  encoderStreams.length = 0;
   contextRequests.length = 0;
   contextGate = null;
   contextFailure = null;
@@ -460,25 +464,34 @@ it.live.each([
   ).pipe(Effect.provide(layer)),
 );
 
+// The fake encoder decodes every frame at 1280x800, so 30 fps hits the bitrate floor.
 it.live.each([
-  { reported: undefined, encoded: 30 },
-  { reported: 30 as const, encoded: 30 },
-  { reported: 60 as const, encoded: 60 },
-])("agent recordings encode at the reported frame rate ($reported)", ({ reported, encoded }) =>
-  Effect.scoped(
-    Effect.gen(function* () {
-      const { browser, broker, tabId } = yield* ready;
-      if (reported !== undefined) {
-        yield* browser.reportProfiles({
-          profiles: [],
-          defaultProfileId: "default",
-          recordingFrameRate: reported,
-        });
-      }
-      yield* broker.invoke({ scope, tabId, operation: "recordingStart", input: {} });
-      expect(encoderStreamFrameRates).toEqual([encoded]);
-    }),
-  ).pipe(Effect.provide(layer)),
+  { reports: [], frameRate: 30, bitsPerSecond: 2.5e6 },
+  { reports: [30], frameRate: 30, bitsPerSecond: 2.5e6 },
+  { reports: [60], frameRate: 60, bitsPerSecond: 1280 * 800 * 60 * 0.05 },
+  { reports: [60, undefined], frameRate: 60, bitsPerSecond: 1280 * 800 * 60 * 0.05 },
+  { reports: [60, 30], frameRate: 30, bitsPerSecond: 2.5e6 },
+] satisfies ReadonlyArray<{
+  reports: ReadonlyArray<BrowserRecordingFrameRate | undefined>;
+  frameRate: number;
+  bitsPerSecond: number;
+}>)(
+  "agent recordings encode at the last reported frame rate ($reports)",
+  ({ reports, frameRate, bitsPerSecond }) =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const { browser, broker, tabId } = yield* ready;
+        for (const recordingFrameRate of reports) {
+          yield* browser.reportProfiles({
+            profiles: [],
+            defaultProfileId: "default",
+            ...(recordingFrameRate === undefined ? {} : { recordingFrameRate }),
+          });
+        }
+        yield* broker.invoke({ scope, tabId, operation: "recordingStart", input: {} });
+        expect(encoderStreams).toEqual([{ frameRate, bitsPerSecond }]);
+      }),
+    ).pipe(Effect.provide(layer)),
 );
 
 it.live("enforces provider ownership and explicit targets when a session has multiple tabs", () =>
