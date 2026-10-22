@@ -18,10 +18,6 @@ permissions:
   issues: read
   pull-requests: read
 
-concurrency:
-  group: relay-preview-${{ github.event.pull_request.number || 'sweep' }}
-  cancel-in-progress: false
-
 jobs:
   cleanup_pr:
     name: Tear down relay preview
@@ -31,6 +27,12 @@ jobs:
         (github.event.action == 'unlabeled' && github.event.label.name == 'relay:preview') ||
         (github.event.action == 'closed' && contains(github.event.pull_request.labels.*.name, 'relay:preview'))
       )
+    # Job-level so that events which skip this job, such as a closed PR without
+    # the label, never take the group's pending slot. GitHub replaces a pending
+    # run in a group with a newer one, which would drop a queued teardown.
+    concurrency:
+      group: relay-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 30
     environment:
