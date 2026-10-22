@@ -113,7 +113,6 @@ import { V2EventTimelineRow } from "./TimelineV2EventRow";
 import { useTimelinePositionRestore } from "./useTimelinePositionRestore";
 import { useThreadFindPositionReader } from "./useThreadFindPositionReader";
 import { ThreadActivityAnnouncer } from "./ThreadActivityAnnouncer";
-import { liveActivityAnnouncementLabel } from "./threadActivityAnnouncement";
 import { useStableHandoffRuns, useIncrementalTimelineRows, useStableRows } from "./useTimelineRows";
 
 function timelineListStateFor(identity: string): {
@@ -959,7 +958,6 @@ const ConversationTimeline = memo(function ConversationTimeline({
     <ThreadActivityAnnouncer
       threadKey={paintOnly ? null : listIdentityKey}
       status={awaitingUser ?? (isWorking ? "working" : "idle")}
-      activity={isWorking ? liveActivityAnnouncementLabel(rows, workspaceRoot) : null}
       runId={latestRun?.runId ?? null}
       runStatus={latestRun?.status ?? null}
     />
