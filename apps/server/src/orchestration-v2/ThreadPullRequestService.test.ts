@@ -266,6 +266,7 @@ describe("ThreadPullRequestServiceV2 reads", () => {
                   name: "project",
                 }),
             }),
+            Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
             Layer.succeed(ServerActivation.ServerActivation, Deferred.await(activation)),
             Layer.succeed(
               Crypto.Crypto,
