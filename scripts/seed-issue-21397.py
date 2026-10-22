@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""With dev stopped: python3 scripts/seed-issue-21397.py --replace [matching|absent|unrelated] [--now [ISO]].
+"""python3 scripts/seed-issue-21397.py --home NEW_DIR [matching|absent|unrelated] [--now [ISO]] [--source DB].
 
-Replaces ALL thread/project projections in this worktree's .t3 database with a
-synthetic stopped usage-limit run, so --replace is required. Run dev once to
-initialize migrations first. Never targets the live T3 home.
+Copies a migrated statev2.sqlite (default: this worktree's .t3, with dev stopped;
+run dev once first to migrate it) into NEW_DIR/userdata, then replaces every
+thread/project projection in that copy with a synthetic stopped usage-limit run.
+The source is only read as bytes, never opened by SQLite, so it stays unchanged.
+NEW_DIR must not exist and must not be under the live ~/.t3. Then run the printed
+`vp run dev --home-dir NEW_DIR`.
 
 Fixture times are frozen around the evidence clock, 2026-10-22T19:00:00Z (usage
 limit hit; reset and matching snooze at 2026-10-23T08:50:00Z). By default they
@@ -15,6 +18,8 @@ import datetime
 import json
 import pathlib
 import re
+import shlex
+import shutil
 import sqlite3
 
 EVIDENCE_CLOCK = datetime.datetime(2026, 10, 22, 19, tzinfo=datetime.timezone.utc)
@@ -35,50 +40,72 @@ def shift(value, delta):
     return value
 
 
+root = pathlib.Path(__file__).resolve().parent.parent
 parser = argparse.ArgumentParser()
 parser.add_argument('mode', nargs='?', default='matching', choices=('matching', 'absent', 'unrelated'))
-parser.add_argument('--replace', action='store_true', help='confirm deleting existing worktree projections')
+parser.add_argument('--home', required=True, type=pathlib.Path, help='new T3 home to create; must not exist')
+parser.add_argument('--source', type=pathlib.Path, default=root / '.t3/userdata/statev2.sqlite')
 parser.add_argument('--now', nargs='?', const='now', help='shift fixture times so the limit is hit at this ISO time')
 args = parser.parse_args()
 mode = args.mode
 now = None if args.now is None else datetime.datetime.now(datetime.timezone.utc) if args.now == 'now' else parse_iso(args.now)
 delta = datetime.timedelta() if now is None else now - EVIDENCE_CLOCK
 
-root = pathlib.Path(__file__).resolve().parent.parent
-path = root / '.t3/userdata/statev2.sqlite'
-if not path.is_file() or path.resolve() != path.absolute():
-    raise SystemExit('Expected a migrated, isolated worktree .t3 database')
-if not args.replace:
-    raise SystemExit(f'Refusing to replace thread and project projections in {path} without --replace')
-fixture = json.loads((root / 'scripts/fixtures/issue-21397.json').read_text())
-with sqlite3.connect(path) as db:
-    # Prevent the old V1 import from bringing unrelated conversations back.
-    tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-    for table in tables:
-        if table.startswith('orchestration_v2_projection_') and table != 'orchestration_v2_projection_metadata':
-            db.execute(f'DELETE FROM "{table}"')
-        elif table.startswith('projection_thread') or table == 'projection_projects':
-            db.execute(f'DELETE FROM "{table}"')
-    db.execute("UPDATE orchestration_v2_effect_outbox SET status='cancelled' WHERE status IN ('pending','running')")
-    for table, rows in fixture.items():
-        for row in rows:
-            row = shift(dict(row), delta)
-            if table == 'projection_projects':
-                row['workspace_root'] = str(root)
-            if table == 'orchestration_v2_projection_threads':
-                payload = json.loads(row['payload_json'])
-                if mode == 'absent':
-                    payload['snoozedUntil'] = None
-                elif mode == 'unrelated':
-                    payload['snoozedUntil'] = '2026-10-24T08:50:00.000Z'
-                row['payload_json'] = json.dumps(shift(payload, delta))
-            elif delta and 'payload_json' in row:
-                row['payload_json'] = json.dumps(shift(json.loads(row['payload_json']), delta))
-            columns = ','.join(f'"{k}"' for k in row)
-            placeholders = ','.join('?' for _ in row)
-            db.execute(f'INSERT INTO "{table}" ({columns}) VALUES ({placeholders})', list(row.values()))
-settings_path = root / '.t3/userdata/settings.json'
-settings = json.loads(settings_path.read_text()) if settings_path.exists() else {}
-settings.update(snoozeLimitedThreads=False, autoResumeLimitedThreads=False)
-settings_path.write_text(json.dumps(settings, indent=2) + '\n')
-print(f'Seeded synthetic {mode} fixture in {path} (limit hit at {now or EVIDENCE_CLOCK:%Y-%m-%dT%H:%M:%SZ})')
+source = args.source.absolute()
+if source.is_symlink() or not source.is_file():
+    raise SystemExit(f'Expected a migrated statev2.sqlite regular file at {source}')
+# Resolve the parent, not the home itself, so a symlink at the home path is refused below.
+home = args.home.absolute().parent.resolve() / args.home.name
+live = (pathlib.Path.home() / '.t3').resolve()
+if not args.home.name or home == live or live in home.parents:
+    raise SystemExit(f'Refusing fixture home {home}: pick a new directory outside {live}')
+home.parent.mkdir(parents=True, exist_ok=True)
+try:
+    home.mkdir()  # Atomic: fails on any existing file, directory, or symlink.
+except FileExistsError:
+    raise SystemExit(f'Refusing existing fixture home {home}: pick a new directory')
+
+try:
+    userdata = home / 'userdata'
+    userdata.mkdir()
+    path = userdata / 'statev2.sqlite'
+    shutil.copyfile(source, path)
+    wal = source.with_name(source.name + '-wal')
+    if wal.is_file() and not wal.is_symlink():
+        shutil.copyfile(wal, path.with_name(path.name + '-wal'))
+    fixture = json.loads((root / 'scripts/fixtures/issue-21397.json').read_text())
+    with sqlite3.connect(path) as db:
+        # Drop copied conversations, including V1 tables the server could re-import.
+        tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        for table in tables:
+            if table.startswith('orchestration_v2_projection_') and table != 'orchestration_v2_projection_metadata':
+                db.execute(f'DELETE FROM "{table}"')
+            elif table.startswith('projection_thread') or table == 'projection_projects':
+                db.execute(f'DELETE FROM "{table}"')
+        db.execute("UPDATE orchestration_v2_effect_outbox SET status='cancelled' WHERE status IN ('pending','running')")
+        for table, rows in fixture.items():
+            for row in rows:
+                row = shift(dict(row), delta)
+                if table == 'projection_projects':
+                    row['workspace_root'] = str(root)
+                if table == 'orchestration_v2_projection_threads':
+                    payload = json.loads(row['payload_json'])
+                    if mode == 'absent':
+                        payload['snoozedUntil'] = None
+                    elif mode == 'unrelated':
+                        payload['snoozedUntil'] = '2026-10-24T08:50:00.000Z'
+                    row['payload_json'] = json.dumps(shift(payload, delta))
+                elif delta and 'payload_json' in row:
+                    row['payload_json'] = json.dumps(shift(json.loads(row['payload_json']), delta))
+                columns = ','.join(f'"{k}"' for k in row)
+                placeholders = ','.join('?' for _ in row)
+                db.execute(f'INSERT INTO "{table}" ({columns}) VALUES ({placeholders})', list(row.values()))
+    db.close()
+    settings = dict(snoozeLimitedThreads=False, autoResumeLimitedThreads=False)
+    (userdata / 'settings.json').write_text(json.dumps(settings, indent=2) + '\n')
+except BaseException:
+    shutil.rmtree(home)  # Created above by this run, so it holds nothing else.
+    raise
+hit = (now or EVIDENCE_CLOCK).astimezone(datetime.timezone.utc)
+print(f'Seeded synthetic {mode} fixture in {path} (limit hit at {hit:%Y-%m-%dT%H:%M:%SZ})')
+print(f'Run: vp run dev --home-dir {shlex.quote(str(home))}')
