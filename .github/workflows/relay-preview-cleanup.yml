@@ -1,7 +1,9 @@
 name: Clean up relay preview
 
 # Tears down stage `pr-<n>` when `relay:preview` is removed or the PR closes,
-# and retries teardown for closed labeled PRs on a schedule.
+# and retries teardown for closed labeled PRs on a schedule. A label stays on a
+# PR only while its teardown is outstanding, so the scheduled retry lists
+# exactly the failures.
 #
 # This runs under pull_request_target, so the workflow and the Alchemy program
 # come from the default branch. No PR code runs here, which is why it needs no
@@ -22,6 +24,7 @@ jobs:
   cleanup_pr:
     name: Tear down relay preview
     if: >-
+      github.ref == 'refs/heads/main' &&
       github.event_name == 'pull_request_target' &&
       (
         (github.event.action == 'unlabeled' && github.event.label.name == 'relay:preview') ||
@@ -33,11 +36,16 @@ jobs:
     concurrency:
       group: relay-preview-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 30
     environment:
       name: relay-preview-cleanup
     env:
+      GH_TOKEN: ${{ github.token }}
       STAGE: pr-${{ github.event.pull_request.number }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       PLANETSCALE_ORGANIZATION: ${{ vars.PLANETSCALE_ORGANIZATION }}
@@ -77,9 +85,15 @@ jobs:
           AXIOM_TOKEN: ${{ secrets.AXIOM_TOKEN }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
 
+      # Only reached after a successful destroy. A failed one keeps the label,
+      # so the scheduled retry picks the PR up again.
+      - name: Clear the teardown marker
+        if: github.event.action == 'closed'
+        run: gh pr edit "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" --remove-label relay:preview
+
   list_closed_previews:
     name: List closed relay previews
-    if: github.event_name != 'pull_request_target'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request_target'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 10
     outputs:
@@ -103,7 +117,7 @@ jobs:
   sweep_pr:
     name: Retry teardown for PR ${{ matrix.number }}
     needs: list_closed_previews
-    if: needs.list_closed_previews.outputs.numbers != '[]'
+    if: github.ref == 'refs/heads/main' && needs.list_closed_previews.outputs.numbers != '[]'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 30
     strategy:
@@ -116,6 +130,10 @@ jobs:
     concurrency:
       group: relay-preview-${{ matrix.number }}
       cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     environment:
       name: relay-preview-cleanup
     env:
@@ -132,16 +150,16 @@ jobs:
       ALCHEMY_TELEMETRY_DISABLED: "1"
     steps:
       # The lock above is taken before this runs, so the state read here is
-      # current. A reopened or relabeled PR is left alone.
-      - name: Confirm the PR is still closed and unlabeled
+      # current. An open PR, including one reopened since the listing, is left
+      # alone. GitHub reports merged PRs as MERGED, so anything not OPEN counts.
+      - name: Confirm the PR is not open
         id: eligible
         run: |
           state=$(gh pr view "${{ matrix.number }}" --repo "$GITHUB_REPOSITORY" \
-            --json state,labels \
-            --jq 'if .state == "CLOSED" and (any(.labels[]; .name == "relay:preview") | not) then "yes" else "no" end') \
+            --json state --jq 'if .state == "OPEN" then "no" else "yes" end') \
             || { echo "Could not read PR ${{ matrix.number }}" >&2; exit 1; }
           echo "eligible=$state" >> "$GITHUB_OUTPUT"
-          [ "$state" = yes ] || echo "PR ${{ matrix.number }} is open or labeled again; leaving $STAGE alone."
+          [ "$state" = yes ] || echo "PR ${{ matrix.number }} is open again; leaving $STAGE alone."
 
       - name: Checkout default branch
         if: steps.eligible.outputs.eligible == 'yes'
@@ -172,3 +190,7 @@ jobs:
           PLANETSCALE_API_TOKEN: ${{ secrets.PLANETSCALE_API_TOKEN }}
           AXIOM_TOKEN: ${{ secrets.AXIOM_TOKEN }}
           CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+
+      - name: Clear the teardown marker
+        if: steps.eligible.outputs.eligible == 'yes'
+        run: gh pr edit "${{ matrix.number }}" --repo "$GITHUB_REPOSITORY" --remove-label relay:preview
