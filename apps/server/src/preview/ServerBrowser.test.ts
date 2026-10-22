@@ -1,4 +1,5 @@
 import * as NodeEvents from "node:events";
+import * as NodeVM from "node:vm";
 // @effect-diagnostics-next-line nodeBuiltinImport:off - Playwright download mocks perform real file operations outside the Effect runtime.
 import * as NodeFSP from "node:fs/promises";
 
@@ -49,7 +50,7 @@ vi.mock("./ServerBrowserContexts.ts", () => ({
       return context as unknown as BrowserContext;
     }
     async scratchPage() {
-      return makeContext().page as unknown as Page;
+      return makeEncoderPage() as unknown as Page;
     }
     async connectDesktopPage(endpoint: string) {
       const context = makeContext();
@@ -212,7 +213,47 @@ function makeContext(onClose?: (context: BrowserContext) => void) {
   return context;
 }
 
+// Runs the real encoder script against fake canvas and MediaRecorder globals.
+function makeEncoderPage() {
+  const canvas = {
+    width: 0,
+    height: 0,
+    getContext: () => ({ drawImage() {}, fillRect() {} }),
+    captureStream: (frameRate?: number) => {
+      encoderStreamFrameRates.push(frameRate);
+      return { getTracks: () => [] };
+    },
+  };
+  class FakeMediaRecorder {
+    static isTypeSupported = (type: string) => type === "video/webm";
+    onstart: (() => void) | null = null;
+    start() {
+      this.onstart?.();
+    }
+  }
+  const sandbox: Record<string, unknown> = {
+    document: { createElement: () => canvas },
+    Path2D: function Path2D() {},
+    MediaRecorder: FakeMediaRecorder,
+    createImageBitmap: async () => ({ width: 1280, height: 800, close() {} }),
+    atob,
+    Blob,
+    performance,
+  };
+  sandbox.window = sandbox;
+  const context = NodeVM.createContext(sandbox);
+  return {
+    ...makeContext().page,
+    evaluate: vi.fn(async (script: string | ((arg: unknown) => unknown), arg?: unknown) =>
+      typeof script === "string"
+        ? NodeVM.runInContext(script, context)
+        : NodeVM.runInContext(`(${script.toString()})`, context)(arg),
+    ),
+  };
+}
+
 const contexts: ReturnType<typeof makeContext>[] = [];
+const encoderStreamFrameRates: Array<number | undefined> = [];
 const contextRequests: Array<{ profileId: string; isolated: boolean }> = [];
 let contextGate: PromiseWithResolvers<void> | null = null;
 let pageCopy = "";
@@ -320,6 +361,7 @@ const viewerInput = (tabId: string, canOperate: boolean) => ({
 
 beforeEach(() => {
   contexts.length = 0;
+  encoderStreamFrameRates.length = 0;
   contextRequests.length = 0;
   contextGate = null;
   contextFailure = null;
@@ -414,6 +456,27 @@ it.live.each([
       committed.resolve();
       yield* Fiber.join(navigation);
       yield* Fiber.join(correction);
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.live.each([
+  { reported: undefined, encoded: 30 },
+  { reported: 30 as const, encoded: 30 },
+  { reported: 60 as const, encoded: 60 },
+])("agent recordings encode at the reported frame rate ($reported)", ({ reported, encoded }) =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, broker, tabId } = yield* ready;
+      if (reported !== undefined) {
+        yield* browser.reportProfiles({
+          profiles: [],
+          defaultProfileId: "default",
+          recordingFrameRate: reported,
+        });
+      }
+      yield* broker.invoke({ scope, tabId, operation: "recordingStart", input: {} });
+      expect(encoderStreamFrameRates).toEqual([encoded]);
     }),
   ).pipe(Effect.provide(layer)),
 );
