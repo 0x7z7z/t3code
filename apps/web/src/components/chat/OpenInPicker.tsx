@@ -58,6 +58,7 @@ import {
   RustRoverIcon,
   WebStormIcon,
 } from "../JetBrainsIcons";
+import { announce } from "~/lib/announce";
 import { cn, isMacPlatform, isWindowsPlatform } from "~/lib/utils";
 import { shellEnvironment } from "~/state/shell";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -294,6 +295,7 @@ export const OpenInPicker = memo(function OpenInPicker({
 
       e.preventDefault();
       void openInEditor(preferredEditor);
+      announce(`Opening in ${editorLabelForPlatform(preferredEditor, navigator.platform)}`);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
