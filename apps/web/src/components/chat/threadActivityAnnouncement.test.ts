@@ -67,6 +67,15 @@ describe("nextThreadAnnouncement", () => {
     expect(
       speak([idle(firstRun, "completed"), working(null, firstRun), idle(firstRun, "completed")]),
     ).toEqual(["Working"]);
+    // The previous run finished while this client looked idle.
+    expect(
+      speak([
+        idle(firstRun, "completed"),
+        idle(secondRun, "completed"),
+        { ...working(null), runStatus: "completed" },
+        idle(secondRun, "completed"),
+      ]),
+    ).toEqual(["Working"]);
   });
 
   it("announces requests once and resumes activity after them", () => {

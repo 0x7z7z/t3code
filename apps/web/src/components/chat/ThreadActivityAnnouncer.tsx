@@ -61,7 +61,12 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       lastSpokenRef.current = { at: Number.NEGATIVE_INFINITY, text: "" };
       return;
     }
-    if (announcement === null) return;
+    if (announcement === null) {
+      // A queued label is stale once nothing is live, e.g. during compaction or
+      // while a finished turn waits for its run to settle.
+      if (status !== "working" || activity === null) cancelPending();
+      return;
+    }
     // A newer update replaces one still waiting, so only current activity is read.
     cancelPending();
     if (announcement.kind === "status") {

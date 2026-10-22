@@ -103,7 +103,12 @@ export function nextThreadAnnouncement(
 
   // Work can stop a moment before the run settles; the ending waits for the run.
   const outcome = runOutcomeText(next.runStatus);
-  if (!previous.outcomePending || outcome === null || next.runId === previous.settledRunId) {
+  if (!previous.outcomePending) {
+    // A run that settled unseen is history too, or the next failed send would claim it.
+    const settledRunId = outcome === null ? previous.settledRunId : next.runId;
+    return { memory: { ...memory, settledRunId }, announcement: null };
+  }
+  if (outcome === null || next.runId === previous.settledRunId) {
     return { memory, announcement: null };
   }
   return {
