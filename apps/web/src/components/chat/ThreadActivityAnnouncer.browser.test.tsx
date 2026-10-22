@@ -22,14 +22,15 @@ describe("ThreadActivityAnnouncer", () => {
     await using screen = await render(announcer({ status: "idle", runStatus: "completed" }), {
       router: false,
     });
-    using _timers = fakeTimers();
-    const region = screen.getByRole("status").element();
+    {
+      // Restored before the assertion, which polls on real timers.
+      using _timers = fakeTimers();
+      await screen.rerender(announcer({}));
+      await screen.rerender(announcer({ activity: "Reading ChatView.tsx" }));
+      await screen.rerender(announcer({ activity: null }));
+      await act(() => vi.advanceTimersByTime(5_000));
+    }
 
-    await screen.rerender(announcer({}));
-    await screen.rerender(announcer({ activity: "Reading ChatView.tsx" }));
-    await screen.rerender(announcer({ activity: null }));
-    await act(() => vi.advanceTimersByTime(5_000));
-
-    expect(region.textContent).toBe("Working");
+    await expect.element(screen.getByRole("status")).toHaveTextContent("Working");
   });
 });
