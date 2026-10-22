@@ -56,6 +56,22 @@ describe("nextThreadAnnouncement", () => {
         idle(thirdRun, "completed"),
       ]),
     ).toEqual(["Working", "Working", "Done"]);
+    // The last turn's run is still settling when the follow-up is sent.
+    expect(
+      speak([
+        idle(firstRun, "running"),
+        busy("working", firstRun, "running"),
+        busy("working", secondRun, "starting"),
+      ]),
+    ).toEqual(["Working"]);
+    expect(
+      speak([
+        busy("working", firstRun, "running"),
+        idle(firstRun, "running"),
+        busy("working", firstRun, "running"),
+        busy("working", secondRun, "starting"),
+      ]),
+    ).toEqual(["Working"]);
   });
 
   it("stays silent when a thread opens mid-turn or after one", () => {

@@ -10,12 +10,15 @@ export interface ThreadActivitySnapshot {
 
 export interface ThreadAnnouncementMemory {
   readonly snapshot: ThreadActivitySnapshot;
-  /** Work started that has not been announced as ended yet. */
-  readonly outcomePending: boolean;
+  /**
+   * The turn under way: the run it belongs to, "unknown" until that run shows
+   * up, or null between turns. Its ending is announced once, then it clears.
+   */
+  readonly turnRunId: RunId | "unknown" | null;
   /** The run whose ending is already known, so a stale run is never announced as this turn's. */
   readonly settledRunId: RunId | null;
-  /** The run seen doing this turn's work; another one taking over is a new turn. */
-  readonly activeRunId: RunId | null;
+  /** The run shown while idle belongs to the last turn, even if it is still settling. */
+  readonly idleRunId: RunId | null;
 }
 
 const ACTIVE_RUN_STATUSES: ReadonlySet<OrchestrationV2RunStatus | null> = new Set([
@@ -48,71 +51,69 @@ export function nextThreadAnnouncement(
   previous: ThreadAnnouncementMemory | null,
   next: ThreadActivitySnapshot,
 ): { readonly memory: ThreadAnnouncementMemory; readonly announcement: string | null } {
+  const idle = next.status === "idle";
+  const idleRunId = idle ? next.runId : (previous?.idleRunId ?? null);
+  // A run doing new work; the run left over from the last turn doesn't count.
+  const newRunId =
+    !idle && ACTIVE_RUN_STATUSES.has(next.runStatus) && next.runId !== idleRunId
+      ? next.runId
+      : null;
+
   if (previous === null) {
     return {
       memory: {
         snapshot: next,
-        outcomePending: next.status !== "idle",
+        turnRunId: idle ? null : (newRunId ?? "unknown"),
         settledRunId: runOutcomeText(next.runStatus) === null ? null : next.runId,
-        activeRunId: ACTIVE_RUN_STATUSES.has(next.runStatus) ? next.runId : null,
+        idleRunId,
       },
       announcement: null,
     };
   }
-  const before = previous.snapshot.status;
-  const memory = {
-    ...previous,
-    snapshot: next,
-    activeRunId: next.status === "idle" ? null : previous.activeRunId,
-  };
+  const memory = { ...previous, snapshot: next, idleRunId };
+  const { turnRunId } = previous;
 
-  if (next.status !== "idle") {
-    const nextActiveRunId = ACTIVE_RUN_STATUSES.has(next.runStatus)
-      ? next.runId
-      : previous.activeRunId;
-    // A queued message can start as the last turn ends, without an idle moment.
-    const queuedTurnStarted =
-      next.status === "working" &&
-      previous.activeRunId !== null &&
-      nextActiveRunId !== previous.activeRunId;
+  if (!idle) {
+    // Sending can look idle for a moment before the server reports the run,
+    // so a turn is tied to its run as soon as one appears, and only another
+    // run taking over (a queued message starting) is a new turn.
+    const turnStarted =
+      turnRunId === null ||
+      (newRunId !== null && turnRunId !== "unknown" && newRunId !== turnRunId);
+    const nextTurnRunId =
+      turnStarted || turnRunId === "unknown" ? (newRunId ?? "unknown") : turnRunId;
     const announcement =
-      next.status === before && !queuedTurnStarted
-        ? null
-        : next.status === "approval"
-          ? "Needs approval"
-          : next.status === "input"
-            ? "Needs your input"
-            : // Sending can look idle for a moment before the server reports the
-              // run; that flicker is still the same turn.
-              queuedTurnStarted || (before === "idle" && !previous.outcomePending)
-              ? "Working"
-              : null;
-    return {
-      memory: { ...memory, outcomePending: true, activeRunId: nextActiveRunId },
-      announcement,
-    };
+      next.status === "approval"
+        ? previous.snapshot.status === "approval"
+          ? null
+          : "Needs approval"
+        : next.status === "input"
+          ? previous.snapshot.status === "input"
+            ? null
+            : "Needs your input"
+          : turnStarted
+            ? "Working"
+            : null;
+    return { memory: { ...memory, turnRunId: nextTurnRunId }, announcement };
   }
 
   // Work can stop a moment before the run settles; the ending waits for the run.
   const outcome = runOutcomeText(next.runStatus);
-  if (!previous.outcomePending) {
+  if (turnRunId === null) {
     // A run that settled unseen is history too, or the next failed send would claim it.
     const settledRunId = outcome === null ? previous.settledRunId : next.runId;
     return { memory: { ...memory, settledRunId }, announcement: null };
   }
   if (next.runStatus === "rolled_back") {
-    return {
-      memory: { ...memory, outcomePending: false, settledRunId: next.runId },
-      announcement: null,
-    };
+    return { memory: { ...memory, turnRunId: null, settledRunId: next.runId }, announcement: null };
   }
   if (outcome === null) return { memory, announcement: null };
   // Work stopped without a new run, e.g. a send that failed; the retry is a new turn.
   if (next.runId === previous.settledRunId) {
-    return { memory: { ...memory, outcomePending: false }, announcement: null };
+    return { memory: { ...memory, turnRunId: null }, announcement: null };
   }
   return {
-    memory: { ...memory, outcomePending: false, settledRunId: next.runId },
+    memory: { ...memory, turnRunId: null, settledRunId: next.runId },
     announcement: outcome,
   };
 }
