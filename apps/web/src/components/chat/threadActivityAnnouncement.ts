@@ -112,6 +112,10 @@ export function nextThreadAnnouncement(
   if (next.runId === previous.settledRunId) {
     return { memory: { ...memory, turnRunId: null }, announcement: null };
   }
+  // The last turn's run settling while this turn waits for its own run is not this turn's ending.
+  if (turnRunId === "unknown" && next.runId === previous.idleRunId) {
+    return { memory: { ...memory, settledRunId: next.runId }, announcement: null };
+  }
   return {
     memory: { ...memory, turnRunId: null, settledRunId: next.runId },
     announcement: outcome,

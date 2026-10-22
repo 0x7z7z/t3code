@@ -66,6 +66,15 @@ describe("nextThreadAnnouncement", () => {
     ).toEqual(["Working"]);
     expect(
       speak([
+        idle(firstRun, "running"),
+        busy("working", firstRun, "running"),
+        idle(firstRun, "completed"),
+        busy("working", secondRun, "starting"),
+        idle(secondRun, "completed"),
+      ]),
+    ).toEqual(["Working", "Done"]);
+    expect(
+      speak([
         busy("working", firstRun, "running"),
         idle(firstRun, "running"),
         busy("working", firstRun, "running"),
