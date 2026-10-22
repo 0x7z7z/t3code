@@ -85,6 +85,17 @@ describe("nextThreadAnnouncement", () => {
     ).toEqual(["Working"]);
   });
 
+  it("lets the next turn start after one is rolled back", () => {
+    expect(
+      speak([
+        idle(firstRun, "completed"),
+        busy(),
+        idle(secondRun, "rolled_back"),
+        busy("working", RunId.make("run-3")),
+      ]),
+    ).toEqual(["Working", "Working"]);
+  });
+
   it("announces each request once without repeating that work resumed", () => {
     expect(
       speak([

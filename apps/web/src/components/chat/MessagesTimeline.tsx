@@ -204,6 +204,8 @@ interface MessagesTimelineProps {
   routeThreadKey: string;
   displayThreadKey?: string;
   paintOnly?: boolean;
+  /** Off where another region already speaks the thread's status, like a subagent's bar. */
+  announceTurnStatus?: boolean;
   onOpenTurnDiff: (runId: RunId, filePath?: string) => void;
   onOpenThread: (threadId: OrchestrationV2TurnItem["threadId"]) => void;
   parentThreadLink?: {
@@ -314,6 +316,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   routeThreadKey,
   displayThreadKey,
   paintOnly = false,
+  announceTurnStatus = true,
   onOpenTurnDiff,
   onOpenThread,
   parentThreadLink = null,
@@ -956,7 +959,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   // starts from a baseline instead of a fresh, silent region.
   const activityAnnouncer = (
     <ThreadActivityAnnouncer
-      threadKey={paintOnly ? null : listIdentityKey}
+      threadKey={paintOnly || !announceTurnStatus ? null : listIdentityKey}
       status={awaitingUser ?? (isWorking ? "working" : "idle")}
       runId={latestRun?.runId ?? null}
       runStatus={latestRun?.status ?? null}
