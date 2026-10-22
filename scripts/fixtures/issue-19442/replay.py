@@ -37,8 +37,11 @@ else:
     result["medianIntervalMs"] = statistics.median(intervals) if intervals else None
     result["sub33_333msIntervals"] = sum(interval < 33.333 for interval in intervals)
     result["sub25msIntervals"] = sum(interval < 25 for interval in intervals)
-    result["peakFramesInSlidingSecond"] = max(
-        (sum(start <= stamp < start + 1 for stamp in timestamps) for start in timestamps),
-        default=0,
-    )
+    end = 0
+    peak = 0
+    for start, timestamp in enumerate(timestamps):
+        while end < len(timestamps) and timestamps[end] < timestamp + 1:
+            end += 1
+        peak = max(peak, end - start)
+    result["peakFramesInSlidingSecond"] = peak
     print(json.dumps(result, indent=2))
