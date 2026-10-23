@@ -48,6 +48,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   pullRequestAuthorChoices,
+  selectedPullRequestAuthor,
   pullRequestLabelChoices,
   pullRequestLabelColor,
   type PullRequestAuthorFacet,
@@ -305,7 +306,7 @@ function PullRequestAuthorChoices({
   const [query, setQuery] = useState("");
   const hosted = useHostedFilterOptions(scope, "authors", query);
   const login = value?.toLowerCase() ?? "";
-  const selected = options.find((option) => option.actor.login.toLowerCase() === login);
+  const selected = selectedPullRequestAuthor(options, hosted.authors, value);
   const visible = [
     ...(selected ? [selected] : []),
     ...pullRequestAuthorChoices(options, hosted.authors, query).filter(

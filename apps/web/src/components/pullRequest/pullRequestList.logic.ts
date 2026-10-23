@@ -158,6 +158,30 @@ export function pullRequestAuthorChoices(
   return [...loaded, ...added];
 }
 
+/**
+ * The author a filter names, as a choice: an author picked from the host's answer is on no
+ * loaded row, so it stays shown after the search that found it clears.
+ */
+export function selectedPullRequestAuthor(
+  facets: ReadonlyArray<PullRequestAuthorFacet>,
+  hosted: ReadonlyArray<PullRequestActor>,
+  value: string | undefined,
+): PullRequestAuthorFacet | undefined {
+  if (value === undefined) return undefined;
+  const key = normalize(value);
+  return (
+    facets.find((facet) => normalize(facet.actor.login) === key) ?? {
+      actor: hosted.find((actor) => normalize(actor.login) === key) ?? {
+        login: value,
+        name: null,
+        avatarUrl: null,
+      },
+      count: 0,
+      mergedCount: 0,
+    }
+  );
+}
+
 export function pullRequestLabelChoices(
   facets: ReadonlyArray<PullRequestLabelFacet>,
   hosted: ReadonlyArray<PullRequestLabel>,

@@ -25,6 +25,7 @@ import {
   readPullRequestListSnapshot,
   writePullRequestListSnapshot,
   pullRequestAuthorChoices,
+  selectedPullRequestAuthor,
   pullRequestLabelChoices,
   rankPullRequestMatches,
   rankPullRequestsBlockedOnAuthor,
@@ -837,6 +838,18 @@ describe("filter picker choices", () => {
       ["julius", 4],
       ["juliana", 0],
     ]);
+  });
+
+  it("keeps showing an author picked from the host's search once the search clears", () => {
+    const loaded = [{ actor: actor("julius"), count: 4, mergedCount: 3 }];
+    const hosted = [actor("Juliana", "Juliana")];
+
+    expect(selectedPullRequestAuthor(loaded, hosted, "juliana")?.actor).toEqual(
+      actor("Juliana", "Juliana"),
+    );
+    expect(selectedPullRequestAuthor(loaded, [], "juliana")?.actor.login).toBe("juliana");
+    expect(selectedPullRequestAuthor(loaded, hosted, "JULIUS")?.count).toBe(4);
+    expect(selectedPullRequestAuthor(loaded, hosted, undefined)).toBeUndefined();
   });
 
   it("keeps a loaded label's count when only the host's search found it", () => {
