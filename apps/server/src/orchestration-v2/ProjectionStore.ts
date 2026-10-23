@@ -4265,7 +4265,8 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ) AS present
             `;
             return {
-              hasConversation: conversation[0]?.present === 1,
+              // A fork inherits its source's history before it has messages of its own.
+              hasConversation: thread.forkedFrom?.type === "run" || conversation[0]?.present === 1,
               thread,
               runs,
               attempts,
@@ -7249,12 +7250,14 @@ export const layerMemory: Layer.Layer<ProjectionStoreV2> = Layer.effect(
         service.getThreadProjection(threadId).pipe(
           Effect.map((projection) => ({
             ...projection,
-            hasConversation: projection.messages.some(
-              (message) =>
-                message.role === "user" &&
-                (message.text.trim().toLowerCase() !== "/compact" ||
-                  message.attachments.length > 0),
-            ),
+            hasConversation:
+              projection.thread.forkedFrom?.type === "run" ||
+              projection.messages.some(
+                (message) =>
+                  message.role === "user" &&
+                  (message.text.trim().toLowerCase() !== "/compact" ||
+                    message.attachments.length > 0),
+              ),
             turnItems: projection.turnItems.filter((item) => item.runId === runId),
           })),
         ),
