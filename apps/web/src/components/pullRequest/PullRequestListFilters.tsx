@@ -39,6 +39,7 @@ import {
   MenuRadioGroup,
   MenuRadioItem,
   MenuRadioItemIndicator,
+  MenuSearchInput,
   MenuSeparator,
   MenuSub,
   MenuSubPopup,
@@ -262,39 +263,6 @@ function useHostedFilterOptions(
   return sent === typed ? hosted : { labels: [], authors: [], error: null, isPending: true };
 }
 
-function PullRequestOptionSearch({
-  label,
-  busy,
-  value,
-  onChange,
-}: {
-  label: string;
-  busy: boolean;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="p-1 pb-2">
-      <InputGroup>
-        <InputGroupAddon>
-          {busy ? <Spinner aria-hidden /> : <SearchIcon aria-hidden />}
-        </InputGroupAddon>
-        <InputGroupInput
-          autoFocus
-          size="compact"
-          value={value}
-          onChange={(event) => onChange(event.currentTarget.value)}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowDown" && event.key !== "Escape") event.stopPropagation();
-          }}
-          placeholder={label}
-          aria-label={label}
-        />
-      </InputGroup>
-    </div>
-  );
-}
-
 function PullRequestAuthorChoices({
   value,
   options,
@@ -319,11 +287,13 @@ function PullRequestAuthorChoices({
   const select = (next: string) => next.toLowerCase() !== login && onChange(next || undefined);
   return (
     <>
-      <PullRequestOptionSearch
-        label="Search authors"
+      <MenuSearchInput
+        autoFocus
         busy={hosted.isPending}
         value={query}
-        onChange={setQuery}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+        placeholder="Search authors"
+        aria-label="Search authors"
       />
       <MenuRadioGroup value={selected?.actor.login ?? value ?? ""} onValueChange={select}>
         <MenuRadioItem value="">
@@ -410,11 +380,13 @@ function PullRequestLabelChoices({
   ];
   return (
     <>
-      <PullRequestOptionSearch
-        label="Search labels"
+      <MenuSearchInput
+        autoFocus
         busy={hosted.isPending}
         value={query}
-        onChange={setQuery}
+        onChange={(event) => setQuery(event.currentTarget.value)}
+        placeholder="Search labels"
+        aria-label="Search labels"
       />
       {visible.length === 0 && !hosted.isPending ? (
         <MenuItem disabled>
