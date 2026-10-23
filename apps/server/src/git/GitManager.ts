@@ -49,15 +49,12 @@ import {
   resolveProjectSettings,
 } from "@t3tools/shared/projectSettings";
 import {
-  detectSourceControlProviderFromGitRemoteUrl,
   mergeGitStatusParts,
-  normalizeGitRemoteUrl,
   resolveAutoFeatureBranchName,
   sanitizeBranchFragment,
   sanitizeFeatureBranchName,
 } from "@t3tools/shared/git";
 import {
-  canonicalRepositoryKey,
   getChangeRequestTerminologyForKind,
   isSshRemoteUrl,
   type ChangeRequestTerminology,
@@ -267,7 +264,7 @@ export function pullRequestRepositoryKey(value: string): string | null {
     url.pathname = match[1];
     url.search = "";
     url.hash = "";
-    return normalizeGitRemoteUrl(url.toString());
+    return sourceControlClients.repositoryKeyFromRemote(url.toString());
   } catch {
     return null;
   }
@@ -1026,8 +1023,10 @@ export const make = Effect.gen(function* () {
                     if (
                       remoteUrl === null ||
                       pullRequestKey === null ||
-                      canonicalRepositoryKey(pullRequestKey) !==
-                        canonicalRepositoryKey(normalizeGitRemoteUrl(remoteUrl))
+                      sourceControlClients.canonicalRepositoryKey(pullRequestKey) !==
+                        sourceControlClients.canonicalRepositoryKey(
+                          sourceControlClients.repositoryKeyFromRemote(remoteUrl),
+                        )
                     ) {
                       return yield* cause;
                     }
@@ -1450,7 +1449,7 @@ export const make = Effect.gen(function* () {
     const baseUrl =
       remote.remoteUrl === null
         ? undefined
-        : detectSourceControlProviderFromGitRemoteUrl(remote.remoteUrl)?.baseUrl;
+        : sourceControlClients.recognizeRemote(remote.remoteUrl)?.baseUrl;
     const host = baseUrl === undefined ? null : urlHost(baseUrl);
     const repository = remote.repositoryNameWithOwner?.toLowerCase();
     const fromEnvironment = parseGitHubRepositorySelector(environment.GH_REPO ?? "", host ?? "");
@@ -1484,7 +1483,7 @@ export const make = Effect.gen(function* () {
       (yield* readConfigValueNullable(cwd, `remote.${preferredRemoteName}.url`)) ??
       (yield* readConfigValueNullable(cwd, "remote.origin.url"));
 
-    const provider = remoteUrl ? detectSourceControlProviderFromGitRemoteUrl(remoteUrl) : null;
+    const provider = remoteUrl ? sourceControlClients.recognizeRemote(remoteUrl) : null;
     if (!remoteUrl || provider?.kind !== "unknown") return provider;
     const handle = yield* sourceControlProviders
       .resolveHandle({
@@ -1515,7 +1514,7 @@ export const make = Effect.gen(function* () {
       /^https?:\/\//iu.test(remoteUrl) &&
       (repositoryNameWithOwner?.split("/").length ?? 0) > 2
     ) {
-      const kind = detectSourceControlProviderFromGitRemoteUrl(remoteUrl)?.kind;
+      const kind = sourceControlClients.recognizeRemote(remoteUrl)?.kind;
       const provider =
         kind === undefined
           ? undefined
@@ -1526,7 +1525,7 @@ export const make = Effect.gen(function* () {
     }
     return {
       remoteUrl,
-      remoteUrlKey: remoteUrl ? normalizeGitRemoteUrl(remoteUrl) : null,
+      remoteUrlKey: remoteUrl ? sourceControlClients.repositoryKeyFromRemote(remoteUrl) : null,
       repositoryNameWithOwner,
       ownerLogin: parseRepositoryOwnerLogin(repositoryNameWithOwner),
     };
@@ -2485,7 +2484,9 @@ export const make = Effect.gen(function* () {
         remoteName === null
           ? Effect.succeed(null)
           : readConfig(`remote.${remoteName}.url`).pipe(
-              Effect.map((remoteUrl) => (remoteUrl ? normalizeGitRemoteUrl(remoteUrl) : null)),
+              Effect.map((remoteUrl) =>
+                remoteUrl ? sourceControlClients.repositoryKeyFromRemote(remoteUrl) : null,
+              ),
             );
       const remoteName = remoteNameOverride ?? (yield* readConfig(`branch.${branch}.remote`));
       const [headRemoteUrlKey, targetRemoteUrlKey] =
