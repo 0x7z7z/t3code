@@ -448,20 +448,48 @@ describe("GitCafePullRequestProvider", () => {
     }).pipe(Effect.provide(server.layer));
   });
 
-  it.effect("leaves an author GitCafe has no profile for to be narrowed by login", () => {
-    const server = fakeGitCafe({ "GET /repos/owner/repo/pulls": { items: [pull], next: null } });
+  it.effect("finds a GitHub-synced author's actor on their pull requests to narrow by it", () => {
+    const synced = {
+      ...pull,
+      number: 8,
+      author: { kind: "github", actorId: "act_synced", login: "Synced", avatarUrl: null },
+    };
+    const server = fakeGitCafe({
+      "GET /repos/owner/repo/pulls": (request: SentRequest) =>
+        request.query.get("authors") === '["act_synced"]'
+          ? { items: [synced], next: null }
+          : request.query.get("after") === null
+            ? { items: [pull], next: "o1" }
+            : { items: [synced], next: null },
+    });
     return Effect.gen(function* () {
       const provider = yield* GitCafePullRequestProvider.make;
-      const page = yield* provider.listChangeRequests({
-        ...target,
-        state: "open",
-        involvement: "all",
-        viewer: "alice",
-        limit: 10,
-        filters: { author: "synced-only" },
-      });
-      assert.strictEqual(page.items.length, 1);
-      assert.isNull(server.sent.at(-1)!.query.get("authors"));
+      const list = (author: string) =>
+        provider.listChangeRequests({
+          ...target,
+          state: "open",
+          involvement: "all",
+          viewer: "alice",
+          limit: 10,
+          filters: { author },
+        });
+      const page = yield* list("synced");
+      assert.deepStrictEqual(
+        page.items.map((item) => item.number),
+        [8],
+      );
+      assert.strictEqual(server.sent.at(-1)!.query.get("authors"), '["act_synced"]');
+      // Once seen, the actor is narrowed by straight away.
+      const sentBefore = server.sent.length;
+      yield* list("synced");
+      assert.deepStrictEqual(
+        server.sent.slice(sentBefore).map((request) => request.query.get("authors")),
+        [null, '["act_synced"]'],
+      );
+      // An author on none of the pages it reads gets nothing rather than unnarrowed rows a
+      // continuation would count against a different listing.
+      const missing = yield* list("nobody");
+      assert.deepStrictEqual(missing, { items: [], truncated: false, continues: false });
     }).pipe(Effect.provide(server.layer));
   });
 
