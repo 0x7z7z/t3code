@@ -201,8 +201,10 @@ interface MessagesTimelineProps {
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReadonlyArray<TimelineEntry>;
   latestRun: TimelineLatestRun | null;
-  /** The live shell saw latestRun end before this thread's detail did. */
-  latestRunBehind?: boolean;
+  /** The run the screen reader announcer follows; see announcedRun. */
+  announcedRun?: { readonly runId: RunId; readonly status: TimelineLatestRun["status"] } | null;
+  /** See isDetailBehindShell. */
+  detailBehindShell?: boolean;
   runningRunId?: RunId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   routeThreadKey: string;
@@ -316,7 +318,8 @@ const ConversationTimeline = memo(function ConversationTimeline({
   findNavigationId = 0,
   findPositionReaderRef,
   latestRun,
-  latestRunBehind = false,
+  announcedRun = null,
+  detailBehindShell = false,
   runningRunId = null,
   turnDiffSummaries,
   routeThreadKey,
@@ -968,9 +971,9 @@ const ConversationTimeline = memo(function ConversationTimeline({
       threadKey={paintOnly || !announceTurnStatus ? null : listIdentityKey}
       status={awaitingUser ?? (isWorking ? "working" : "idle")}
       requestId={awaitingRequestId}
-      runId={latestRun?.runId ?? null}
-      runStatus={latestRun?.status ?? null}
-      detailBehind={latestRunBehind}
+      runId={announcedRun?.runId ?? null}
+      runStatus={announcedRun?.status ?? null}
+      detailBehind={detailBehindShell}
     />
   );
   const listHeaderLeadingContent =

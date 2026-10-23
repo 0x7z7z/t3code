@@ -1,8 +1,15 @@
-import { RunId } from "@t3tools/contracts";
+import {
+  MessageId,
+  type OrchestrationV2Run,
+  ProviderInstanceId,
+  RunId,
+  ThreadId,
+} from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
-  isDetailRunBehindShell,
+  announcedRun,
   nextThreadAnnouncement,
   type ThreadActivitySnapshot,
   type ThreadAnnouncementMemory,
@@ -118,27 +125,32 @@ describe("nextThreadAnnouncement", () => {
     expect(speak([busy(), idle(secondRun, "failed")])).toEqual(["Failed"]);
   });
 
-  it("stays silent when a thread reopens after its turn ended while it was closed", () => {
-    // The cached detail still shows the run working until it catches up with the live shell.
-    const frames = [busy(), idle(secondRun, "completed")];
-    const shellRun = { runId: secondRun, status: "completed" } as const;
-    const current = frames.filter(
-      (frame) =>
-        !isDetailRunBehindShell(
-          frame.runId === null || frame.runStatus === null
-            ? null
-            : { runId: frame.runId, status: frame.runStatus },
-          shellRun,
-        ),
-    );
-    expect(speak(current)).toEqual([]);
-    expect(isDetailRunBehindShell({ runId: secondRun, status: "running" }, null)).toBe(false);
-    expect(
-      isDetailRunBehindShell(
-        { runId: secondRun, status: "running" },
-        { runId: firstRun, status: "completed" },
-      ),
-    ).toBe(false);
+  it("says how the turn ended when a queued message was cancelled before it started", () => {
+    const now = DateTime.makeUnsafe("2026-06-20T00:00:00.000Z");
+    const run = (id: RunId, ordinal: number, status: OrchestrationV2Run["status"]) =>
+      ({
+        id,
+        threadId: ThreadId.make("thread-1"),
+        ordinal,
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+        providerThreadId: null,
+        userMessageId: MessageId.make(`message-${ordinal}`),
+        rootNodeId: null,
+        activeAttemptId: null,
+        status,
+        requestedAt: now,
+        startedAt: status === "cancelled" ? null : now,
+        completedAt: now,
+        checkpointId: null,
+        contextHandoffId: null,
+      }) satisfies OrchestrationV2Run;
+    const cancelledRun = RunId.make("run-3");
+    const ended = announcedRun({ runId: cancelledRun, status: "cancelled", startedAt: null }, [
+      run(secondRun, 1, "completed"),
+      run(cancelledRun, 2, "cancelled"),
+    ]);
+    expect(speak([busy(), idle(ended?.runId ?? null, ended?.status ?? null)])).toEqual(["Done"]);
   });
 
   it("waits for the run to settle before announcing how the turn ended", () => {

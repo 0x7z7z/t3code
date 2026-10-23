@@ -1,6 +1,6 @@
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
-import { isDetailRunBehindShell } from "./chat/threadActivityAnnouncement";
+import { announcedRun, isDetailBehindShell } from "./chat/threadActivityAnnouncement";
 import {
   deriveAvailableRevertTurnCounts,
   deriveThreadPendingBackgroundTasks,
@@ -3327,9 +3327,14 @@ export default function ChatView(props: ChatViewProps) {
                 listRef={legendListRef}
                 runs={paintOnlyDisplayedTimeline ? [] : (serverProjection?.runs ?? [])}
                 latestRun={paintOnlyDisplayedTimeline ? null : activeActivityRun}
-                latestRunBehind={
+                announcedRun={
+                  paintOnlyDisplayedTimeline
+                    ? null
+                    : announcedRun(activeActivityRun, serverProjection?.runs ?? [])
+                }
+                detailBehindShell={
                   !paintOnlyDisplayedTimeline &&
-                  isDetailRunBehindShell(activeActivityRun, activeThreadShell?.latestRun ?? null)
+                  isDetailBehindShell(activeLatestRun, activeThreadShell?.latestRun ?? null)
                 }
                 runningRunId={paintOnlyDisplayedTimeline ? null : activeRunningTurnId}
                 turnDiffSummaries={

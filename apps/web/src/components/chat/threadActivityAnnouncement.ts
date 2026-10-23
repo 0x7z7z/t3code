@@ -1,4 +1,5 @@
-import type { OrchestrationV2RunStatus, RunId } from "@t3tools/contracts";
+import type { OrchestrationV2Run, OrchestrationV2RunStatus, RunId } from "@t3tools/contracts";
+import { latestExecutedRun } from "@t3tools/shared/orchestrationV2ThreadError";
 
 export type ThreadActivityStatus = "working" | "approval" | "input" | "idle";
 
@@ -55,25 +56,30 @@ interface RunState {
   readonly status: OrchestrationV2RunStatus;
 }
 
-const hasEnded = (status: OrchestrationV2RunStatus) =>
-  runOutcomeText(status) !== null || status === "rolled_back";
+/**
+ * The thread's detail hasn't caught up with the live thread shell: it isn't
+ * loaded yet, or a cached copy still shows an older run or state. Reading such
+ * a frame as the baseline replays what already happened, so it's skipped.
+ */
+export function isDetailBehindShell(detailRun: RunState | null, shellRun: RunState | null) {
+  return (
+    shellRun !== null &&
+    (detailRun?.runId !== shellRun.runId || detailRun.status !== shellRun.status)
+  );
+}
 
 /**
- * Reopening a thread can paint its cached detail, still working on a run the
- * live thread shell already saw end. Reading that frame as the baseline would
- * announce the ending once the detail catches up, so it's skipped instead.
+ * A queued message cancelled before it started keeps its place in line, so it
+ * shows up as the thread's latest run. It never ran, so the turn ended however
+ * the last run that did ran.
  */
-export function isDetailRunBehindShell(
-  detailRun: RunState | null,
-  shellRun: RunState | null,
-): boolean {
-  return (
-    detailRun !== null &&
-    shellRun !== null &&
-    detailRun.runId === shellRun.runId &&
-    hasEnded(shellRun.status) &&
-    !hasEnded(detailRun.status)
-  );
+export function announcedRun(
+  activityRun: (RunState & { readonly startedAt: string | null }) | null,
+  runs: ReadonlyArray<OrchestrationV2Run>,
+): RunState | null {
+  if (activityRun?.status !== "cancelled" || activityRun.startedAt !== null) return activityRun;
+  const run = latestExecutedRun(runs);
+  return run === null ? null : { runId: run.id, status: run.status };
 }
 
 /**

@@ -20,7 +20,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
 }: ThreadActivitySnapshot & {
   /** Null while the timeline shows another thread during a switch. */
   readonly threadKey: string | null;
-  /** The thread's detail hasn't caught up with how its run ended; see isDetailRunBehindShell. */
+  /** See isDetailBehindShell. */
   readonly detailBehind: boolean;
 }) {
   const regionRef = useRef<HTMLDivElement>(null);
