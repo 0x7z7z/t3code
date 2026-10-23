@@ -62,7 +62,8 @@ export function installPremiereHostBridge(): () => void {
   if (!isPremierePanel()) return () => {};
   const onMessage = (event: MessageEvent<unknown>) => {
     // The installed CEP document is file-backed; other frames cannot impersonate its WindowProxy.
-    if (event.source !== window.parent || event.origin !== "null") return;
+    if (event.source !== window.parent || (event.origin !== "null" && event.origin !== "file://"))
+      return;
     if (typeof event.data !== "object" || event.data === null) return;
     const packet = event.data as Record<string, unknown>;
     if (packet.type !== "premiere.context" || packet.protocol !== 1) return;

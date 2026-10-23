@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import {
   formatPremierePrompt,
   parsePremiereContext,
   samePremiereScope,
   type PremiereContext,
+  installPremiereHostBridge,
+  getPremiereHostState,
 } from "./host";
 
 const context: PremiereContext = {
@@ -15,6 +17,36 @@ const context: PremiereContext = {
   fps: 30000 / 1001,
   playheadSeconds: 0,
 };
+
+describe("CEP parent messages", () => {
+  it.each(["null", "file://"])("receives context from its file-backed parent (%s)", (origin) => {
+    const parent = { postMessage: vi.fn() };
+    let receive: (event: unknown) => void = () => {};
+    vi.stubGlobal("window", {
+      name: "premiere-assistant-v1",
+      parent,
+      addEventListener: (_type: string, listener: typeof receive) => {
+        receive = listener;
+      },
+      removeEventListener: vi.fn(),
+    });
+    const dispose = installPremiereHostBridge();
+    try {
+      const data = { type: "premiere.context", protocol: 1, context };
+      receive({ source: {}, origin, data });
+      expect(getPremiereHostState().connected).toBe(false);
+      receive({ source: parent, origin: "https://unrelated.example", data });
+      expect(getPremiereHostState().connected).toBe(false);
+      receive({ source: parent, origin, data });
+      expect(getPremiereHostState()).toEqual({ connected: true, context });
+      receive({ source: parent, origin, data: { ...data, context: null } });
+      expect(getPremiereHostState()).toEqual({ connected: true, context: null });
+    } finally {
+      dispose();
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("Premiere host context", () => {
   it("retains fractional frame rates and a playhead at zero", () => {
