@@ -641,10 +641,13 @@ export const make = Effect.gen(function* () {
         );
         const limit = Math.max(1, input.limit);
         const items: Array<Json.GitCafePull> = [];
+        // GitCafe pages by an opaque token and orders by creation, so a continuation counts past
+        // the rows already delivered rather than asking for older ones.
+        let skip = input.cursor?.delivered ?? 0;
         let next: string | null = null;
         do {
           const query = new URLSearchParams({
-            limit: String(Math.min(PAGE_SIZE, limit - items.length)),
+            limit: String(Math.min(PAGE_SIZE, skip + limit - items.length)),
             sort: "newest",
           });
           if (input.state !== "all") query.set("state", input.state);
@@ -662,7 +665,9 @@ export const make = Effect.gen(function* () {
             { path: `${base}/pulls?${query}` },
             Json.GitCafePulls,
           );
-          items.push(...page.items);
+          const skipped = Math.min(skip, page.items.length);
+          skip -= skipped;
+          items.push(...page.items.slice(skipped));
           next = page.items.length === 0 ? null : page.next;
         } while (next !== null && items.length < limit);
         return {
@@ -676,7 +681,7 @@ export const make = Effect.gen(function* () {
               : item;
           }),
           truncated: next !== null,
-          continues: false,
+          continues: true,
         };
       },
     ),

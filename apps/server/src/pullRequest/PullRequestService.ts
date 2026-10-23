@@ -123,6 +123,7 @@ function supersedesReading(current: PullRequestReading | undefined, next: PullRe
 const DEFAULT_REPOSITORY_LIST_LIMIT = 99;
 const REPOSITORY_CONCURRENCY = 12;
 const REPOSITORY_SEARCH_CHUNK = 100;
+const FILTERED_LIST_READS = 5;
 
 /**
  * Every read leaves the process — a CLI per repository, against hosts whose limits are low
@@ -1165,11 +1166,13 @@ export const make = Effect.gen(function* () {
     const cursorOf = (project: SupportedProject): ListCursor | undefined =>
       continuation?.get(project.cursorKey);
 
-    const readRepository = (project: SupportedProject): Effect.Effect<RepositoryBatch> => {
+    const readSlice = (
+      project: SupportedProject,
+      cursor: ListCursor | undefined,
+    ): Effect.Effect<RepositoryBatch> => {
       {
         const viewer = viewers[project.host]!;
         const key = project.cursorKey;
-        const cursor = cursorOf(project);
         return project.api
           .listChangeRequests({
             cwd: project.project.workspaceRoot,
@@ -1233,6 +1236,32 @@ export const make = Effect.gen(function* () {
             })),
           );
       }
+    };
+
+    // Filters a host cannot apply thin out the slices it hands over, so a repository keeps
+    // reading until it has a page's worth or runs out. The reads are bounded: a filter that
+    // matches nothing would otherwise walk the repository's whole history in one request.
+    const readRepository = (project: SupportedProject): Effect.Effect<RepositoryBatch> => {
+      const fill = (batch: RepositoryBatch, reads: number): Effect.Effect<RepositoryBatch> => {
+        const cursor = batch.nextCursor === null ? null : parseListCursor(batch.nextCursor);
+        if (
+          input.filters === undefined ||
+          cursor === null ||
+          batch.entries.length >= limit ||
+          reads >= FILTERED_LIST_READS
+        ) {
+          return Effect.succeed(batch);
+        }
+        return readSlice(project, cursor).pipe(
+          Effect.flatMap((next) =>
+            // A slice that failed keeps the cursor before it, so the reader can try again.
+            next.errors.length > 0
+              ? Effect.succeed(batch)
+              : fill({ ...next, entries: [...batch.entries, ...next.entries] }, reads + 1),
+          ),
+        );
+      };
+      return readSlice(project, cursorOf(project)).pipe(Effect.flatMap((batch) => fill(batch, 1)));
     };
 
     const readTogether = (

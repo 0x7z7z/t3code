@@ -465,6 +465,34 @@ describe("GitCafePullRequestProvider", () => {
     }).pipe(Effect.provide(server.layer));
   });
 
+  it.effect("carries a listing on past the rows it already delivered", () => {
+    const pulls = [1, 2, 3, 4, 5].map((number) => ({ ...pull, number }));
+    const server = fakeGitCafe({
+      "GET /repos/owner/repo/pulls": (request: SentRequest) => {
+        const offset = Number(request.query.get("after")?.slice(1) ?? 0);
+        const end = offset + Number(request.query.get("limit"));
+        return { items: pulls.slice(offset, end), next: end < pulls.length ? `o${end}` : null };
+      },
+    });
+    return Effect.gen(function* () {
+      const provider = yield* GitCafePullRequestProvider.make;
+      const page = yield* provider.listChangeRequests({
+        ...target,
+        state: "open",
+        involvement: "all",
+        viewer: "alice",
+        limit: 2,
+        cursor: { updatedBefore: timestamp, delivered: 2 },
+      });
+      assert.deepStrictEqual(
+        page.items.map((item) => item.number),
+        [3, 4],
+      );
+      assert.isTrue(page.truncated);
+      assert.isTrue(page.continues);
+    }).pipe(Effect.provide(server.layer));
+  });
+
   it.effect("lists nothing for a viewer the token does not belong to", () => {
     const server = fakeGitCafe({
       "GET /auth/principal": { actorId: "act_two", handle: "bob" },
