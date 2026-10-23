@@ -272,7 +272,18 @@ export const make = Effect.gen(function* () {
         const query = { ...input, path: `${repoPath(input)}/pulls?${params}` };
         // Self-hosted servers may cap pages below 50. Establish their actual page size before
         // translating the service's row offset into an API page number.
-        const first = yield* readPage(query, Schema.NullOr(ForgejoPullRequest), 1);
+        const first = yield* readPage(query, Schema.NullOr(ForgejoPullRequest), 1).pipe(
+          Effect.catchTags({
+            // Forgejo answers a `poster` naming no account with a 400: nobody to list for.
+            PullRequestProviderError: (error) =>
+              params.has("poster") &&
+              isForgejoCliError(error.cause) &&
+              error.cause.httpStatus === 400
+                ? Effect.succeed(null)
+                : Effect.fail(error),
+          }),
+        );
+        if (first === null) return { items: [], truncated: false, continues: false };
         const pageSize = first.rows.length || 50;
         const firstIndex = Math.floor(offset / pageSize) + 1;
         let consumed = 0;
