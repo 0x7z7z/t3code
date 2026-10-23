@@ -105,7 +105,8 @@ export const make = Effect.gen(function* () {
           }),
       ),
     );
-  const read = Effect.fn("ForgejoPullRequestProvider.read")(function* <A>(
+  /** A response, and whether its `link` header points at a further page. */
+  const readLinked = Effect.fn("ForgejoPullRequestProvider.readLinked")(function* <A>(
     input: ForgejoCli.ForgejoApiInput,
     schema: Schema.Codec<A, unknown, never, never>,
   ) {
@@ -113,10 +114,15 @@ export const make = Effect.gen(function* () {
     if (result.stdoutTruncated)
       return yield* failure(input.path, "Forgejo response exceeded the output limit.");
     const decoded = decodeJsonResult(schema)(result.stdout);
-    return Result.isSuccess(decoded)
-      ? decoded.success
-      : yield* failure(input.path, "Forgejo returned an invalid response.", decoded.failure);
+    if (Result.isFailure(decoded))
+      return yield* failure(input.path, "Forgejo returned an invalid response.", decoded.failure);
+    const links = /^link:\s*(.*)$/im.exec(result.stderr)?.[1];
+    return { value: decoded.success, next: links !== undefined && /rel="?next"?/i.test(links) };
   });
+  const read = <A>(
+    input: ForgejoCli.ForgejoApiInput,
+    schema: Schema.Codec<A, unknown, never, never>,
+  ) => readLinked(input, schema).pipe(Effect.map(({ value }) => value));
   const readArray = <A>(
     input: ForgejoCli.ForgejoApiInput,
     schema: Schema.Codec<A, unknown, never, never>,
@@ -664,15 +670,19 @@ export const make = Effect.gen(function* () {
           );
           return { items: actors(users.items), truncated: users.truncated };
         }
-        const found = yield* read(
+        const found = yield* readLinked(
           {
             ...input,
             path: `users/search?${new URLSearchParams({ q: query, limit: String(USER_SEARCH_LIMIT) })}`,
           },
           ForgejoUserSearch,
         );
-        const users = found.data ?? [];
-        return { items: actors(users), truncated: users.length >= USER_SEARCH_LIMIT };
+        const users = found.value.data ?? [];
+        // A server may cap pages below the limit asked for; its `link` header still says more.
+        return {
+          items: actors(users),
+          truncated: found.next || users.length >= USER_SEARCH_LIMIT,
+        };
       },
     ),
     setLabels: Effect.fn("ForgejoPullRequestProvider.setLabels")(function* (input) {
