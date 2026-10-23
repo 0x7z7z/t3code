@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
-import { type ThreadId } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -12,6 +12,7 @@ import { newMessageId, newThreadId } from "../lib/utils";
 import { useProjects, useThreadShellsForProjectRefs } from "../state/entities";
 import { useEnvironmentProviders, useEnvironments } from "../state/environments";
 import { useEnvironmentShellStatus } from "../state/shell";
+import { useEnvironmentScope } from "../state/session";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
@@ -38,6 +39,7 @@ export function PremiereApp() {
     ? { environmentId: project.environmentId, projectId: project.id }
     : null;
   const environmentId = project?.environmentId ?? environments[0]?.environmentId ?? null;
+  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const providers = environmentId ? (providerMap.get(environmentId) ?? []) : [];
   const [providerKey, setProviderKey] = useState<string | null>(null);
   const provider = selectEditingProvider(providers, providerKey);
@@ -129,6 +131,7 @@ export function PremiereApp() {
       !draft.trim() ||
       inFlight.current ||
       !ready ||
+      !canOperate ||
       !host.connected ||
       (selectedThread !== null && !thread) ||
       running ||
@@ -645,6 +648,7 @@ export function PremiereApp() {
               disabled={
                 busy ||
                 !ready ||
+                !canOperate ||
                 (selectedThread !== null && !thread) ||
                 !host.connected ||
                 !provider ||
