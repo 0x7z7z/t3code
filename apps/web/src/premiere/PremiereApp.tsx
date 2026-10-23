@@ -23,6 +23,7 @@ import {
   samePremiereScope,
 } from "./host";
 import { editingModelOptions } from "./models";
+import { selectEditingModel, selectEditingProvider, selectEditingWorkspace } from "./selection";
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
@@ -32,27 +33,19 @@ export function PremiereApp() {
   const providerMap = useEnvironmentProviders();
   const host = useSyncExternalStore(subscribePremiereHost, getPremiereHostState);
   const [workspaceKey, setWorkspaceKey] = useState<string | null>(null);
-  const project =
-    projects.find((candidate) => `${candidate.environmentId}:${candidate.id}` === workspaceKey) ??
-    projects[0] ??
-    null;
+  const project = selectEditingWorkspace(projects, workspaceKey);
   const projectRef = project
     ? { environmentId: project.environmentId, projectId: project.id }
     : null;
   const environmentId = project?.environmentId ?? environments[0]?.environmentId ?? null;
   const providers = environmentId ? (providerMap.get(environmentId) ?? []) : [];
   const [providerKey, setProviderKey] = useState<string | null>(null);
-  const provider =
-    providers.find((candidate) => candidate.instanceId === providerKey) ??
-    providers.find((candidate) => candidate.enabled && candidate.installed) ??
-    null;
+  const provider = selectEditingProvider(providers, providerKey);
   const [modelKey, setModelKey] = useState<string | null>(null);
-  const model =
-    provider?.models.find((candidate) => candidate.slug === modelKey) ??
-    provider?.models.find((candidate) => /gpt-6[.-]luna/i.test(candidate.slug)) ??
-    provider?.models.find((candidate) => candidate.isDefault) ??
-    provider?.models[0] ??
-    null;
+  const model = selectEditingModel(provider?.models ?? [], modelKey);
+  if (workspaceKey === null && project) setWorkspaceKey(`${project.environmentId}:${project.id}`);
+  if (providerKey === null && provider) setProviderKey(provider.instanceId);
+  if (modelKey === null && model) setModelKey(model.slug);
   const [optionValues, setOptionValues] = useState<Record<string, string | boolean>>({});
   const threads = useThreadShellsForProjectRefs(projectRef ? [projectRef] : []).filter(
     (thread) => thread.archivedAt === null && thread.deletedAt === null,
@@ -136,6 +129,8 @@ export function PremiereApp() {
       !draft.trim() ||
       inFlight.current ||
       !ready ||
+      !host.connected ||
+      (selectedThread !== null && !thread) ||
       running ||
       otherActive
     )
@@ -230,10 +225,19 @@ export function PremiereApp() {
             onChange={(event) => {
               setWorkspaceKey(event.target.value);
               setSelectedThread(null);
+              setProviderKey(null);
+              setModelKey(null);
+              setOptionValues({});
             }}
           >
             {!project ? (
-              <option value="">{pairing ? "Connecting..." : "Loading workspace..."}</option>
+              <option value="">
+                {workspaceKey !== null
+                  ? "Selected workspace unavailable"
+                  : pairing
+                    ? "Connecting..."
+                    : "Loading workspace..."}
+              </option>
             ) : null}
             {projects.map((candidate) => (
               <option
@@ -280,6 +284,9 @@ export function PremiereApp() {
           }}
         >
           <option value="">New conversation</option>
+          {selectedThread !== null && !thread ? (
+            <option value={selectedThread}>Selected conversation unavailable</option>
+          ) : null}
           {threads.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
               {candidate.title}
@@ -525,7 +532,11 @@ export function PremiereApp() {
               setOptionValues({});
             }}
           >
-            {!provider ? <option value="">Connect an account</option> : null}
+            {!provider ? (
+              <option value="">
+                {providerKey !== null ? "Selected account unavailable" : "Connect an account"}
+              </option>
+            ) : null}
             {providers
               .filter((candidate) => candidate.enabled)
               .map((candidate) => (
@@ -544,6 +555,11 @@ export function PremiereApp() {
               setOptionValues({});
             }}
           >
+            {!model ? (
+              <option value="">
+                {modelKey !== null ? "Selected model unavailable" : "Choose a model"}
+              </option>
+            ) : null}
             {provider?.models.map((candidate) => (
               <option key={candidate.slug} value={candidate.slug}>
                 {candidate.name}
@@ -629,6 +645,7 @@ export function PremiereApp() {
               disabled={
                 busy ||
                 !ready ||
+                (selectedThread !== null && !thread) ||
                 !host.connected ||
                 !provider ||
                 !model ||
