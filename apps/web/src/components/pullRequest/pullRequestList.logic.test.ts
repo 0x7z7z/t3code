@@ -852,6 +852,18 @@ describe("filter picker choices", () => {
     expect(selectedPullRequestAuthor(loaded, hosted, undefined)).toBeUndefined();
   });
 
+  it("puts the host's authors after the first loaded matches rather than after all of them", () => {
+    const loaded = Array.from({ length: 40 }, (_, index) => ({
+      actor: actor(`dev-${index}`),
+      count: 1,
+      mergedCount: 0,
+    }));
+
+    const choices = pullRequestAuthorChoices(loaded, [actor("dev-from-host")], "dev");
+
+    expect(choices.slice(0, 30).map((choice) => choice.actor.login)).toContain("dev-from-host");
+  });
+
   it("keeps a loaded label's count when only the host's search found it", () => {
     const loaded = [{ name: "size:XL", color: "d93f0b", count: 7 }];
 

@@ -390,6 +390,7 @@ export function usePullRequestFilterOptions(
   return {
     labels: query.values.flatMap(([, options]) => options.labels),
     authors: query.values.flatMap(([, options]) => options.authors),
+    error: query.error,
     isPending: query.isPending,
   };
 }

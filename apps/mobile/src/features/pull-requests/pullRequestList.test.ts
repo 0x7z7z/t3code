@@ -359,4 +359,16 @@ describe("pullRequestFilterChoices", () => {
       }),
     ).toEqual(["size:XL", "bug", "backend"]);
   });
+
+  it("leaves room for the host's answers when loaded matches alone would fill the list", () => {
+    const loaded = Array.from({ length: 120 }, (_, index) => `label-${index}`);
+    const rows = pullRequestFilterChoices({
+      selected: [],
+      suggestions: loaded,
+      hosted: ["label-from-host"],
+      query: "label",
+    });
+    expect(rows).toHaveLength(100);
+    expect(rows[50]).toBe("label-from-host");
+  });
 });

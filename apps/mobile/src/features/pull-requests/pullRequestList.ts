@@ -189,6 +189,8 @@ export function appendPullRequestListPage(
  * then the host's answers, each once. The host matched its own way (an author's display name, say),
  * so its answers are not narrowed again here.
  */
+const FILTER_CHOICE_LIMIT = 100;
+
 export function pullRequestFilterChoices(input: {
   readonly selected: readonly string[];
   readonly suggestions: readonly string[];
@@ -204,10 +206,13 @@ export function pullRequestFilterChoices(input: {
     seen.add(key);
     rows.push(value);
   };
+  const loaded = input.suggestions.filter((value) => value.toLowerCase().includes(needle));
   for (const value of input.selected) add(value);
-  for (const value of input.suggestions) if (value.toLowerCase().includes(needle)) add(value);
+  // Loaded matches alone could fill the list, so the host's answers get room after the first half.
+  for (const value of loaded.slice(0, FILTER_CHOICE_LIMIT / 2)) add(value);
   for (const value of input.hosted) add(value);
-  return rows.slice(0, 100);
+  for (const value of loaded.slice(FILTER_CHOICE_LIMIT / 2)) add(value);
+  return rows.slice(0, FILTER_CHOICE_LIMIT);
 }
 
 export function pullRequestListFacets(entries: readonly PullRequestListEntry[]) {

@@ -42,6 +42,7 @@ const optionsFamily = Atom.family((key: string) => {
     return {
       values: results.flatMap((result) => Option.toArray(AsyncResult.value(result))),
       waiting: results.some((result) => result.waiting),
+      failed: results.some(AsyncResult.isFailure),
     };
   });
 });
@@ -54,7 +55,10 @@ export function PullRequestFilterSearchScreen({
   const listControls = usePullRequestListControls();
   const controls = listControls.controlsFor(environmentId);
   const [query, setQuery] = useState("");
-  const sent = useDebouncedValue(query.trim().slice(0, 100), 250);
+  const typed = query.trim().slice(0, 100);
+  const sent = useDebouncedValue(typed, 250);
+  // Until the search catches up with the typing, the host's answers are for older text.
+  const settled = sent === typed;
   const key = JSON.stringify(
     environmentIds.map((id) => ({
       environmentId: EnvironmentId.make(id),
@@ -72,7 +76,7 @@ export function PullRequestFilterSearchScreen({
   const rows = pullRequestFilterChoices({
     selected,
     suggestions,
-    hosted: hosted.values.flatMap((options) =>
+    hosted: (settled ? hosted.values : []).flatMap((options) =>
       kind === "labels"
         ? options.labels.map((label) => label.name)
         : options.authors.map((candidate) => candidate.login),
@@ -167,16 +171,24 @@ export function PullRequestFilterSearchScreen({
           </Pressable>
         )}
         ListEmptyComponent={
-          hosted.waiting ? (
+          hosted.waiting || !settled ? (
             <AppActivityIndicator className="my-8" />
           ) : (
             <View className="px-4 py-6">
               <EmptyState
-                title={kind === "labels" ? "No matching labels" : "No matching authors"}
+                title={
+                  hosted.failed
+                    ? "Couldn't search the host"
+                    : kind === "labels"
+                      ? "No matching labels"
+                      : "No matching authors"
+                }
                 detail={
-                  kind === "labels"
-                    ? "Search the labels of the repositories this list covers."
-                    : "Search people by name or handle on the repositories' hosts."
+                  hosted.failed
+                    ? "The host didn't answer. Try again in a moment."
+                    : kind === "labels"
+                      ? "Search the labels of the repositories this list covers."
+                      : "Search people by name or handle on the repositories' hosts."
                 }
                 variant="plain"
               />

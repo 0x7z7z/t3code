@@ -134,6 +134,9 @@ export function collectPullRequestListFacets(
  * then whatever the host found that no loaded row carries, so a name nobody has loaded yet is
  * still one search away.
  */
+/** How many loaded matches come before the host's answers. */
+const HOSTED_CHOICE_ROOM = 15;
+
 export function pullRequestAuthorChoices(
   facets: ReadonlyArray<PullRequestAuthorFacet>,
   hosted: ReadonlyArray<PullRequestActor>,
@@ -155,7 +158,8 @@ export function pullRequestAuthorChoices(
     seen.add(key);
     added.push(known.get(key) ?? { actor, count: 0, mergedCount: 0 });
   }
-  return [...loaded, ...added];
+  // The picker shows a short list, and loaded matches alone could fill it.
+  return [...loaded.slice(0, HOSTED_CHOICE_ROOM), ...added, ...loaded.slice(HOSTED_CHOICE_ROOM)];
 }
 
 /**

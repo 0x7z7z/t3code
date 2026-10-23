@@ -250,13 +250,16 @@ function useHostedFilterOptions(
   kind: PullRequestFilterOptionsInput["kind"],
   query: string,
 ) {
-  const sent = useDebouncedValue(query.trim().slice(0, 100), OPTION_SEARCH_DEBOUNCE_MS);
-  return usePullRequestFilterOptions(
+  const typed = query.trim().slice(0, 100);
+  const sent = useDebouncedValue(typed, OPTION_SEARCH_DEBOUNCE_MS);
+  const hosted = usePullRequestFilterOptions(
     scope.map(({ environmentId, input }) => ({
       environmentId,
       input: { ...input, kind, ...(sent ? { query: sent } : {}) },
     })),
   );
+  // Until the search catches up with the typing, the host's answers are for older text.
+  return sent === typed ? hosted : { labels: [], authors: [], error: null, isPending: true };
 }
 
 function PullRequestOptionSearch({
@@ -343,7 +346,9 @@ function PullRequestAuthorChoices({
           </MenuRadioItem>
         ))}
         {visible.length === 0 && !hosted.isPending ? (
-          <MenuItem disabled>No authors found</MenuItem>
+          <MenuItem disabled>
+            {hosted.error === null ? "No authors found" : "Couldn't search authors on the host"}
+          </MenuItem>
         ) : null}
       </MenuRadioGroup>
     </>
@@ -412,7 +417,9 @@ function PullRequestLabelChoices({
         onChange={setQuery}
       />
       {visible.length === 0 && !hosted.isPending ? (
-        <MenuItem disabled>No labels found</MenuItem>
+        <MenuItem disabled>
+          {hosted.error === null ? "No labels found" : "Couldn't search labels on the host"}
+        </MenuItem>
       ) : null}
       {visible.map((option) => {
         const key = option.name.toLowerCase();
