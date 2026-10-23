@@ -129,6 +129,56 @@ export function collectPullRequestListFacets(
   };
 }
 
+/**
+ * What a filter picker offers for `query`: the loaded rows that match keep their counts and lead,
+ * then whatever the host found that no loaded row carries, so a name nobody has loaded yet is
+ * still one search away.
+ */
+export function pullRequestAuthorChoices(
+  facets: ReadonlyArray<PullRequestAuthorFacet>,
+  hosted: ReadonlyArray<PullRequestActor>,
+  query: string,
+): ReadonlyArray<PullRequestAuthorFacet> {
+  const needle = normalize(query);
+  const loaded = facets.filter(
+    (facet) =>
+      needle === null ||
+      facet.actor.login.toLowerCase().includes(needle) ||
+      facet.actor.name?.toLowerCase().includes(needle),
+  );
+  const known = new Map(facets.map((facet) => [normalize(facet.actor.login), facet]));
+  const seen = new Set(loaded.map((facet) => normalize(facet.actor.login)));
+  const added: PullRequestAuthorFacet[] = [];
+  for (const actor of hosted) {
+    const key = normalize(actor.login);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    added.push(known.get(key) ?? { actor, count: 0, mergedCount: 0 });
+  }
+  return [...loaded, ...added];
+}
+
+export function pullRequestLabelChoices(
+  facets: ReadonlyArray<PullRequestLabelFacet>,
+  hosted: ReadonlyArray<PullRequestLabel>,
+  query: string,
+): ReadonlyArray<PullRequestLabelFacet> {
+  const needle = normalize(query);
+  const loaded = facets.filter(
+    (facet) => needle === null || facet.name.toLowerCase().includes(needle),
+  );
+  const known = new Map(facets.map((facet) => [normalize(facet.name), facet]));
+  const seen = new Set(loaded.map((facet) => normalize(facet.name)));
+  const added: PullRequestLabelFacet[] = [];
+  for (const label of hosted) {
+    const key = normalize(label.name);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    added.push(known.get(key) ?? { ...label, count: 0 });
+  }
+  return [...loaded, ...added];
+}
+
 export function pullRequestEntryViewer(
   entry: ScopedEntry,
   viewers: PullRequestViewers,

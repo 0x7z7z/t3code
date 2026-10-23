@@ -184,6 +184,32 @@ export function appendPullRequestListPage(
   };
 }
 
+/**
+ * A filter picker's rows: what is picked stays in view, then the loaded rows' values that match,
+ * then the host's answers, each once. The host matched its own way (an author's display name, say),
+ * so its answers are not narrowed again here.
+ */
+export function pullRequestFilterChoices(input: {
+  readonly selected: readonly string[];
+  readonly suggestions: readonly string[];
+  readonly hosted: readonly string[];
+  readonly query: string;
+}): readonly string[] {
+  const needle = input.query.trim().toLowerCase();
+  const seen = new Set<string>();
+  const rows: string[] = [];
+  const add = (value: string) => {
+    const key = value.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    rows.push(value);
+  };
+  for (const value of input.selected) add(value);
+  for (const value of input.suggestions) if (value.toLowerCase().includes(needle)) add(value);
+  for (const value of input.hosted) add(value);
+  return rows.slice(0, 100);
+}
+
 export function pullRequestListFacets(entries: readonly PullRequestListEntry[]) {
   return {
     authors: [

@@ -319,6 +319,15 @@ export function PullRequestsScreen(
                 knownFacets.environmentId === environmentId ? knownFacets.labels : facets.labels
               }
               projects={projects}
+              onSearch={(kind) =>
+                navigation.navigate("PullRequestFilterSearch", {
+                  kind,
+                  environmentId,
+                  environmentIds: targets.map((target) => String(target.environmentId)),
+                  suggestions:
+                    knownFacets.environmentId === environmentId ? knownFacets[kind] : facets[kind],
+                })
+              }
             />
             {result.data?.errors.length ? (
               <PullRequestListErrors

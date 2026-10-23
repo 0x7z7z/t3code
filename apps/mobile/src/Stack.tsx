@@ -34,6 +34,7 @@ import {
 import { PullRequestFilesSheet } from "./features/pull-requests/PullRequestFiles";
 import { PullRequestReviewSheet } from "./features/pull-requests/PullRequestReviewSheet";
 import { PullRequestReviewersScreen } from "./features/pull-requests/PullRequestReviewersScreen";
+import { PullRequestFilterSearchScreen } from "./features/pull-requests/PullRequestFilterSearchScreen";
 import {
   RenderErrorBoundary,
   RenderFailureView,
@@ -673,6 +674,16 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     PullRequestReviewers: createNativeStackScreen({
       screen: PullRequestReviewersScreen,
+      options: {
+        ...DETAIL_HEADER_OPTIONS,
+        ...HORIZONTAL_FORM_SHEET_OPTIONS,
+        sheetAllowedDetents: formSheetDetents(0.75),
+        sheetGrabberVisible: true,
+        headerBackVisible: false,
+      },
+    }),
+    PullRequestFilterSearch: createNativeStackScreen({
+      screen: PullRequestFilterSearchScreen,
       options: {
         ...DETAIL_HEADER_OPTIONS,
         ...HORIZONTAL_FORM_SHEET_OPTIONS,

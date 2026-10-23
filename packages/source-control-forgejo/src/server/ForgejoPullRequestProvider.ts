@@ -58,6 +58,11 @@ const CAPABILITIES: PullRequestCapabilities = {
   reviewers: { request: true, listCandidates: true },
   edit: { changeRequest: true, comment: true },
 };
+const USER_SEARCH_LIMIT = 50;
+const ForgejoUserSearch = Schema.Struct({
+  data: Schema.optional(Schema.NullOr(Schema.Array(ForgejoUser))),
+});
+
 const repoPath = (input: ProviderRepositoryRef) =>
   `repos/${input.repository.split("/").map(encodeURIComponent).join("/")}`;
 const pullPath = (input: ProviderRepositoryRef & { readonly number: number }) =>
@@ -630,6 +635,44 @@ export const make = Effect.gen(function* () {
           })),
           truncated: labels.truncated,
         };
+      },
+    ),
+    listRepositoryLabels: Effect.fn("ForgejoPullRequestProvider.listRepositoryLabels")(
+      function* (input) {
+        const labels = yield* page({ ...input, path: `${repoPath(input)}/labels` }, ForgejoLabel);
+        return {
+          items: labels.items.map((label) => ({ name: label.name, color: label.color ?? null })),
+          truncated: labels.truncated,
+        };
+      },
+    ),
+    searchRepositoryAuthors: Effect.fn("ForgejoPullRequestProvider.searchRepositoryAuthors")(
+      function* (input) {
+        const query = input.query?.trim() ?? "";
+        const actors = (users: ReadonlyArray<typeof ForgejoUser.Type>) =>
+          users.flatMap((user) => {
+            const actor = forgejoActor(user);
+            return actor ? [actor] : [];
+          });
+        // Before anything is typed the repository's own people stand in; a search reaches
+        // contributors from forks, who are never assignable.
+        if (query.length === 0) {
+          const users = yield* page(
+            { ...input, path: `${repoPath(input)}/assignees` },
+            ForgejoUser,
+            100,
+          );
+          return { items: actors(users.items), truncated: users.truncated };
+        }
+        const found = yield* read(
+          {
+            ...input,
+            path: `users/search?${new URLSearchParams({ q: query, limit: String(USER_SEARCH_LIMIT) })}`,
+          },
+          ForgejoUserSearch,
+        );
+        const users = found.data ?? [];
+        return { items: actors(users), truncated: users.length >= USER_SEARCH_LIMIT };
       },
     ),
     setLabels: Effect.fn("ForgejoPullRequestProvider.setLabels")(function* (input) {

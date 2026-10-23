@@ -13,6 +13,7 @@ import {
   mergeEnvironmentPullRequestPages,
   nextPullRequestListInput,
   PR_LIST_PAGE_SIZE,
+  pullRequestFilterChoices,
   pullRequestListHead,
   pullRequestListInput,
   scopedPullRequestListKey,
@@ -344,5 +345,18 @@ describe("withoutScratchProjectScope", () => {
       projectEnvironmentId: "env-b",
     };
     expect(withoutScratchProjectScope(elsewhere, projects)).toBe(elsewhere);
+  });
+});
+
+describe("pullRequestFilterChoices", () => {
+  it("keeps the picked value in view and adds host answers no loaded row carries, once", () => {
+    expect(
+      pullRequestFilterChoices({
+        selected: ["size:XL"],
+        suggestions: ["bug", "size:XL", "docs"],
+        hosted: ["Bug", "backend"],
+        query: "b",
+      }),
+    ).toEqual(["size:XL", "bug", "backend"]);
   });
 });

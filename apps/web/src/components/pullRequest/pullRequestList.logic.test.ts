@@ -24,6 +24,8 @@ import {
   partitionPullRequestsWithPriority,
   readPullRequestListSnapshot,
   writePullRequestListSnapshot,
+  pullRequestAuthorChoices,
+  pullRequestLabelChoices,
   rankPullRequestMatches,
   rankPullRequestsBlockedOnAuthor,
   rankPullRequestsByMergeReadiness,
@@ -813,5 +815,45 @@ describe("findProjectForRepository", () => {
         selectedEnvironmentId: "env-connecting",
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("filter picker choices", () => {
+  const actor = (login: string, name: string | null = null) => ({ login, name, avatarUrl: null });
+
+  it("offers authors the host found that no loaded row carries, after the loaded ones", () => {
+    const loaded = [
+      { actor: actor("julius", "Julius"), count: 4, mergedCount: 3 },
+      { actor: actor("theo"), count: 1, mergedCount: 0 },
+    ];
+
+    const choices = pullRequestAuthorChoices(
+      loaded,
+      [actor("Julius"), actor("juliana", "Juliana")],
+      "jul",
+    );
+
+    expect(choices.map((choice) => [choice.actor.login, choice.count])).toEqual([
+      ["julius", 4],
+      ["juliana", 0],
+    ]);
+  });
+
+  it("keeps a loaded label's count when only the host's search found it", () => {
+    const loaded = [{ name: "size:XL", color: "d93f0b", count: 7 }];
+
+    const choices = pullRequestLabelChoices(
+      loaded,
+      [
+        { name: "size:XL", color: "d93f0b" },
+        { name: "bug", color: null },
+      ],
+      "xl-ish",
+    );
+
+    expect(choices).toEqual([
+      { name: "size:XL", color: "d93f0b", count: 7 },
+      { name: "bug", color: null, count: 0 },
+    ]);
   });
 });
