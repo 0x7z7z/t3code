@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { resolvePullRequestAuthorFilter, SourceControlProviderKind } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Result from "effect/Result";
@@ -254,10 +254,22 @@ export const make = Effect.gen(function* () {
         const offset = input.cursor?.delivered ?? 0;
         const items: ReturnType<typeof forgejoChangeRequest>[] = [];
         const state = input.state === "merged" ? "closed" : input.state;
-        const query = {
-          ...input,
-          path: `${repoPath(input)}/pulls?state=${state}&sort=recentupdate`,
-        };
+        const params = new URLSearchParams({ state, sort: "recentupdate" });
+        const filters = input.filters;
+        // Several `labels` match a pull request holding any of them but list it once per label it
+        // holds, which would throw the row offset off, so one required label is all Forgejo is
+        // asked for. The service narrows the rest.
+        const single = filters?.labels?.find((group) => group.length === 1)?.[0];
+        if (single !== undefined) {
+          const labels = yield* page({ ...input, path: `${repoPath(input)}/labels` }, ForgejoLabel);
+          const label = labels.items.find(
+            (candidate) => candidate.name.toLowerCase() === single.trim().toLowerCase(),
+          );
+          if (label !== undefined) params.set("labels", String(label.id));
+        }
+        if (filters?.author !== undefined)
+          params.set("poster", resolvePullRequestAuthorFilter(filters.author, input.viewer));
+        const query = { ...input, path: `${repoPath(input)}/pulls?${params}` };
         // Self-hosted servers may cap pages below 50. Establish their actual page size before
         // translating the service's row offset into an API page number.
         const first = yield* readPage(query, Schema.NullOr(ForgejoPullRequest), 1);
