@@ -6,7 +6,9 @@ const { createServer } = require("node:http");
 const { mkdtemp, writeFile, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
-const { validateConfig, probeBackend, pairBackend } = require("./runtime.cjs");
+const { validateConfig, probeBackend, pairBackend, startBackend } = require("./runtime.cjs");
+const { once } = require("node:events");
+const { readFile } = require("node:fs/promises");
 
 function config(backendUrl, directory) {
   return {
@@ -15,6 +17,8 @@ function config(backendUrl, directory) {
     serverPath: path.join(directory, "server.mjs"),
     homeDir: directory,
     workspacePath: directory,
+    connectorPath: path.join(directory, "connector.mjs"),
+    bridgePath: path.join(directory, "bridge"),
   };
 }
 
@@ -65,4 +69,27 @@ test("pairs through the supported CLI and rejects a different server origin", as
     'console.log("Pairing URL: http://127.0.0.1:3773/pair?token=fixture-only")',
   );
   await assert.rejects(pairBackend(settings), /unexpected pairing address/);
+});
+
+test("starts the dedicated backend with the installed connector and inherited environment", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "premiere-start-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const settings = config("http://127.0.0.1:5739/", directory);
+  const resultPath = path.join(directory, "started.json");
+  await writeFile(
+    settings.serverPath,
+    `import { writeFileSync } from 'node:fs';
+    writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify({ connector: JSON.parse(process.env.T3CODE_PREMIERE_MCP), inherited: process.env.PATH }));`,
+  );
+  const child = startBackend(settings);
+  const [code] = await once(child, "exit");
+  assert.equal(code, 0);
+  const result = JSON.parse(await readFile(resultPath, "utf8"));
+  assert.deepEqual(result.connector, {
+    workspacePath: settings.workspacePath,
+    command: settings.nodePath,
+    args: [settings.connectorPath],
+    env: { PREMIERE_TEMP_DIR: settings.bridgePath },
+  });
+  assert.equal(result.inherited, process.env.PATH);
 });

@@ -1,6 +1,7 @@
 import { revertCodexThread } from "../../provider/CodexThreadRevert.ts";
 import { historyResponseItems } from "@t3tools/provider-core/server/handoffBudget";
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
+import { premiereMcpServer } from "../../premiere/McpConfig.ts";
 import {
   mcpToolPresentation,
   type McpToolPresentation,
@@ -1358,7 +1359,8 @@ export const CODEX_THREAD_CONFIG = {
 // that limit so the server's own wait timeout ends a long call.
 const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 
-function codexThreadRuntimeParams(input: {
+export function codexThreadRuntimeParams(input: {
+  readonly environment?: Readonly<Record<string, string | undefined>>;
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly modelSelection?: { readonly model: string };
   readonly runtimePolicy?: ProviderAdapter.ProviderAdapterV2RuntimePolicy;
@@ -1368,11 +1370,13 @@ function codexThreadRuntimeParams(input: {
   readonly config: Readonly<Record<string, Schema.Json>>;
 } {
   const { mcpSession } = input;
+  const premiere = premiereMcpServer(input.environment ?? {}, input.runtimePolicy?.cwd);
   return {
     ...(input.runtimePolicy?.cwd == null ? {} : { cwd: input.runtimePolicy.cwd }),
     ...(input.modelSelection === undefined ? {} : { model: input.modelSelection.model }),
     config: {
       ...CODEX_THREAD_CONFIG,
+      ...(premiere === undefined ? {} : { "mcp_servers.premiere": premiere }),
       ...(mcpSession === undefined
         ? {}
         : {
@@ -6691,6 +6695,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 client.request(
                   "thread/start",
                   codexThreadRuntimeParams({
+                    environment: adapterOptions.environment,
                     mcpSession,
                     modelSelection: threadInput.modelSelection,
                     runtimePolicy: threadInput.runtimePolicy,
@@ -6724,6 +6729,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 threadId: nativeThreadId,
                 excludeTurns: true,
                 ...codexThreadRuntimeParams({
+                  environment: adapterOptions.environment,
                   mcpSession: yield* readMcpSession(
                     threadInput.threadId ?? threadInput.providerThread.appThreadId,
                   ),
@@ -7464,6 +7470,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   threadId,
                   excludeTurns: true,
                   ...codexThreadRuntimeParams({
+                    environment: adapterOptions.environment,
                     mcpSession: yield* readMcpSession(threadInput.providerThread.appThreadId),
                     modelSelection: input.modelSelection,
                     runtimePolicy: input.runtimePolicy,
@@ -7516,6 +7523,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                       ? {}
                       : { lastTurnId: boundary.lastTurnId }),
                     ...codexThreadRuntimeParams({
+                      environment: adapterOptions.environment,
                       mcpSession: yield* mcpSessions.read(threadInput.targetThreadId),
                       ...(threadInput.modelSelection === undefined
                         ? {}

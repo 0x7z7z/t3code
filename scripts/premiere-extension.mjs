@@ -18,6 +18,7 @@ const { values } = NodeUtil.parseArgs({
     },
     destination: { type: "string" },
     "data-dir": { type: "string" },
+    "bridge-dir": { type: "string" },
     port: { type: "string", default: "5739" },
     "dry-run": { type: "boolean", default: false },
     "skip-adobe-settings": { type: "boolean", default: false },
@@ -56,12 +57,19 @@ if (destination === source || destination.startsWith(source + NodePath.sep))
 const serverPath = NodePath.join(root, "apps/server/dist/bin.mjs");
 const connectorPath = NodePath.resolve(values["connector-root"], "dist/index.js");
 const workspacePath = NodePath.join(dataDir, "workspace");
+const bridgePath = NodePath.resolve(
+  values["bridge-dir"] ??
+    process.env.PREMIERE_TEMP_DIR ??
+    NodePath.join(NodeOS.homedir(), ".premiere-pro-mcp/bridge"),
+);
 const config = {
   backendUrl: `http://127.0.0.1:${port}/`,
   nodePath: process.execPath,
   serverPath,
   homeDir: NodePath.join(dataDir, "backend"),
   workspacePath,
+  connectorPath,
+  bridgePath,
 };
 if (!NodeFS.existsSync(serverPath))
   throw new Error("Build the fork first: vp run --filter t3 build");
@@ -72,10 +80,12 @@ const mcp = NodeFS.existsSync(mcpPath) ? JSON.parse(NodeFS.readFileSync(mcpPath,
 if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))
   throw new Error("The existing MCP configuration must be an object.");
 mcp.mcpServers ??= {};
-const premiereServer = { command: process.execPath, args: [connectorPath] };
+const legacyPremiereServer = { command: process.execPath, args: [connectorPath] };
+const premiereServer = { ...legacyPremiereServer, env: { PREMIERE_TEMP_DIR: bridgePath } };
 if (
   mcp.mcpServers.premiere &&
-  JSON.stringify(mcp.mcpServers.premiere) !== JSON.stringify(premiereServer)
+  JSON.stringify(mcp.mcpServers.premiere) !== JSON.stringify(premiereServer) &&
+  JSON.stringify(mcp.mcpServers.premiere) !== JSON.stringify(legacyPremiereServer)
 ) {
   throw new Error(
     "The editing workspace already has a different Premiere MCP configuration. Choose --data-dir to keep it.",
@@ -83,8 +93,14 @@ if (
 }
 mcp.mcpServers.premiere = premiereServer;
 const codexPath = NodePath.join(workspacePath, ".codex/config.toml");
-const codexConfig = `[mcp_servers.premiere]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(connectorPath)}]\n`;
-if (NodeFS.existsSync(codexPath) && NodeFS.readFileSync(codexPath, "utf8") !== codexConfig) {
+const legacyCodexConfig = `[mcp_servers.premiere]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(connectorPath)}]\n`;
+const codexConfig =
+  legacyCodexConfig +
+  `\n[mcp_servers.premiere.env]\nPREMIERE_TEMP_DIR = ${JSON.stringify(bridgePath)}\n`;
+if (
+  NodeFS.existsSync(codexPath) &&
+  ![legacyCodexConfig, codexConfig].includes(NodeFS.readFileSync(codexPath, "utf8"))
+) {
   throw new Error(
     "The editing workspace already has a different Codex configuration. Choose --data-dir to keep it.",
   );
@@ -92,7 +108,14 @@ if (NodeFS.existsSync(codexPath) && NodeFS.readFileSync(codexPath, "utf8") !== c
 if (values["dry-run"]) {
   console.log(
     JSON.stringify(
-      { destination, backendUrl: config.backendUrl, workspacePath, serverPath, connectorPath },
+      {
+        destination,
+        backendUrl: config.backendUrl,
+        workspacePath,
+        serverPath,
+        connectorPath,
+        bridgePath,
+      },
       null,
       2,
     ),
@@ -162,4 +185,5 @@ if (values["dry-run"]) {
   console.log(`Backend: ${config.backendUrl}`);
   console.log("Restart Premiere, then open Window > Extensions > Premiere Assistant.");
   console.log("Keep the existing MCP for Adobe Premiere Pro connector enabled for editing tools.");
+  console.log(`Set its Temp directory field to: ${bridgePath}`);
 }

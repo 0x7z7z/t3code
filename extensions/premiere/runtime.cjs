@@ -19,10 +19,12 @@ function validateConfig(config) {
   ) {
     throw new Error("The Premiere backend must use a local HTTP origin.");
   }
-  ["nodePath", "serverPath", "homeDir", "workspacePath"].forEach(function (key) {
-    if (typeof config[key] !== "string" || !config[key])
-      throw new Error("Missing extension setting: " + key);
-  });
+  ["nodePath", "serverPath", "homeDir", "workspacePath", "connectorPath", "bridgePath"].forEach(
+    function (key) {
+      if (typeof config[key] !== "string" || !config[key])
+        throw new Error("Missing extension setting: " + key);
+    },
+  );
   return config;
 }
 
@@ -79,7 +81,20 @@ function startBackend(config) {
       "--port",
       url.port || "80",
     ],
-    { cwd: config.workspacePath, windowsHide: true, detached: true, stdio: "ignore" },
+    {
+      cwd: config.workspacePath,
+      windowsHide: true,
+      detached: true,
+      stdio: "ignore",
+      env: Object.assign({}, process.env, {
+        T3CODE_PREMIERE_MCP: JSON.stringify({
+          workspacePath: config.workspacePath,
+          command: config.nodePath,
+          args: [config.connectorPath],
+          env: { PREMIERE_TEMP_DIR: config.bridgePath },
+        }),
+      }),
+    },
   );
   // The backend outlives the panel so closing it never interrupts an editing task.
   child.unref();

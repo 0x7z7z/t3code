@@ -19,9 +19,17 @@ Restart Premiere and open **Window > Extensions > Premiere Assistant**. Keep
 and pairs the panel automatically. Its accounts and conversations use a separate
 data directory; it does not change an existing T3 installation.
 
+In **MCP for Adobe Premiere Pro**, set **Temp directory** to the bridge path printed
+by the installer (by default `~/.premiere-pro-mcp/bridge`) and start the connector.
+Both panels must use the same bridge directory. Use `--bridge-dir` when your existing
+connector uses a different private directory. A running Premiere application alone
+does not start a stopped connector panel.
+
 Choose **Accounts** to finish provider setup in T3's browser interface, then return
 to the panel and choose the editing workspace and **New edit**. Select the account and model in the composer. Codex and Claude receive the
-Premiere MCP configuration from the editing workspace. Other providers need their
+Premiere connector directly from the installed host when running in the editing
+workspace, including when Codex does not trust local project configuration. The
+installer also writes local MCP configuration for standalone use. Other providers need their
 normal MCP configuration pointed at the same existing connector.
 
 Each request includes the current project, sequence, frame rate, and playhead.
@@ -29,7 +37,7 @@ The panel re-reads that context before sending. Context is a planning aid; the
 editing agent must inspect the host before changing the timeline. Multiple agents
 may research and review, while one agent owns timeline edits.
 
-The installer accepts `--port`, `--data-dir`, and `--destination`. Use `--dry-run`
+The installer accepts `--port`, `--data-dir`, `--bridge-dir`, and `--destination`. Use `--dry-run`
 to check paths without installing. Run it again after updating the panel files.
 Closing the panel keeps its backend and running tasks alive. Use normal T3 server
 management to stop that dedicated backend when it is no longer needed.

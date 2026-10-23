@@ -1,4 +1,5 @@
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
+import { premiereMcpServer } from "../../premiere/McpConfig.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
 import {
   dynamicToolTitle,
@@ -1499,6 +1500,8 @@ export const CLAUDE_T3_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;
 // silently spawn threads or scheduled tasks.
 
 export function claudeMcpQueryOverrides(input: {
+  readonly environment?: Readonly<Record<string, string | undefined>>;
+  readonly cwd?: string | null;
   readonly mcpSession: McpProviderSession.McpProviderSessionConfig | undefined;
   readonly readOnlySandbox: boolean;
   readonly allowedTools?: ReadonlyArray<string>;
@@ -1507,8 +1510,14 @@ export function claudeMcpQueryOverrides(input: {
   readonly mcpServers?: ClaudeQueryOptions["mcpServers"];
 } {
   const session = input.mcpSession;
+  const premiere = premiereMcpServer(input.environment ?? {}, input.cwd);
+  const premiereServers =
+    premiere === undefined ? {} : { premiere: { type: "stdio" as const, ...premiere } };
   if (session === undefined) {
-    return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
+    return {
+      ...(input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools }),
+      ...(premiere === undefined ? {} : { mcpServers: premiereServers }),
+    };
   }
   const mcpAllowedTools = input.readOnlySandbox
     ? CLAUDE_READ_ONLY_T3_MCP_ALLOWED_TOOLS
@@ -1516,6 +1525,7 @@ export function claudeMcpQueryOverrides(input: {
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
+      ...premiereServers,
       "t3-code": {
         type: "http",
         url: session.endpoint,
@@ -9190,6 +9200,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         ) {
           const queryPolicy = yield* queryPolicyForTurn(turnInput);
           const mcpOverrides = claudeMcpQueryOverrides({
+            environment: adapterOptions.environment,
+            cwd: turnInput.runtimePolicy.cwd,
             mcpSession: yield* mcpSessions.read(turnInput.threadId),
             readOnlySandbox:
               sandboxPolicyKindForClaudeRuntimePolicy(turnInput.runtimePolicy) === "readOnly",
