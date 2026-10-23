@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; frame-src http://127.0.0.1:* http://localhost:*; connect-src http://127.0.0.1:* http://localhost:*"
+    />
+    <title>Premiere Assistant</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="host-header">
+      <span class="app-mark" aria-hidden="true">Pr</span>
+      <div class="host-heading">
+        <strong id="project">Premiere Assistant</strong
+        ><span id="sequence">Open a sequence to attach timeline context</span>
+      </div>
+      <span id="connection" role="status">Starting</span>
+    </header>
+    <section id="startup" class="startup" aria-live="polite">
+      <span class="eyebrow">Your editing workspace</span>
+      <h1>From idea to timeline.</h1>
+      <p id="startup-message">Connecting to your local T3 backend...</p>
+      <button id="retry" type="button" hidden>Try again</button>
+    </section>
+    <iframe
+      id="workspace"
+      title="Premiere editing assistant"
+      name="premiere-assistant-v1"
+      sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
+      hidden
+    ></iframe>
+    <script src="host.js"></script>
+  </body>
+</html>

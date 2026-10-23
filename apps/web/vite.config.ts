@@ -310,6 +310,8 @@ export default defineConfig(() => {
       devSourcemap: buildSourcemap !== false,
     },
     build: {
+      target: "chrome99",
+      rolldownOptions: { input: { app: "index.html", premiere: "premiere.html" } },
       outDir: "dist",
       emptyOutDir: true,
       manifest: true,

@@ -1,0 +1,117 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #ececf1;
+  background: #18181b;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+[hidden] {
+  display: none !important;
+}
+.host-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #333338;
+  flex-shrink: 0;
+}
+.app-mark {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 31px;
+  height: 31px;
+  border: 1px solid #7265b7;
+  border-radius: 8px;
+  color: #c6bbff;
+  font-size: 14px;
+  font-weight: 650;
+  background: #2b2540;
+}
+.host-heading {
+  min-width: 0;
+  flex: 1;
+}
+.host-heading strong,
+.host-heading span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.host-heading strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+.host-heading span {
+  font-size: 11px;
+  color: #9a9aa6;
+  margin-top: 3px;
+}
+#connection {
+  font-size: 10px;
+  color: #aaa5bc;
+}
+#connection[data-state="ready"] {
+  color: #a7d6ba;
+}
+#connection[data-state="error"] {
+  color: #edb7a7;
+}
+.startup {
+  margin: auto;
+  padding: 32px;
+  width: 100%;
+  max-width: 440px;
+}
+.eyebrow {
+  font-size: 11px;
+  color: #b8a7ed;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+h1 {
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.04em;
+  font-weight: 550;
+  margin: 14px 0;
+}
+p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #a6a6b2;
+  overflow-wrap: anywhere;
+}
+button {
+  font: inherit;
+  font-size: 12px;
+  border: 1px solid #5e527f;
+  background: #342d47;
+  border-radius: 6px;
+  padding: 8px 14px;
+  color: #eee7ff;
+  cursor: pointer;
+}
+button:focus-visible {
+  outline: 2px solid #bcadf5;
+  outline-offset: 3px;
+}
+iframe {
+  display: block;
+  border: 0;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  background: #18181b;
+}
