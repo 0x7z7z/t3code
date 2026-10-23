@@ -6,6 +6,7 @@ import {
   EventId,
   MessageId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   RunId,
   ThreadId,
@@ -369,7 +370,7 @@ it.effect.each(["sqlite", "memory"] as const)(
 );
 
 it.effect.each(["sqlite", "memory"] as const)(
-  "counts a fork's inherited history as conversation for its first /compact in %s",
+  "counts a native fork's inherited history as conversation for its first /compact in %s",
   (storage) =>
     Effect.gen(function* () {
       const store = yield* ProjectionStore.ProjectionStoreV2;
@@ -485,10 +486,17 @@ it.effect.each(["sqlite", "memory"] as const)(
           sourcePoint: { threadId: sourceId, runId: sourceRunId },
           basePoint: null,
           sourceProviderInstanceId: instanceId,
-          targetProviderInstanceId: null,
-          targetRunId: null,
+          targetProviderInstanceId: instanceId,
+          targetRunId: forkRunId,
           status: "pending",
-          resolution: null,
+          resolution: {
+            strategy: "native_fork",
+            providerThreadRef: {
+              driver: ProviderDriverKind.make("claudeAgent"),
+              nativeId: "native-fork-source",
+              strength: "strong",
+            },
+          },
           createdBy: "user",
           error: null,
           createdAt: now,
