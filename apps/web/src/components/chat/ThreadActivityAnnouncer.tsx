@@ -52,5 +52,6 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
     }
   }, [threadKey, status, requestId, runId, runStatus, detailBehind]);
 
-  return <div ref={regionRef} role="status" aria-live="polite" className="sr-only" />;
+  // No role="status": Orca 50 maps it to a status bar in Chromium and drops its updates.
+  return <div ref={regionRef} aria-live="polite" className="sr-only" />;
 });
