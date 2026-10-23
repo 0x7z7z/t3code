@@ -3098,6 +3098,40 @@ it.effect("keeps reading a host's thinned-out slices until a filtered page is fu
   }),
 );
 
+it.effect("hands a host's own resume position back on the next read", () =>
+  Effect.gen(function* () {
+    const resumed: Array<string | undefined> = [];
+    const service = yield* makeService({
+      projects: [
+        project({
+          id: "p1",
+          title: "on gitlab",
+          workspaceRoot: "/a",
+          repository: "group/project",
+          provider: SourceControlProviderKind.make("gitlab"),
+        }),
+      ],
+      providers: [
+        fakeProvider(SourceControlProviderKind.make("gitlab"), {
+          listChangeRequests: (input) => {
+            resumed.push(input.cursor?.resumeAfter);
+            return Effect.succeed({
+              items: [changeRequest(resumed.length, "2026-07-02T00:00:00Z")],
+              truncated: true,
+              continues: true,
+              resumeAfter: `2026-07-01T00:00:00.000Z~${resumed.length}`,
+            });
+          },
+        }),
+      ],
+    });
+
+    const first = yield* service.list({ state: "open", limit: 1 });
+    yield* service.list({ state: "open", limit: 1, cursors: first.nextCursors });
+    assert.deepStrictEqual(resumed, [undefined, "2026-07-01T00:00:00.000Z~1"]);
+  }),
+);
+
 it.effect("judges the review filter only on a host that summarises its reviews", () =>
   Effect.gen(function* () {
     const service = yield* makeService({

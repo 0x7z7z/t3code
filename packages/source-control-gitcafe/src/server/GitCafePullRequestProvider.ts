@@ -175,6 +175,13 @@ function stackHeadsCurrent(
   );
 }
 
+const POSITION = /^(.+)~(\d+)$/u;
+const parsePosition = (raw: string | undefined) => {
+  const match = raw === undefined ? null : POSITION.exec(raw);
+  const created = match === null ? Number.NaN : Date.parse(match[1]!);
+  return match === null || Number.isNaN(created) ? null : { created, number: Number(match[2]) };
+};
+
 const withDetails = (
   files: ReadonlyArray<Json.GitCafeDiffFile>,
   details: ReadonlyArray<Json.GitCafeDiffFile>,
@@ -682,8 +689,8 @@ export const make = Effect.gen(function* () {
           ).pipe(Effect.tap((page) => Effect.sync(() => learnAuthors(input.host, page.items))));
         };
         if (unresolvedAuthor !== null) {
-          // Rows are only ever handed out narrowed by actor, so a continuation's count of rows
-          // already delivered always refers to the same narrowed listing.
+          // Rows are only ever handed out narrowed by actor, so a continuation always carries on
+          // the same narrowed listing.
           const key = authorKey(input.host, unresolvedAuthor);
           let after: string | null = null;
           let pages = 0;
@@ -699,22 +706,31 @@ export const make = Effect.gen(function* () {
         }
         const limit = Math.max(1, input.limit);
         const items: Array<Json.GitCafePull> = [];
-        // GitCafe pages by an opaque token and orders by creation, so a continuation counts past
-        // the rows already delivered rather than asking for older ones.
-        let skip = input.cursor?.delivered ?? 0;
+        // GitCafe pages by an opaque token and orders by creation, so a continuation reads from the
+        // top and keeps only the rows created after the last one delivered. A count of rows would
+        // skip one for every row above it that closed in between.
+        const resume = parsePosition(input.cursor?.resumeAfter);
+        const isNew = (pull: Json.GitCafePull) => {
+          if (resume === null) return true;
+          const created = Date.parse(pull.createdAt);
+          return (
+            created < resume.created || (created === resume.created && pull.number < resume.number)
+          );
+        };
         let next: string | null = null;
         do {
           const page: typeof Json.GitCafePulls.Type = yield* readPage(
-            Math.min(PAGE_SIZE, skip + limit - items.length),
+            resume === null ? Math.min(PAGE_SIZE, limit - items.length) : PAGE_SIZE,
             next,
           );
-          const skipped = Math.min(skip, page.items.length);
-          skip -= skipped;
-          items.push(...page.items.slice(skipped));
+          items.push(...page.items.filter(isNew));
           next = page.items.length === 0 ? null : page.next;
         } while (next !== null && items.length < limit);
+        const delivered = items.slice(0, limit);
+        const last = delivered.at(-1);
         return {
-          items: items.slice(0, limit).map((pull) => {
+          ...(last === undefined ? {} : { resumeAfter: `${last.createdAt}~${last.number}` }),
+          items: delivered.map((pull) => {
             const item = Json.toChangeRequest(pull, input);
             return input.involvement === "reviewing" && actorId !== undefined
               ? {
@@ -723,7 +739,7 @@ export const make = Effect.gen(function* () {
                 }
               : item;
           }),
-          truncated: next !== null,
+          truncated: next !== null || items.length > limit,
           continues: true,
         };
       },

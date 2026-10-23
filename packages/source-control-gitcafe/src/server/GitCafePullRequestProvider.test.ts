@@ -493,8 +493,9 @@ describe("GitCafePullRequestProvider", () => {
     }).pipe(Effect.provide(server.layer));
   });
 
-  it.effect("carries a listing on past the rows it already delivered", () => {
-    const pulls = [1, 2, 3, 4, 5].map((number) => ({ ...pull, number }));
+  it.effect("carries a listing on after the last row delivered when rows above it close", () => {
+    const created = (number: number) => `2026-09-12T12:00:0${9 - number}Z`;
+    let pulls = [1, 2, 3, 4, 5].map((number) => ({ ...pull, number, createdAt: created(number) }));
     const server = fakeGitCafe({
       "GET /repos/owner/repo/pulls": (request: SentRequest) => {
         const offset = Number(request.query.get("after")?.slice(1) ?? 0);
@@ -504,20 +505,30 @@ describe("GitCafePullRequestProvider", () => {
     });
     return Effect.gen(function* () {
       const provider = yield* GitCafePullRequestProvider.make;
-      const page = yield* provider.listChangeRequests({
-        ...target,
-        state: "open",
-        involvement: "all",
-        viewer: "alice",
-        limit: 2,
-        cursor: { updatedBefore: timestamp, delivered: 2 },
-      });
+      const list = (cursor?: { readonly resumeAfter?: string }) =>
+        provider.listChangeRequests({
+          ...target,
+          state: "open",
+          involvement: "all",
+          viewer: "alice",
+          limit: 2,
+          ...(cursor === undefined
+            ? {}
+            : { cursor: { updatedBefore: timestamp, delivered: 2, ...cursor } }),
+        });
+      const first = yield* list();
       assert.deepStrictEqual(
-        page.items.map((item) => item.number),
+        first.items.map((item) => item.number),
+        [1, 2],
+      );
+      pulls = pulls.filter((candidate) => candidate.number !== 1);
+      const next = yield* list({ resumeAfter: first.resumeAfter! });
+      assert.deepStrictEqual(
+        next.items.map((item) => item.number),
         [3, 4],
       );
-      assert.isTrue(page.truncated);
-      assert.isTrue(page.continues);
+      assert.isTrue(next.truncated);
+      assert.isTrue(next.continues);
     }).pipe(Effect.provide(server.layer));
   });
 

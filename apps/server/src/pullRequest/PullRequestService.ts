@@ -342,7 +342,7 @@ interface ListCursor extends ProviderListCursor {
 }
 
 const LIST_CURSOR_PATTERN =
-  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))\|(\d{1,9})\|(\d{1,9}(?:,\d{1,9})*)?$/;
+  /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2}))\|(\d{1,9})\|(\d{1,9}(?:,\d{1,9})*)?(?:\|([\w.:~+-]{1,128}))?$/;
 
 function parseListCursor(raw: string): ListCursor | null {
   const match = LIST_CURSOR_PATTERN.exec(raw);
@@ -352,6 +352,7 @@ function parseListCursor(raw: string): ListCursor | null {
     updatedBefore: match[1]!,
     delivered: Number(match[2]),
     seenAt: seenAt === undefined ? [] : seenAt.split(",").map(Number),
+    ...(match[4] === undefined ? {} : { resumeAfter: match[4] }),
   };
 }
 
@@ -369,6 +370,7 @@ function nextListCursor(
   delivered: ReadonlyArray<ProviderChangeRequest>,
   /** A provider may consume malformed offset-paged rows that never appear in `delivered`. */
   cursorAdvance = delivered.length,
+  resumeAfter?: string,
 ): string | null {
   if (fetched.length === 0) return null;
   // Taken from what the host answered rather than from what survived de-duplication: a slice can
@@ -376,7 +378,7 @@ function nextListCursor(
   // repository's boring afternoon — and reading "nothing new" as "nothing left" would end the
   // walk on the instant it was stuck on, with everything older unreachable for good.
   const oldest = fetched.reduce((left, right) => (right.updatedAt < left.updatedAt ? right : left));
-  return listCursorAt(previous, oldest.updatedAt, fetched, cursorAdvance);
+  return listCursorAt(previous, oldest.updatedAt, fetched, cursorAdvance, resumeAfter);
 }
 
 function listCursorAt(
@@ -384,12 +386,14 @@ function listCursorAt(
   boundary: string,
   fetched: ReadonlyArray<ProviderChangeRequest>,
   deliveredCount: number,
+  resumeAfter?: string,
 ): string {
   const seenAt = new Set([
     ...(previous?.updatedBefore === boundary ? previous.seenAt : []),
     ...fetched.filter((item) => item.updatedAt === boundary).map((item) => item.number),
   ]);
-  return `${boundary}|${(previous?.delivered ?? 0) + deliveredCount}|${[...seenAt].join(",")}`;
+  const cursor = `${boundary}|${(previous?.delivered ?? 0) + deliveredCount}|${[...seenAt].join(",")}`;
+  return resumeAfter === undefined ? cursor : `${cursor}|${resumeAfter}`;
 }
 
 function isProviderUnusable(error: PullRequestProviderError): boolean {
@@ -1191,6 +1195,7 @@ export const make = Effect.gen(function* () {
                     updatedBefore: cursor.updatedBefore,
                     delivered: cursor.delivered,
                     seenAt: cursor.seenAt,
+                    resumeAfter: cursor.resumeAfter,
                   },
                 }),
           })
@@ -1217,7 +1222,13 @@ export const make = Effect.gen(function* () {
                 truncated: page.truncated,
                 nextCursor:
                   page.continues && page.truncated
-                    ? nextListCursor(cursor, page.items, items, page.cursorAdvance)
+                    ? nextListCursor(
+                        cursor,
+                        page.items,
+                        items,
+                        page.cursorAdvance,
+                        page.resumeAfter,
+                      )
                     : null,
               };
             }),
