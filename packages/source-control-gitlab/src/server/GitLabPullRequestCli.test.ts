@@ -159,8 +159,8 @@ layer("GitLabPullRequestCli.layer", (it) => {
         viewer: "bilal",
         limit: 10,
         filters: {
-          labels: [["bug"], ["size:S", "size:XS"], ["a,b"]],
-          excludedLabels: ["wontfix", "stale"],
+          labels: [["bug"], ["size:S", "size:XS"], ["a,b"], ["None"]],
+          excludedLabels: ["wontfix", "stale", "any"],
           author: "@me",
           draft: "only",
         },

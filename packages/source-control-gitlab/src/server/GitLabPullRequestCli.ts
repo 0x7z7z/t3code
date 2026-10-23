@@ -423,7 +423,8 @@ function involvementParams(input: {
 
 /**
  * GitLab's `labels` asks for every label it names, so only groups of one go to it; a group of
- * alternatives is left for the service to narrow. A comma would split a name in two.
+ * alternatives is left for the service to narrow. A comma would split a name in two, and `None`
+ * and `Any` mean "unlabeled" and "labeled" to GitLab rather than labels of those names.
  */
 function filterParams(input: {
   readonly filters?: PullRequestListFilters | undefined;
@@ -432,7 +433,8 @@ function filterParams(input: {
 }): ReadonlyArray<readonly [string, string]> {
   const filters = input.filters;
   if (filters === undefined) return [];
-  const listable = (names: ReadonlyArray<string>) => names.filter((name) => !name.includes(","));
+  const listable = (names: ReadonlyArray<string>) =>
+    names.filter((name) => !name.includes(",") && !/^(?:none|any)$/iu.test(name.trim()));
   const required = listable(
     (filters.labels ?? []).flatMap((group) => (group.length === 1 ? group : [])),
   );
