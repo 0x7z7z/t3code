@@ -58,6 +58,13 @@ const CAPABILITIES: PullRequestCapabilities = {
   reviewers: { request: true, listCandidates: true },
   edit: { changeRequest: true, comment: true },
 };
+
+const UNAVAILABLE_REQUIREMENT = {
+  missing:
+    "Install Forgejo CLI (`fj` 0.6 or later) from https://codeberg.org/forgejo-contrib/forgejo-cli or Gitea CLI (`tea` 0.16 or later) from https://gitea.com/gitea/tea to browse Forgejo pull requests.",
+  unauthenticated:
+    "Authenticate your Forgejo or Gitea server with `fj --host <server-url> auth add-token` on the T3 Code server. If fj is missing or unconfigured for that server, use `tea login add`. A configured fj account must be repaired with fj.",
+};
 const repoPath = (input: ProviderRepositoryRef) =>
   `repos/${input.repository.split("/").map(encodeURIComponent).join("/")}`;
 const pullPath = (input: ProviderRepositoryRef & { readonly number: number }) =>
@@ -248,6 +255,7 @@ export const make = Effect.gen(function* () {
   const provider: PullRequestProviderApi = {
     kind: SourceControlProviderKind.make("forgejo"),
     capabilities: CAPABILITIES,
+    unavailableRequirement: UNAVAILABLE_REQUIREMENT,
     readsPublicHostWithoutCheckout: true,
     getViewer,
     listChangeRequests: Effect.fn("ForgejoPullRequestProvider.listChangeRequests")(
