@@ -50,6 +50,32 @@ function runOutcomeText(status: OrchestrationV2RunStatus | null): string | null 
   }
 }
 
+interface RunState {
+  readonly runId: RunId;
+  readonly status: OrchestrationV2RunStatus;
+}
+
+const hasEnded = (status: OrchestrationV2RunStatus) =>
+  runOutcomeText(status) !== null || status === "rolled_back";
+
+/**
+ * Reopening a thread can paint its cached detail, still working on a run the
+ * live thread shell already saw end. Reading that frame as the baseline would
+ * announce the ending once the detail catches up, so it's skipped instead.
+ */
+export function isDetailRunBehindShell(
+  detailRun: RunState | null,
+  shellRun: RunState | null,
+): boolean {
+  return (
+    detailRun !== null &&
+    shellRun !== null &&
+    detailRun.runId === shellRun.runId &&
+    hasEnded(shellRun.status) &&
+    !hasEnded(detailRun.status)
+  );
+}
+
 /**
  * Decides what a screen reader hears when the open thread's turn changes state.
  * The first snapshot of a thread is a silent baseline, so opening or switching

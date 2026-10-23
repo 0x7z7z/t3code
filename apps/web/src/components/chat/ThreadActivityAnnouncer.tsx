@@ -16,9 +16,12 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
   requestId,
   runId,
   runStatus,
+  detailBehind,
 }: ThreadActivitySnapshot & {
   /** Null while the timeline shows another thread during a switch. */
   readonly threadKey: string | null;
+  /** The thread's detail hasn't caught up with how its run ended; see isDetailRunBehindShell. */
+  readonly detailBehind: boolean;
 }) {
   const regionRef = useRef<HTMLDivElement>(null);
   const memoryRef = useRef<{ threadKey: string; memory: ThreadAnnouncementMemory } | null>(null);
@@ -30,6 +33,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       if (region !== null) region.textContent = "";
       return;
     }
+    if (detailBehind) return;
     const previous = memoryRef.current?.threadKey === threadKey ? memoryRef.current.memory : null;
     const { memory, announcement } = nextThreadAnnouncement(previous, {
       status,
@@ -46,7 +50,7 @@ export const ThreadActivityAnnouncer = memo(function ThreadActivityAnnouncer({
       // repeated "Done" gets a trailing non-breaking space to count as new.
       region.textContent = region.textContent === announcement ? `${announcement} ` : announcement;
     }
-  }, [threadKey, status, requestId, runId, runStatus]);
+  }, [threadKey, status, requestId, runId, runStatus, detailBehind]);
 
   return <div ref={regionRef} role="status" aria-live="polite" className="sr-only" />;
 });

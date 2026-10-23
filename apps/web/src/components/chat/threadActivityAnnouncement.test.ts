@@ -2,6 +2,7 @@ import { RunId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  isDetailRunBehindShell,
   nextThreadAnnouncement,
   type ThreadActivitySnapshot,
   type ThreadAnnouncementMemory,
@@ -115,6 +116,29 @@ describe("nextThreadAnnouncement", () => {
 
   it("announces the end of a turn that was already running when the thread opened", () => {
     expect(speak([busy(), idle(secondRun, "failed")])).toEqual(["Failed"]);
+  });
+
+  it("stays silent when a thread reopens after its turn ended while it was closed", () => {
+    // The cached detail still shows the run working until it catches up with the live shell.
+    const frames = [busy(), idle(secondRun, "completed")];
+    const shellRun = { runId: secondRun, status: "completed" } as const;
+    const current = frames.filter(
+      (frame) =>
+        !isDetailRunBehindShell(
+          frame.runId === null || frame.runStatus === null
+            ? null
+            : { runId: frame.runId, status: frame.runStatus },
+          shellRun,
+        ),
+    );
+    expect(speak(current)).toEqual([]);
+    expect(isDetailRunBehindShell({ runId: secondRun, status: "running" }, null)).toBe(false);
+    expect(
+      isDetailRunBehindShell(
+        { runId: secondRun, status: "running" },
+        { runId: firstRun, status: "completed" },
+      ),
+    ).toBe(false);
   });
 
   it("waits for the run to settle before announcing how the turn ended", () => {

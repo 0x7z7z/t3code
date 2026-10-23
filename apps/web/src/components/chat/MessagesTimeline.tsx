@@ -201,6 +201,8 @@ interface MessagesTimelineProps {
   listRef: React.RefObject<LegendListRef | null>;
   timelineEntries: ReadonlyArray<TimelineEntry>;
   latestRun: TimelineLatestRun | null;
+  /** The live shell saw latestRun end before this thread's detail did. */
+  latestRunBehind?: boolean;
   runningRunId?: RunId | null;
   turnDiffSummaries: ReadonlyArray<TurnDiffSummary>;
   routeThreadKey: string;
@@ -314,6 +316,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   findNavigationId = 0,
   findPositionReaderRef,
   latestRun,
+  latestRunBehind = false,
   runningRunId = null,
   turnDiffSummaries,
   routeThreadKey,
@@ -967,6 +970,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       requestId={awaitingRequestId}
       runId={latestRun?.runId ?? null}
       runStatus={latestRun?.status ?? null}
+      detailBehind={latestRunBehind}
     />
   );
   const listHeaderLeadingContent =
