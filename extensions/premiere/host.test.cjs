@@ -108,7 +108,7 @@ test("clears host context when Premiere has no active sequence", async () => {
   });
   fixture.evaluations[0].callback("premiere:none");
   assert.equal(fixture.messages[0].packet.context, null);
-  assert.equal(fixture.elements.get("project").textContent, "Premiere Assistant");
+  assert.equal(fixture.elements.get("project").textContent, "Axis");
 });
 
 test("moves the playhead to a whole frame only in the sequence the chat refers to", async () => {
