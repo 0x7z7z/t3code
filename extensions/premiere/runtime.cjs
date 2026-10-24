@@ -3,6 +3,8 @@
 var fs = require("fs");
 var http = require("http");
 var childProcess = require("child_process");
+var path = require("path");
+var pendingStarts = Object.create(null);
 
 function validateConfig(config) {
   if (!config || typeof config !== "object")
@@ -30,31 +32,42 @@ function validateConfig(config) {
 
 function probeBackend(config) {
   return new Promise(function (resolve, reject) {
-    var request = http.get(config.backendUrl + "premiere-extension.json", function (response) {
-      var body = "";
-      response.setEncoding("utf8");
-      response.on("data", function (chunk) {
-        body += chunk;
-        if (body.length > 4096) request.destroy(new Error("Unexpected backend response."));
-      });
-      response.on("error", reject);
-      response.on("end", function () {
-        try {
-          if (response.statusCode !== 200 || JSON.parse(body).protocol !== 1) {
-            throw new Error(
-              "This port belongs to a different server. Choose another port when installing.",
+    // Health checks must not reuse a socket belonging to a backend that just died.
+    var request = http.get(
+      config.backendUrl + "premiere-extension.json",
+      { agent: false },
+      function (response) {
+        var body = "";
+        response.setEncoding("utf8");
+        response.on("data", function (chunk) {
+          body += chunk;
+          if (body.length > 4096) request.destroy(new Error("Unexpected backend response."));
+        });
+        response.on("error", reject);
+        response.on("end", function () {
+          if (response.statusCode === 503 && response.headers["retry-after"]) {
+            var starting = new Error("The local backend is still starting.");
+            starting.code = "AXIS_BACKEND_STARTING";
+            reject(starting);
+            return;
+          }
+          try {
+            if (response.statusCode !== 200 || JSON.parse(body).protocol !== 1) {
+              throw new Error(
+                "This port belongs to a different server. Choose another port when installing.",
+              );
+            }
+            resolve();
+          } catch {
+            reject(
+              new Error(
+                "This port belongs to a different server. Choose another port when installing.",
+              ),
             );
           }
-          resolve();
-        } catch {
-          reject(
-            new Error(
-              "This port belongs to a different server. Choose another port when installing.",
-            ),
-          );
-        }
-      });
-    });
+        });
+      },
+    );
     request.setTimeout(2500, function () {
       request.destroy(new Error("The local backend did not respond."));
     });
@@ -63,12 +76,26 @@ function probeBackend(config) {
 }
 
 function startBackend(config) {
+  if (!fs.existsSync(config.nodePath))
+    throw new Error("The Node runtime is missing. Reinstall Axis.");
   if (!fs.existsSync(config.serverPath))
     throw new Error("Build the backend first with vp run --filter t3 build.");
   if (!fs.existsSync(config.connectorPath))
     throw new Error("The bundled Premiere connector is missing. Reinstall the extension.");
   fs.mkdirSync(config.homeDir, { recursive: true });
   var url = new URL(config.backendUrl);
+  var environment = Object.assign({}, process.env);
+  if (config.runtimeRoot) {
+    var pathKey =
+      Object.keys(environment).find(function (key) {
+        return key.toLowerCase() === "path";
+      }) || "PATH";
+    environment[pathKey] = [
+      path.dirname(config.nodePath),
+      path.join(config.runtimeRoot, "git/cmd"),
+      environment[pathKey] || "",
+    ].join(path.delimiter);
+  }
   var child = childProcess.spawn(
     config.nodePath,
     [
@@ -88,7 +115,7 @@ function startBackend(config) {
       windowsHide: true,
       detached: true,
       stdio: "ignore",
-      env: Object.assign({}, process.env, {
+      env: Object.assign(environment, {
         T3CODE_PREMIERE_MCP: JSON.stringify({
           workspacePath: config.workspacePath,
           command: config.nodePath,
@@ -100,7 +127,79 @@ function startBackend(config) {
   );
   // The backend outlives the panel so closing it never interrupts an editing task.
   child.unref();
+  if (config.runtimeRoot && child.pid)
+    fs.writeFileSync(
+      path.join(config.runtimeRoot, "backend-process.json"),
+      JSON.stringify({ pid: child.pid, nodePath: config.nodePath, serverPath: config.serverPath }),
+    );
   return child;
+}
+
+// Only a refused connection permits spawning. A busy or incompatible service
+// must never trigger a competing backend, even while it is still starting.
+function ensureBackend(config) {
+  var key = config.backendUrl;
+  if (pendingStarts[key]) return pendingStarts[key];
+  var lock;
+  var ownsLock = false;
+  var childError;
+  function wait(attempt) {
+    return probeBackend(config).catch(function (error) {
+      if (childError) throw childError;
+      if (
+        attempt >= 120 ||
+        (error.code !== "ECONNREFUSED" && /different server/.test(error.message))
+      )
+        throw error;
+      return new Promise(function (resolve) {
+        setTimeout(resolve, 500);
+      }).then(function () {
+        return wait(attempt + 1);
+      });
+    });
+  }
+  var pending = probeBackend(config).catch(function (error) {
+    if (error.code === "AXIS_BACKEND_STARTING") return wait(0);
+    if (error.code !== "ECONNREFUSED") throw error;
+    fs.mkdirSync(config.homeDir, { recursive: true });
+    lock = path.join(config.homeDir, "axis-backend-start.lock");
+    try {
+      // The lease spans separate CEP Node contexts as well as concurrent calls.
+      if (fs.existsSync(lock) && Date.now() - fs.statSync(lock).mtimeMs > 90000)
+        fs.unlinkSync(lock);
+      var descriptor = fs.openSync(lock, "wx");
+      fs.closeSync(descriptor);
+      ownsLock = true;
+    } catch (lockError) {
+      if (lockError.code !== "EEXIST") throw lockError;
+    }
+    if (!ownsLock) return wait(0);
+    return probeBackend(config).catch(function (probeError) {
+      if (probeError.code !== "ECONNREFUSED") throw probeError;
+      var child = startBackend(config);
+      child.on("error", function (error) {
+        childError = error;
+      });
+      child.on("exit", function (code) {
+        childError = new Error(
+          "Axis backend exited during startup (" + code + "). Reinstall Axis or retry.",
+        );
+      });
+      return wait(0);
+    });
+  });
+  pendingStarts[key] = pending.then(
+    function () {
+      if (ownsLock) fs.unlinkSync(lock);
+      delete pendingStarts[key];
+    },
+    function (error) {
+      if (ownsLock) fs.unlinkSync(lock);
+      delete pendingStarts[key];
+      throw error;
+    },
+  );
+  return pendingStarts[key];
 }
 
 function pairBackend(config) {
@@ -139,5 +238,6 @@ module.exports = {
   validateConfig: validateConfig,
   probeBackend: probeBackend,
   startBackend: startBackend,
+  ensureBackend: ensureBackend,
   pairBackend: pairBackend,
 };

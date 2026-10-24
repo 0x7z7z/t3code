@@ -45,6 +45,7 @@ async function fixture(t) {
     USERPROFILE: directory,
     LOCALAPPDATA: path.join(directory, "local"),
     APPDATA: path.join(directory, "roaming"),
+    AXIS_SANDBOX_ROOT: directory,
   };
   const dataRoot =
     platform === "win32"
@@ -411,4 +412,156 @@ test("bundles dependencies and preserves runtime JSON lookup after relocation", 
     ),
   );
   assert.equal(existsSync(path.join(output, "node_modules")), false);
+});
+
+test("packaged upgrades replace repo paths and keep custom workspace and backend locations", async (t) => {
+  const f = await fixture(t);
+  await f.run();
+  const configPath = path.join(f.destination, "config.json");
+  const previous = JSON.parse(await fs.readFile(configPath, "utf8"));
+  const packaged = path.join(f.directory, "Programs/Axis/app-fixture");
+  await fs.mkdir(path.join(packaged, "node"), { recursive: true });
+  await fs.mkdir(path.join(packaged, "apps/server/dist"), { recursive: true });
+  await fs.copyFile(process.execPath, path.join(packaged, "node/node.exe"));
+  await fs.writeFile(path.join(packaged, "apps/server/dist/bin.mjs"), "// packaged server");
+  await fs
+    .writeFile(path.join(previous.homeDir, "sentinel"), "conversations", { flag: "a" })
+    .catch(async () => {
+      await fs.mkdir(previous.homeDir, { recursive: true });
+      await fs.writeFile(path.join(previous.homeDir, "sentinel"), "conversations");
+    });
+  await f.runDefaults("--destination", f.destination, "--runtime-root", packaged);
+  const updated = JSON.parse(await fs.readFile(configPath, "utf8"));
+  assert.equal(updated.homeDir, previous.homeDir);
+  assert.equal(updated.workspacePath, previous.workspacePath);
+  assert.equal(updated.nodePath, path.join(packaged, "node/node.exe"));
+  assert.equal(updated.serverPath, path.join(packaged, "apps/server/dist/bin.mjs"));
+  assert.equal(updated.runtimeRoot, packaged);
+  const mcp = JSON.parse(await fs.readFile(path.join(previous.workspacePath, ".mcp.json"), "utf8"));
+  assert.equal(mcp.mcpServers.premiere.command, updated.nodePath);
+  assert.equal(await fs.readFile(path.join(previous.homeDir, "sentinel"), "utf8"), "conversations");
+});
+
+test("reinstall after CEP removal updates retained owned MCP settings using the workspace receipt", async (t) => {
+  const f = await fixture(t);
+  await f.runDefaults();
+  const receiptPath = path.join(f.axisData, "workspace/.axis-install.json");
+  const previous = JSON.parse(await fs.readFile(receiptPath, "utf8"));
+  previous.nodePath = path.join(f.directory, "removed-runtime/node.exe");
+  await fs.writeFile(receiptPath, JSON.stringify(previous));
+  await fs.writeFile(
+    path.join(previous.workspacePath, ".mcp.json"),
+    JSON.stringify({
+      mcpServers: {
+        premiere: {
+          command: previous.nodePath,
+          args: [previous.connectorPath],
+          env: { PREMIERE_TEMP_DIR: previous.bridgePath },
+        },
+      },
+    }),
+  );
+  await fs.writeFile(
+    path.join(previous.workspacePath, ".codex/config.toml"),
+    `[mcp_servers.premiere]\ncommand = ${JSON.stringify(previous.nodePath)}\nargs = [${JSON.stringify(previous.connectorPath)}]\n\n[mcp_servers.premiere.env]\nPREMIERE_TEMP_DIR = ${JSON.stringify(previous.bridgePath)}\n`,
+  );
+  await fs.rm(f.axisExtension, { recursive: true });
+  await f.runDefaults();
+  const updated = JSON.parse(
+    await fs.readFile(path.join(previous.workspacePath, ".mcp.json"), "utf8"),
+  );
+  assert.equal(updated.mcpServers.premiere.command, process.execPath);
+});
+
+test("sandbox guards reject live paths, their parents, and junctions resolving outside the sandbox", async (t) => {
+  const f = await fixture(t);
+  const { validateSandboxPaths } = await import(
+    pathToFileURL(path.join(root, "scripts/axis-sandbox-paths.mjs")).href
+  );
+  const sandbox = path.join(f.directory, "sandbox");
+  const protectedData = path.join(f.directory, "live/PremiereAssistant");
+  await fs.mkdir(sandbox, { recursive: true });
+  await fs.mkdir(protectedData, { recursive: true });
+  validateSandboxPaths(
+    sandbox,
+    { runtime: path.join(sandbox, "Programs/Axis"), data: path.join(sandbox, "data") },
+    [protectedData],
+  );
+  assert.throws(
+    () => validateSandboxPaths(sandbox, { data: protectedData }, [protectedData]),
+    /outside|live/,
+  );
+  assert.throws(
+    () =>
+      validateSandboxPaths(path.join(f.directory, "live"), { data: protectedData }, [
+        protectedData,
+      ]),
+    /live/,
+  );
+  const alias = path.join(sandbox, "linked-data");
+  await fs.symlink(protectedData, alias, "junction");
+  assert.throws(
+    () => validateSandboxPaths(sandbox, { data: path.join(alias, "workspace") }, [protectedData]),
+    /outside|live/,
+  );
+});
+
+test("explicit workspace overrides retain owned configuration after removing the panel", async (t) => {
+  const f = await fixture(t);
+  const workspace = path.join(f.directory, "explicit-workspace");
+  await f.run("--workspace-dir", workspace);
+  const config = JSON.parse(await fs.readFile(path.join(f.destination, "config.json"), "utf8"));
+  assert.equal(config.workspacePath, workspace);
+  assert.equal(existsSync(path.join(workspace, ".mcp.json")), true);
+  assert.equal(existsSync(path.join(f.data, "workspace")), false);
+  await fs.rm(f.destination, { recursive: true });
+  await f.run("--workspace-dir", workspace);
+  assert.equal(existsSync(path.join(workspace, ".axis-install.json")), true);
+});
+
+test("sandbox install rejects inherited workspace and nested junction escapes before copying", async (t) => {
+  const f = await fixture(t);
+  const outside = await fs.mkdtemp(path.join(tmpdir(), "axis-outside-"));
+  t.after(() => fs.rm(outside, { recursive: true, force: true }));
+  await fs.mkdir(f.destination, { recursive: true });
+  const previous = JSON.stringify({ workspacePath: outside });
+  await fs.writeFile(path.join(f.destination, "config.json"), previous);
+  await assert.rejects(f.runDefaults("--destination", f.destination), /outside its root/);
+  assert.equal(await fs.readFile(path.join(f.destination, "config.json"), "utf8"), previous);
+  assert.equal(existsSync(path.join(f.destination, "host.js")), false);
+  await fs.rm(path.join(f.destination, "config.json"));
+  await fs.mkdir(path.join(f.data, "workspace"), { recursive: true });
+  await fs.symlink(outside, path.join(f.data, "workspace/.codex"), "junction");
+  await assert.rejects(f.run(), /outside its root/);
+  assert.equal(existsSync(path.join(outside, "config.toml")), false);
+  assert.equal(existsSync(path.join(f.destination, "host.js")), false);
+});
+
+test("sandbox bootstrap fails closed for missing overrides and real bridge paths", async (t) => {
+  const f = await fixture(t);
+  const { liveAxisPaths, validateSandboxEnvironment } = await import(
+    pathToFileURL(path.join(root, "scripts/axis-sandbox-paths.mjs")).href
+  );
+  const env = {
+    AXIS_RUNTIME_DIR: path.join(f.directory, "Programs/Axis"),
+    AXIS_CEP_DIR: f.destination,
+    AXIS_DATA_DIR: f.data,
+    AXIS_WORKSPACE_DIR: path.join(f.data, "workspace"),
+    AXIS_BRIDGE_DIR: f.bridge,
+    AXIS_SKIP_REGISTRY: "1",
+  };
+  validateSandboxEnvironment(f.directory, env.AXIS_RUNTIME_DIR, env);
+  for (const key of Object.keys(env)) {
+    assert.throws(() =>
+      validateSandboxEnvironment(f.directory, env.AXIS_RUNTIME_DIR, { ...env, [key]: "" }),
+    );
+  }
+  for (const live of liveAxisPaths()) {
+    assert.throws(() =>
+      validateSandboxEnvironment(f.directory, env.AXIS_RUNTIME_DIR, {
+        ...env,
+        AXIS_BRIDGE_DIR: live,
+      }),
+    );
+  }
 });

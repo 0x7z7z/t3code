@@ -4,8 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 import * as NodeChildProcess from "node:child_process";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as Effect from "effect/Effect";
+import { validateSandboxPaths } from "./axis-sandbox-paths.mjs";
 import {
   buildConnectorBundle,
   connectorBundlePaths,
@@ -15,7 +14,8 @@ import {
   validateConnectorSource,
 } from "./premiere-connector.mjs";
 
-const platform = Effect.runSync(HostProcess.Platform);
+// oxlint-disable-next-line t3code/no-global-process-runtime -- Also runs from the standalone distribution without workspace packages.
+const platform = process.platform;
 
 const root = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const { values } = NodeUtil.parseArgs({
@@ -28,6 +28,8 @@ const { values } = NodeUtil.parseArgs({
     port: { type: "string", default: "5739" },
     "dry-run": { type: "boolean", default: false },
     "skip-adobe-settings": { type: "boolean", default: false },
+    "runtime-root": { type: "string" },
+    "workspace-dir": { type: "string" },
   },
 });
 const port = Number(values.port);
@@ -76,7 +78,12 @@ if (legacyExtension && destination.startsWith(legacyDestination + NodePath.sep))
 const source = NodePath.join(root, "extensions/premiere");
 if (destination === source || destination.startsWith(source + NodePath.sep))
   throw new Error("Install outside the extension source directory.");
-const serverPath = NodePath.join(root, "apps/server/dist/bin.mjs");
+const runtimeRoot = values["runtime-root"] ? NodePath.resolve(values["runtime-root"]) : root;
+const nodePath = values["runtime-root"]
+  ? NodePath.join(runtimeRoot, "node/node.exe")
+  : process.execPath;
+const serverPath = NodePath.join(runtimeRoot, "apps/server/dist/bin.mjs");
+if (!NodeFS.existsSync(nodePath)) throw new Error("The packaged Node runtime is missing.");
 if (values["connector-root"] && values["connector-bundle"])
   throw new Error(
     "Choose --connector-root to rebuild or --connector-bundle to use a prebuilt bundle.",
@@ -99,7 +106,7 @@ if (!NodeFS.existsSync(serverPath))
 const previousConfigPath = NodeFS.existsSync(NodePath.join(destination, "config.json"))
   ? NodePath.join(destination, "config.json")
   : NodePath.join(legacyExtension ? legacyDestination : destination, "config.json");
-const previousConfig = NodeFS.existsSync(previousConfigPath)
+let previousConfig = NodeFS.existsSync(previousConfigPath)
   ? JSON.parse(NodeFS.readFileSync(previousConfigPath, "utf8"))
   : undefined;
 
@@ -110,30 +117,76 @@ if (!values["data-dir"] && !NodeFS.existsSync(dataDir) && NodeFS.existsSync(lega
   dataMigration = { from: legacyDataDir, to: dataDir, action: "keep-legacy" };
   dataDir = legacyDataDir;
 }
+// Uninstall retains this receipt with the workspace so a later release can
+// update its owned MCP command even after the previous CEP folder is gone.
+const receiptPath = NodePath.join(
+  values["workspace-dir"]
+    ? NodePath.resolve(values["workspace-dir"])
+    : NodePath.join(dataDir, "workspace"),
+  ".axis-install.json",
+);
+if (!previousConfig && NodeFS.existsSync(receiptPath))
+  previousConfig = JSON.parse(NodeFS.readFileSync(receiptPath, "utf8"));
 const connectorPath = connectorBundlePaths(NodePath.join(destination, "connector")).server;
 const workspacePath = NodePath.join(dataDir, "workspace");
 // Axis owns its own bridge directory. The standalone connector panel keeps
 // ~/.premiere-pro-mcp/bridge, so the two never process the same commands.
 const bridgePath = NodePath.resolve(
-  values["bridge-dir"] ?? NodePath.join(NodeOS.homedir(), ".premiere-pro-mcp/axis-bridge"),
+  values["bridge-dir"] ??
+    previousConfig?.bridgePath ??
+    NodePath.join(NodeOS.homedir(), ".premiere-pro-mcp/axis-bridge"),
 );
 const config = {
   backendUrl: `http://127.0.0.1:${port}/`,
-  nodePath: process.execPath,
+  nodePath,
   serverPath,
-  homeDir: NodePath.join(dataDir, "backend"),
-  workspacePath,
+  homeDir:
+    !values["data-dir"] && previousConfig?.homeDir
+      ? previousConfig.homeDir
+      : NodePath.join(dataDir, "backend"),
+  workspacePath: values["workspace-dir"]
+    ? NodePath.resolve(values["workspace-dir"])
+    : !values["data-dir"] && previousConfig?.workspacePath
+      ? previousConfig.workspacePath
+      : workspacePath,
   connectorPath,
   bridgePath,
+  ...(values["runtime-root"] ? { runtimeRoot } : {}),
 };
-const mcpPath = NodePath.join(workspacePath, ".mcp.json");
+const installedWorkspace = config.workspacePath;
+if (process.env.AXIS_SANDBOX_ROOT) {
+  if (!values["skip-adobe-settings"] || port === 5739)
+    throw new Error("Sandbox installs must skip Adobe settings and use a spare port.");
+  validateSandboxPaths(process.env.AXIS_SANDBOX_ROOT, {
+    destination,
+    legacyDestination,
+    dataDir,
+    homeDir: config.homeDir,
+    workspace: installedWorkspace,
+    bridge: bridgePath,
+    connectorBundle: bundlePath,
+  });
+}
+if (values["runtime-root"]) {
+  for (const target of [destination, config.homeDir, installedWorkspace, bridgePath]) {
+    const relative = NodePath.relative(NodePath.dirname(runtimeRoot), target);
+    if (
+      !relative ||
+      (!relative.startsWith(".." + NodePath.sep) &&
+        relative !== ".." &&
+        !NodePath.isAbsolute(relative))
+    )
+      throw new Error("Install CEP and user data outside the packaged runtime.");
+  }
+}
+const mcpPath = NodePath.join(installedWorkspace, ".mcp.json");
 const mcp = NodeFS.existsSync(mcpPath) ? JSON.parse(NodeFS.readFileSync(mcpPath, "utf8")) : {};
 if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))
   throw new Error("The existing MCP configuration must be an object.");
 mcp.mcpServers ??= {};
 if (typeof mcp.mcpServers !== "object" || Array.isArray(mcp.mcpServers))
   throw new Error("The existing MCP servers configuration must be an object.");
-const legacyPremiereServer = { command: process.execPath, args: [connectorPath] };
+const legacyPremiereServer = { command: nodePath, args: [connectorPath] };
 const premiereServer = { ...legacyPremiereServer, env: { PREMIERE_TEMP_DIR: bridgePath } };
 const previousServers = [legacyPremiereServer, premiereServer];
 if (previousConfig?.nodePath && previousConfig?.connectorPath) {
@@ -151,7 +204,7 @@ if (
   );
 }
 mcp.mcpServers.premiere = premiereServer;
-const codexPath = NodePath.join(workspacePath, ".codex/config.toml");
+const codexPath = NodePath.join(installedWorkspace, ".codex/config.toml");
 function codexConfiguration(server) {
   return (
     `[mcp_servers.premiere]\ncommand = ${JSON.stringify(server.command)}\nargs = [${server.args.map((arg) => JSON.stringify(arg)).join(", ")}]\n` +
@@ -214,10 +267,14 @@ if (values["dry-run"]) {
       mode: 0o600,
     },
   );
-  NodeFS.mkdirSync(NodePath.join(workspacePath, ".codex"), { recursive: true });
+  NodeFS.mkdirSync(NodePath.join(installedWorkspace, ".codex"), { recursive: true });
   NodeFS.writeFileSync(mcpPath, JSON.stringify(mcp, null, 2) + "\n");
   NodeFS.writeFileSync(codexPath, codexConfig);
-  const instructionsPath = NodePath.join(workspacePath, "AGENTS.md");
+  NodeFS.writeFileSync(
+    NodePath.join(installedWorkspace, ".axis-install.json"),
+    JSON.stringify(config, null, 2) + "\n",
+  );
+  const instructionsPath = NodePath.join(installedWorkspace, "AGENTS.md");
   if (!NodeFS.existsSync(instructionsPath))
     NodeFS.writeFileSync(
       instructionsPath,
@@ -234,23 +291,27 @@ if (values["dry-run"]) {
       ].join("\n"),
     );
   if (!values["skip-adobe-settings"] && platform === "win32") {
-    const result = NodeChildProcess.spawnSync(
-      "reg.exe",
-      [
-        "add",
-        "HKCU\\SOFTWARE\\Adobe\\CSXS.12",
-        "/v",
-        "PlayerDebugMode",
-        "/t",
-        "REG_SZ",
-        "/d",
-        "1",
-        "/f",
-      ],
-      { windowsHide: true, encoding: "utf8" },
-    );
-    if (result.status !== 0)
-      throw new Error("The extension was copied, but Adobe development mode could not be enabled.");
+    for (const version of [10, 11, 12]) {
+      const result = NodeChildProcess.spawnSync(
+        "reg.exe",
+        [
+          "add",
+          `HKCU\\SOFTWARE\\Adobe\\CSXS.${version}`,
+          "/v",
+          "PlayerDebugMode",
+          "/t",
+          "REG_SZ",
+          "/d",
+          "1",
+          "/f",
+        ],
+        { windowsHide: true, encoding: "utf8" },
+      );
+      if (result.status !== 0)
+        throw new Error(
+          "The extension was copied, but Adobe development mode could not be enabled.",
+        );
+    }
   } else if (!values["skip-adobe-settings"] && platform === "darwin") {
     const result = NodeChildProcess.spawnSync(
       "defaults",

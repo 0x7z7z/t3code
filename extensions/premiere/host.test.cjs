@@ -28,6 +28,7 @@ async function panelFixture(settingsOverride = {}) {
   const runtime = {
     validateConfig: (value) => value,
     probeBackend: async () => {},
+    ensureBackend: async () => {},
     pairBackend: async () => settings.backendUrl + "premiere.html",
   };
   const window = {

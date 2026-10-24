@@ -5,9 +5,9 @@
     <Extension Id="com.axis.editingagent.headless" Version="0.1.0"/>
   </ExtensionList>
   <ExecutionEnvironment>
-    <HostList><Host Name="PPRO" Version="[25.0,99.9]"/></HostList>
+    <HostList><Host Name="PPRO" Version="[24.0,99.9]"/></HostList>
     <LocaleList><Locale Code="All"/></LocaleList>
-    <RequiredRuntimeList><RequiredRuntime Name="CSXS" Version="12.0"/></RequiredRuntimeList>
+    <RequiredRuntimeList><RequiredRuntime Name="CSXS" Version="11.0"/></RequiredRuntimeList>
   </ExecutionEnvironment>
   <DispatchInfoList><Extension Id="com.axis.editingagent.panel"><DispatchInfo>
     <Resources>
