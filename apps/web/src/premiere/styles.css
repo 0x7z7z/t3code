@@ -946,7 +946,7 @@ svg[width] {
   color: var(--muted);
   font-weight: 500;
 }
-/* Text columns wrap to two lines; the full text is in the hover title. */
+/* Text columns wrap to two lines; Copy CSV has the full text. */
 [data-timeline-suggestions] td[data-shot-description],
 [data-timeline-suggestions] td[data-shot-source] {
   white-space: normal;
