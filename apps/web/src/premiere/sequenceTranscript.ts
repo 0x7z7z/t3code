@@ -38,6 +38,44 @@ function validateWords(values: unknown): TranscriptWord[] {
   });
 }
 
+/**
+ * WhisperX leaves some tokens (often numbers) untimed and can emit zero-length
+ * or slightly overlapping words; these get times from their neighbours.
+ */
+function fillWordTimes(rows: unknown[] | undefined): unknown[] | undefined {
+  if (!rows) return rows;
+  const words = rows.map((row) =>
+    object(row) && typeof row.text === "string"
+      ? { ...row, start: time(row.start) ? row.start : null, end: time(row.end) ? row.end : null }
+      : row,
+  ) as Array<{ text: string; start: number | null; end: number | null } | unknown>;
+  const timed = (index: number, key: "start" | "end") => {
+    const value = words[index];
+    return object(value) && typeof value[key] === "number" ? (value[key] as number) : null;
+  };
+  let previousStart = 0;
+  let previousEnd = 0;
+  return words.map((value, index) => {
+    if (!object(value) || typeof value.text !== "string") return value;
+    let start = timed(index, "start");
+    let end = timed(index, "end");
+    if (start === null) start = previousEnd;
+    if (end === null) {
+      let next: number | null = null;
+      for (let after = index + 1; after < words.length && next === null; after++)
+        next = timed(after, "start");
+      end = next !== null && next > start ? next : start + 0.1;
+    }
+    // Overlaps with the previous word are trimmed; truly out-of-order words are
+    // left for validation to reject.
+    if (start >= previousStart) start = Math.max(start, previousEnd);
+    if (end <= start) end = start + 0.01;
+    previousStart = start;
+    previousEnd = end;
+    return { ...value, start, end };
+  });
+}
+
 function cueTime(value: string): number {
   const match = /^(?:(\d{2,}):)?([0-5]\d):([0-5]\d)[.,](\d{3})$/.exec(value);
   if (!match) throw new Error(`Invalid subtitle timestamp: ${value}`);
@@ -103,16 +141,18 @@ export function parseTranscript(input: string, filename: string): SequenceTransc
       ? data
       : object(data) && Array.isArray(data.word_segments)
         ? data.word_segments
-        : object(data) && Array.isArray(data.segments)
-          ? data.segments.flatMap((segment: unknown) =>
+        : object(data) && (Array.isArray(data.segments) || Array.isArray(data.sentences))
+          ? ((data.segments ?? data.sentences) as unknown[]).flatMap((segment: unknown) =>
               object(segment) && Array.isArray(segment.words) ? segment.words : [null],
             )
           : object(data) && Array.isArray(data.words)
             ? data.words
             : null;
     const words = validateWords(
-      rows?.map((row: unknown) =>
-        object(row) ? { text: row.word ?? row.text, start: row.start, end: row.end } : row,
+      fillWordTimes(
+        rows?.map((row: unknown) =>
+          object(row) ? { text: row.word ?? row.text, start: row.start, end: row.end } : row,
+        ),
       ),
     );
     return { source: `WhisperX JSON · ${filename}`, timing: "word", offset: 0, words };

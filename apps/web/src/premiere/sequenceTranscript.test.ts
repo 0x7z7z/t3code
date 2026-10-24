@@ -29,6 +29,32 @@ it("imports WhisperX segments and word_segments without losing punctuation", () 
   }
 });
 
+it("imports transcriber sentence files and fills WhisperX gaps from neighbours", () => {
+  const doc = parseTranscript(
+    JSON.stringify({
+      metadata: { model: "small.en" },
+      sentences: [
+        {
+          words: [
+            { word: "Top", start: 1, end: 1.4 },
+            { word: "10", score: 0.2 },
+            { word: "forms", start: 1.9, end: 1.9 },
+            { word: "ranked.", start: 1.905, end: 2.5 },
+          ],
+        },
+      ],
+    }),
+    "vo_sentences.json",
+  );
+  const round = (value: number) => Math.round(value * 1000) / 1000;
+  expect(doc.words.map((word) => [word.text, round(word.start), round(word.end)])).toEqual([
+    ["Top", 1, 1.4],
+    ["10", 1.4, 1.9],
+    ["forms", 1.9, 1.91],
+    ["ranked.", 1.91, 2.5],
+  ]);
+});
+
 it("imports SRT and VTT with explicit estimated word timing", () => {
   const srt = parseTranscript(
     "1\r\n00:00:01,000 --> 00:00:03,000\r\nHello <i>world.</i>\r\n\r\n2\r\n00:00:04,000 --> 00:00:05,000\r\nAgain",
@@ -53,9 +79,7 @@ it("rejects invalid JSON, untimed words, unordered words and malformed subtitles
     "{",
     "{}",
     '{"segments":[{"text":"no words"}]}',
-    '{"words":[{"word":"missing"}]}',
     JSON.stringify({ words: words.toReversed() }),
-    '{"words":[{"word":"zero","start":1,"end":1}]}',
   ]) {
     expect(() => parseTranscript(input, "voice.json")).toThrow();
   }
