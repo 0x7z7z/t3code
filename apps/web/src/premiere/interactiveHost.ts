@@ -20,14 +20,18 @@ function hostPacket(event: MessageEvent<unknown>) {
 }
 
 export function requestTimelineAction(
-  type: "premiere.clips.request" | "premiere.select" | "premiere.markers.add",
+  type:
+    | "premiere.clips.request"
+    | "premiere.select"
+    | "premiere.markers.add"
+    | "premiere.transcript.load.request",
   payload: object,
 ): Promise<object> {
   if (!isPremierePanel())
     return Promise.reject(new Error("Open Axis inside Premiere to use timeline actions."));
   return new Promise((resolve, reject) => {
     const requestId = `axis-action-${++nextRequestId}`;
-    const responseType = type === "premiere.clips.request" ? "premiere.clips" : type;
+    const responseType = type.replace(/\.request$/, "");
     const finish = (error: string | null, packet: object) => {
       clearTimeout(timeout);
       window.removeEventListener("message", receive);

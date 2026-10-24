@@ -57,6 +57,7 @@ import { QuestionCard } from "./QuestionCard";
 import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
+const SETTLED = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 
 export function PremiereApp() {
   const projects = useProjects();
@@ -97,6 +98,10 @@ export function PremiereApp() {
   const [busy, setBusy] = useState(false);
   const [panelView, setPanelView] = useState<"conversation" | "transcript">("conversation");
   const [transcriptBusy, setTranscriptBusy] = useState(false);
+  const [transcriptionTurn, setTranscriptionTurn] = useState<{
+    threadId: ThreadId;
+    messageId: ReturnType<typeof newMessageId>;
+  } | null>(null);
   const transcriptVisible = panelView === "transcript" && host.connected;
   useEffect(() => {
     setPremiereTranscriptActive(transcriptVisible);
@@ -140,6 +145,19 @@ export function PremiereApp() {
       candidate.id !== selectedThread && candidate.runtime && ACTIVE.has(candidate.runtime.status),
   );
   const running = thread?.runtime ? ACTIVE.has(thread.runtime.status) : false;
+  const transcriptionRun =
+    transcriptionTurn?.threadId === selectedThread
+      ? projection?.runs.find((run) => run.userMessageId === transcriptionTurn.messageId)
+      : undefined;
+  const transcriptionFinished = transcriptionRun && SETTLED.has(transcriptionRun.status);
+  const transcriptionThread = threads.find(
+    (candidate) => candidate.id === transcriptionTurn?.threadId,
+  );
+  let transcriptionReply: (typeof blocks)[number] | undefined;
+  for (const block of blocks) {
+    if (block.kind === "assistant" || (block.kind === "notice" && block.error))
+      transcriptionReply = block;
+  }
   const timelineChanges = useTurnChanges(
     selectedThread,
     projection?.runs ?? [],
@@ -320,9 +338,9 @@ export function PremiereApp() {
     }
   }
 
-  async function send(event: FormEvent) {
-    event.preventDefault();
-    const action = images.length ? null : panelActionFor(draft);
+  async function send(event?: FormEvent, transcriptionPrompt?: string) {
+    event?.preventDefault();
+    const action = transcriptionPrompt || images.length ? null : panelActionFor(draft);
     if (action && runPanelAction(action)) {
       writeDraft("");
       return;
@@ -331,7 +349,7 @@ export function PremiereApp() {
       !project ||
       !provider ||
       !model ||
-      (!draft.trim() && !images.length) ||
+      (!transcriptionPrompt && !draft.trim() && !images.length) ||
       inFlight.current ||
       transcriptBusy ||
       capturingFrame ||
@@ -343,14 +361,20 @@ export function PremiereApp() {
       timelineChanges.pending ||
       timelineChanges.undoing ||
       otherActive
-    )
+    ) {
+      if (transcriptionPrompt)
+        throw new Error("Wait for the current turn and connect an agent before transcribing.");
       return;
+    }
     inFlight.current = true;
     setBusy(true);
     setError(null);
-    const prompt = draft;
-    const sentImages = images;
-    const targetId = selectedThread ?? newThreadId();
+    const prompt = transcriptionPrompt ?? draft;
+    const sentImages = transcriptionPrompt ? [] : images;
+    // Provider Plan modes forbid artifact writes. A transcription gets its own
+    // execution-capable conversation while the composer's mode stays unchanged.
+    const targetId = transcriptionPrompt ? newThreadId() : (selectedThread ?? newThreadId());
+    const turnMode = transcriptionPrompt ? "default" : mode;
     const messageId = newMessageId();
     const options = editingModelOptions(model, optionValues);
     const selection = createModelSelection(provider.instanceId, model.slug, options);
@@ -362,13 +386,14 @@ export function PremiereApp() {
         throw new Error(
           "The active project or sequence changed. Check the timeline, then send again.",
         );
-      await timelineChanges.begin(
-        targetId,
-        messageId,
-        mode === "default",
-        context?.sequenceId,
-        context?.projectDocumentId || context?.projectPath,
-      );
+      if (!transcriptionPrompt)
+        await timelineChanges.begin(
+          targetId,
+          messageId,
+          mode === "default",
+          context?.sequenceId,
+          context?.projectDocumentId || context?.projectPath,
+        );
       const result = await startTurn({
         environmentId: project.environmentId,
         input: {
@@ -387,8 +412,8 @@ export function PremiereApp() {
           },
           modelSelection: selection,
           runtimeMode,
-          interactionMode: mode,
-          ...(!selectedThread
+          interactionMode: turnMode,
+          ...(!selectedThread || transcriptionPrompt
             ? {
                 bootstrap: {
                   createThread: {
@@ -396,7 +421,7 @@ export function PremiereApp() {
                     title: (prompt.trim() || sentImages[0]?.name || "Image").slice(0, 80),
                     modelSelection: selection,
                     runtimeMode,
-                    interactionMode: mode,
+                    interactionMode: turnMode,
                     branch: null,
                     worktreePath: null,
                     createdAt: DateTime.formatIso(DateTime.nowUnsafe()),
@@ -414,13 +439,25 @@ export function PremiereApp() {
             : "The backend did not accept this request. Your draft has been kept.",
         );
       }
-      try {
-        localStorage.removeItem(draftKey);
-      } catch {
-        /* Sending is independent of browser draft storage. */
+      if (!transcriptionPrompt) {
+        try {
+          localStorage.removeItem(draftKey);
+        } catch {
+          /* Sending is independent of browser draft storage. */
+        }
+        setDraftState({ key: draftKey, value: "" });
       }
       setSelectedThread(targetId);
-      setDraftState({ key: draftKey, value: "" });
+      if (transcriptionPrompt) {
+        setTranscriptionTurn({ threadId: targetId, messageId });
+        const destination = `premiere-draft:${environmentId}:${project.id}:${targetId}`;
+        setDraftState({ key: destination, value: draft });
+        try {
+          localStorage.setItem(destination, draft);
+        } catch {
+          /* Keep the draft in memory. */
+        }
+      }
       setImages((current) => current.filter((image) => !sentImages.includes(image)));
       followTranscript.current = true;
     } catch (failure) {
@@ -430,6 +467,7 @@ export function PremiereApp() {
           ? failure.message
           : "The request failed. Your draft has been kept.",
       );
+      if (transcriptionPrompt) throw failure;
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -684,6 +722,32 @@ export function PremiereApp() {
               timelineChanges.undoing
             }
             onBusy={setTranscriptBusy}
+            onTranscribe={(prompt) => send(undefined, prompt)}
+            transcriptionDisabled={
+              !project ||
+              !provider ||
+              !model ||
+              !ready ||
+              !canOperate ||
+              !host.connected ||
+              busy ||
+              running ||
+              otherActive ||
+              capturingFrame ||
+              transcriptBusy ||
+              timelineChanges.pending ||
+              timelineChanges.undoing
+            }
+            agentStatus={
+              busy ? "Sending to agent" : (transcriptionThread?.runtime?.status ?? "idle")
+            }
+            agentOutcome={
+              transcriptionFinished
+                ? transcriptionReply && "text" in transcriptionReply
+                  ? transcriptionReply.text.slice(0, 1024)
+                  : transcriptionRun.status
+                : null
+            }
             onAsk={(context) => {
               writeDraft(`${draft.trimEnd()}${draft.trim() ? "\n\n" : ""}${context}\n\n`);
               setPanelView("conversation");
