@@ -53,7 +53,7 @@ export interface SlashItem {
   readonly kind: "action" | "command" | "skill";
   readonly name: string;
   readonly description: string | undefined;
-  /** Text that replaces the typed "/query". T3 resolves "$name" to the skill for each provider. */
+  /** Text that replaces the typed "/query". The server resolves "$name" to the skill for each provider. */
   readonly insert: string;
   readonly action?: PanelAction;
 }

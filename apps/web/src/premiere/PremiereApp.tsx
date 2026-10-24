@@ -230,7 +230,7 @@ export function PremiereApp() {
       setPairing(true);
       const result = await connect({ host: request.host, pairingCode: request.token });
       if (result._tag !== "Success")
-        setError("Could not pair with T3. Reopen the extension to retry.");
+        setError("Could not connect to the Axis backend. Reopen the extension to retry.");
       setPairing(false);
     });
   }, [connect]);
@@ -328,7 +328,7 @@ export function PremiereApp() {
         throw new Error(
           failure instanceof Error
             ? failure.message
-            : "T3 did not accept this request. Your draft has been kept.",
+            : "The backend did not accept this request. Your draft has been kept.",
         );
       }
       try {

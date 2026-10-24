@@ -6,7 +6,7 @@ import { ChevronDownIcon, PaperclipIcon, XIcon } from "lucide-react";
 import { runtimeModeConfig, runtimeModeOptions } from "../components/chat/runtimeModeConfig";
 import type { ComposerImage, SlashItem } from "./composer";
 
-/** T3's access modes, as a menu that opens above the composer. */
+/** Access modes, as a menu that opens above the composer. */
 export function AccessModeMenu({
   value,
   disabled,
@@ -191,7 +191,7 @@ export function AttachButton({
   );
 }
 
-/** The /usage-limits answer: remaining quota per window, read from T3's last limits check. */
+/** The /usage-limits answer: remaining quota per window, read from the last limits check. */
 export function UsageCard({ report, onClose }: { report: UsageLimitsReport; onClose: () => void }) {
   const now = Date.parse(report.createdAt);
   return (

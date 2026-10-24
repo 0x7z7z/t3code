@@ -70,7 +70,7 @@ function toolLabel(item: OrchestrationV2TurnItem): string | null {
       return sentenceCase(name);
     }
     case "command_execution":
-      // T3 records its own workspace preparation as a command; it is not the agent's work.
+      // The server records its own workspace preparation as a command; it is not the agent's work.
       if (item.input === "Preparing workspace") return null;
       return item.title ? sentenceCase(item.title) : "Ran a command";
     case "file_change":

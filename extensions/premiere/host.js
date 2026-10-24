@@ -68,9 +68,7 @@
       } catch {
         next = null;
       }
-      document.getElementById("project").textContent = next
-        ? next.projectName
-        : "Premiere Assistant";
+      document.getElementById("project").textContent = next ? next.projectName : "Axis";
       document.getElementById("sequence").textContent = next
         ? next.sequenceName + " · " + Math.round(next.fps * 100) / 100 + " fps"
         : "Open a sequence to attach timeline context";
