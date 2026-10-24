@@ -45,6 +45,9 @@ import { Markdown, type SeekHandler } from "./Markdown";
 import { editingModelOptions } from "./models";
 import { selectEditingModel, selectEditingProvider, selectEditingWorkspace } from "./selection";
 import { buildTranscript, summarizeSteps, type ToolStep } from "./transcript";
+import { useTurnChanges } from "./useTurnChanges";
+import { TurnChanges } from "./TurnChangesCard";
+import type { TurnChangeRecord } from "./turnChanges";
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
@@ -121,6 +124,27 @@ export function PremiereApp() {
       candidate.id !== selectedThread && candidate.runtime && ACTIVE.has(candidate.runtime.status),
   );
   const running = thread?.runtime ? ACTIVE.has(thread.runtime.status) : false;
+  const timelineChanges = useTurnChanges(
+    selectedThread,
+    projection?.runs ?? [],
+    projection?.turnItems ?? [],
+    blocks,
+    detail.status === "live",
+  );
+  const changeCard = (record: TurnChangeRecord) => (
+    <TurnChanges
+      key={record.messageId}
+      record={record}
+      host={host}
+      latest={timelineChanges.latestId === record.messageId}
+      busy={busy || running || otherActive || timelineChanges.pending || timelineChanges.undoing}
+      onRestored={timelineChanges.restored}
+      onRestoring={timelineChanges.setUndoing}
+    />
+  );
+  const timelineLocked =
+    timelineChanges.undoing ||
+    (selectedThread !== null && timelineChanges.pendingThreadId === selectedThread);
   const draftKey = `premiere-draft:${environmentId}:${project?.id}:${selectedThread ?? "new"}`;
   let storedDraft = "";
   try {
@@ -171,6 +195,10 @@ export function PremiereApp() {
         });
         return true;
       case "new":
+        if (timelineChanges.pending || timelineChanges.undoing) {
+          setError("Wait for this turn's timeline snapshot before switching conversations.");
+          return true;
+        }
         setSelectedThread(null);
         setError(null);
         return true;
@@ -267,6 +295,8 @@ export function PremiereApp() {
       !host.connected ||
       (selectedThread !== null && !thread) ||
       running ||
+      timelineChanges.pending ||
+      timelineChanges.undoing ||
       otherActive
     )
       return;
@@ -276,6 +306,7 @@ export function PremiereApp() {
     const prompt = draft;
     const sentImages = images;
     const targetId = selectedThread ?? newThreadId();
+    const messageId = newMessageId();
     const options = editingModelOptions(model, optionValues);
     const selection = createModelSelection(provider.instanceId, model.slug, options);
     try {
@@ -286,12 +317,19 @@ export function PremiereApp() {
         throw new Error(
           "The active project or sequence changed. Check the timeline, then send again.",
         );
+      await timelineChanges.begin(
+        targetId,
+        messageId,
+        mode === "default",
+        context?.sequenceId,
+        context?.projectDocumentId || context?.projectPath,
+      );
       const result = await startTurn({
         environmentId: project.environmentId,
         input: {
           threadId: targetId,
           message: {
-            messageId: newMessageId(),
+            messageId,
             role: "user",
             text: formatPremierePrompt(prompt, context),
             attachments: sentImages.map((image) => ({
@@ -341,6 +379,7 @@ export function PremiereApp() {
       setImages((current) => current.filter((image) => !sentImages.includes(image)));
       followTranscript.current = true;
     } catch (failure) {
+      timelineChanges.cancel(messageId);
       setError(
         failure instanceof Error
           ? failure.message
@@ -363,7 +402,7 @@ export function PremiereApp() {
           <select
             aria-label="Editing workspace"
             data-workspace-select=""
-            disabled={busy}
+            disabled={busy || timelineLocked}
             value={project ? `${project.environmentId}:${project.id}` : ""}
             onChange={(event) => {
               setWorkspaceKey(event.target.value);
@@ -394,7 +433,7 @@ export function PremiereApp() {
         ) : null}
         <select
           aria-label="Editing conversation"
-          disabled={busy}
+          disabled={busy || timelineLocked}
           value={selectedThread ?? ""}
           onChange={(event) => {
             const next = threads.find((candidate) => candidate.id === event.target.value);
@@ -426,7 +465,7 @@ export function PremiereApp() {
           type="button"
           data-icon-button=""
           aria-label="New conversation"
-          disabled={busy}
+          disabled={busy || timelineLocked}
           onClick={() => {
             setSelectedThread(null);
             setError(null);
@@ -443,6 +482,14 @@ export function PremiereApp() {
       {status ? (
         <p data-status="" role="status">
           {status}
+        </p>
+      ) : null}
+      {timelineChanges.pending && timelineChanges.pendingThreadId !== selectedThread ? (
+        <p data-notice="">
+          Select{" "}
+          {threads.find((candidate) => candidate.id === timelineChanges.pendingThreadId)?.title ??
+            "the previous conversation"}{" "}
+          to finish capturing its timeline changes.
         </p>
       ) : null}
       <div
@@ -494,6 +541,9 @@ export function PremiereApp() {
                   <div key={block.id} data-assistant-message="">
                     <Markdown text={block.text} onSeek={seek} />
                     {block.streaming ? <span data-typing="" aria-label="Writing" /> : null}
+                    {timelineChanges.byBlock.has(block.id)
+                      ? changeCard(timelineChanges.byBlock.get(block.id)!)
+                      : null}
                   </div>
                 );
               case "tools":
@@ -536,6 +586,7 @@ export function PremiereApp() {
             }
           })
         )}
+        {timelineChanges.unplaced.map(changeCard)}
         {running && blocks.at(-1)?.kind !== "tools" && !lastStreaming ? (
           <p data-working="">Working…</p>
         ) : null}
@@ -892,6 +943,8 @@ export function PremiereApp() {
               aria-label={busy ? "Sending" : "Send"}
               disabled={
                 busy ||
+                timelineChanges.pending ||
+                timelineChanges.undoing ||
                 !ready ||
                 !canOperate ||
                 (selectedThread !== null && !thread) ||

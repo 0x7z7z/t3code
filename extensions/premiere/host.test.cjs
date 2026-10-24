@@ -48,6 +48,7 @@ async function panelFixture() {
     clearInterval() {},
     setTimeout,
   });
+  vm.runInContext(readFileSync(path.join(__dirname, "snapshot.js"), "utf8"), context);
   vm.runInContext(readFileSync(path.join(__dirname, "host.js"), "utf8"), context);
   await new Promise(setImmediate);
   return { elements, listeners, evaluations, messages, contentWindow };
@@ -143,4 +144,37 @@ test("moves the playhead to a whole frame only in the sequence the chat refers t
   // 1.01 s at 29.97 fps rounds to frame 30.
   assert.deepEqual(run('sequence-"a'), { result: "premiere:ok", positions: ["254270016000"] });
   assert.deepEqual(run("sequence-b"), { result: "premiere:mismatch", positions: [] });
+});
+
+test("snapshot and restore replies are correlated and only sent to the trusted iframe origin", async () => {
+  const f = await panelFixture();
+  const send = (data, origin = "http://127.0.0.1:5749", source = f.contentWindow) =>
+    f.listeners.get("message")({ source, origin, data: { protocol: 1, ...data } });
+  const before = f.evaluations.length;
+  const request = { type: "premiere.snapshot.request", requestId: "snapshot", checkpoint: true };
+  send(request, "https://untrusted.test");
+  send(request, "http://127.0.0.1:5749", {});
+  send({ ...request, protocol: 2 });
+  send({ ...request, requestId: "" });
+  assert.equal(f.evaluations.length, before);
+  send(request);
+  assert.equal(f.evaluations.length, before + 1);
+  f.evaluations
+    .at(-1)
+    .callback('axis:{"ok":true,"snapshot":{},"signature":"snapshot","checkpointIds":[]}');
+  assert.equal(f.messages[0].packet.type, "premiere.snapshot");
+  assert.equal(f.messages[0].packet.requestId, "snapshot");
+  assert.equal(f.messages[0].origin, "http://127.0.0.1:5749");
+  send({
+    type: "premiere.restore.request",
+    requestId: "restore",
+    checkpointId: "checkpoint",
+    sequenceId: "sequence",
+    expectedSignature: "snapshot",
+    checkpointSignature: "checkpoint",
+    turnNumber: 1,
+  });
+  f.evaluations.at(-1).callback('axis:{"ok":false,"error":"checkpoint gone"}');
+  assert.equal(f.messages[1].packet.type, "premiere.restore");
+  assert.equal(f.messages[1].packet.error, "checkpoint gone");
 });

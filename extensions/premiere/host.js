@@ -99,6 +99,25 @@
       event.data.protocol !== 1
     )
       return;
+    if (window.AxisTimeline) {
+      var requestOrigin = event.origin;
+      var request = event.data;
+      if (
+        window.AxisTimeline.handle(request, window.__adobe_cep__, function (result) {
+          if (backendOrigin === requestOrigin && frame.contentWindow)
+            frame.contentWindow.postMessage(
+              Object.assign({}, result, {
+                type: request.type.replace(".request", ""),
+                protocol: 1,
+                requestId: request.requestId,
+              }),
+              requestOrigin,
+            );
+          if (result.ok && request.type === "premiere.restore.request") publishContext(null);
+        })
+      )
+        return;
+    }
     if (event.data.type === "premiere.ready" || event.data.type === "premiere.context.request") {
       publishContext(typeof event.data.requestId === "string" ? event.data.requestId : null);
       if (event.data.type === "premiere.ready") {
