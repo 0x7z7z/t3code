@@ -40,8 +40,16 @@ export interface PremiereHostState {
   readonly context: PremiereContext | null;
 }
 
+export interface PremierePlayheadSample {
+  readonly seconds: number;
+  readonly receivedAt: number;
+  readonly readId?: number;
+}
+
 const listeners = new Set<() => void>();
 let state: PremiereHostState = { connected: false, context: null };
+let playheadSample: PremierePlayheadSample | null = null;
+let highestPlayheadReadId = -1;
 const pending = new Map<string, (context: PremiereContext | null) => void>();
 const pendingFrames = new Map<string, (packet: Record<string, unknown>) => void>();
 let nextRequestId = 0;
@@ -76,11 +84,24 @@ export function parsePremiereContext(value: unknown): PremiereContext | null {
 }
 
 function update(next: PremiereHostState) {
+  if (!next.context) playheadSample = null;
+  if (!next.connected) highestPlayheadReadId = -1;
   state = next;
   for (const listener of listeners) listener();
 }
 
 export const getPremiereHostState = () => state;
+export const getPremierePlayheadSample = () => playheadSample;
+
+function applyPlayheadSample(seconds: number, receivedAt: number, id: unknown): boolean {
+  const readId = typeof id === "number" && Number.isSafeInteger(id) && id >= 0 ? id : undefined;
+  if (readId !== undefined) {
+    if (readId <= highestPlayheadReadId) return false;
+    highestPlayheadReadId = readId;
+  }
+  playheadSample = { seconds, receivedAt, ...(readId === undefined ? {} : { readId }) };
+  return true;
+}
 export function subscribePremiereHost(listener: () => void) {
   listeners.add(listener);
   return () => {
@@ -96,6 +117,7 @@ export function installPremiereHostBridge(): () => void {
       return;
     if (typeof event.data !== "object" || event.data === null) return;
     const packet = event.data as Record<string, unknown>;
+    const receivedAt = performance.now();
     if (packet.type === "premiere.playhead" && packet.protocol === 1) {
       const context = state.context;
       if (
@@ -105,7 +127,7 @@ export function installPremiereHostBridge(): () => void {
         typeof packet.seconds === "number" &&
         Number.isFinite(packet.seconds) &&
         packet.seconds >= 0 &&
-        packet.seconds !== context.playheadSeconds
+        applyPlayheadSample(packet.seconds, receivedAt, packet.readId)
       )
         update({ connected: true, context: { ...context, playheadSeconds: packet.seconds } });
       return;
@@ -115,8 +137,14 @@ export function installPremiereHostBridge(): () => void {
       return;
     }
     if (packet.type !== "premiere.context" || packet.protocol !== 1) return;
-    const context = parsePremiereContext(packet.context);
+    let context = parsePremiereContext(packet.context);
     if (packet.context !== null && context === null) return;
+    if (context && !applyPlayheadSample(context.playheadSeconds, receivedAt, packet.playheadReadId))
+      context = {
+        ...context,
+        playheadSeconds:
+          playheadSample?.seconds ?? state.context?.playheadSeconds ?? context.playheadSeconds,
+      };
     update({ connected: true, context });
     if (typeof packet.requestId === "string") pending.get(packet.requestId)?.(context);
   };

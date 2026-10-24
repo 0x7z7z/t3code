@@ -6,6 +6,8 @@ import {
   type PremiereContext,
   installPremiereHostBridge,
   getPremiereHostState,
+  getPremierePlayheadSample,
+  requestPremiereContext,
   requestPremiereFrame,
   premiereSelectionSummary,
   setPremiereTranscriptActive,
@@ -163,6 +165,75 @@ it("subscribes to a fast playhead feed and accepts only matching, trusted sequen
   expect(getPremiereHostState().context).toEqual({ ...context, playheadSeconds: 1.2 });
   setPremiereTranscriptActive(false);
   expect(bridge.parent.postMessage.mock.calls.at(-1)?.[0].enabled).toBe(false);
+});
+
+it("keeps the latest issued playhead while applying stale context metadata and resolving requests", async () => {
+  using bridge = frameBridge();
+  using received = vi.spyOn(performance, "now").mockReturnValue(100);
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 1 });
+  const request = requestPremiereContext();
+  const requestId = bridge.parent.postMessage.mock.calls.at(-1)?.[0].requestId;
+  received.mockReturnValue(200);
+  bridge.reply({
+    type: "premiere.playhead",
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    seconds: 2,
+    readId: 3,
+  });
+  const sample = getPremierePlayheadSample();
+  expect(sample).toEqual({ seconds: 2, receivedAt: 200, readId: 3 });
+  bridge.reply({
+    type: "premiere.context",
+    requestId,
+    context: { ...context, sequenceName: "Renamed" },
+    playheadReadId: 2,
+  });
+  await expect(request).resolves.toMatchObject({ sequenceName: "Renamed", playheadSeconds: 2 });
+  expect(getPremiereHostState().context?.playheadSeconds).toBe(2);
+  expect(getPremierePlayheadSample()).toBe(sample);
+  bridge.reply({
+    type: "premiere.playhead",
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    seconds: 1,
+    readId: 2,
+  });
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 3 });
+  expect(getPremierePlayheadSample()).toBe(sample);
+  received.mockReturnValue(300);
+  bridge.reply({
+    type: "premiere.context",
+    context: { ...context, playheadSeconds: 2 },
+    playheadReadId: 4,
+  });
+  expect(getPremierePlayheadSample()).toEqual({ seconds: 2, receivedAt: 300, readId: 4 });
+});
+
+it("accepts legacy packets and repeated stationary samples, and clears samples on disconnect", () => {
+  using bridge = frameBridge();
+  using received = vi.spyOn(performance, "now").mockReturnValue(10);
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 10 });
+  bridge.reply({ type: "premiere.context", context: { ...context, playheadSeconds: 1 } });
+  expect(getPremierePlayheadSample()).toEqual({ seconds: 1, receivedAt: 10 });
+  received.mockReturnValue(20);
+  bridge.reply({
+    type: "premiere.playhead",
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    seconds: 1,
+  });
+  expect(getPremierePlayheadSample()).toEqual({ seconds: 1, receivedAt: 20 });
+  bridge.reply({
+    type: "premiere.playhead",
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    seconds: 0,
+    readId: 9,
+  });
+  expect(getPremiereHostState().context?.playheadSeconds).toBe(1);
+  bridge.dispose();
+  expect(getPremierePlayheadSample()).toBeNull();
 });
 
 describe("Premiere frame requests", () => {
