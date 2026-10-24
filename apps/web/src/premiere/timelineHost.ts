@@ -98,7 +98,7 @@ export interface SnapshotReply {
 }
 
 async function request(
-  type: "snapshot" | "restore" | "prune",
+  type: "snapshot" | "restore" | "prune" | "cut",
   fields: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   if (!isPremierePanel()) throw new Error("Premiere is not connected.");
@@ -180,6 +180,34 @@ export async function restoreTimeline(fields: {
   expectedSignature: string;
   checkpointSignature: string;
   turnNumber: number;
-}): Promise<void> {
-  await request("restore", fields);
+}): Promise<string | null> {
+  const packet = await request("restore", fields);
+  return text(packet.sequenceId, 512) ? packet.sequenceId : null;
+}
+
+export async function cutTranscriptRange(fields: {
+  sequenceId: string;
+  projectId: string;
+  start: number;
+  end: number;
+}) {
+  const packet = await request("cut", fields);
+  if (
+    !parseTimelineSnapshot(packet.snapshot) ||
+    !text(packet.signature, 4000000) ||
+    !text(packet.checkpointId, 512) ||
+    !packet.checkpointId ||
+    !text(packet.checkpointSignature, 4000000) ||
+    !packet.checkpointSignature ||
+    (packet.cutError !== null && !text(packet.cutError))
+  )
+    throw new Error(
+      "Invalid cut response. Inspect the timeline and its Axis checkpoint before retrying.",
+    );
+  return {
+    checkpointId: packet.checkpointId,
+    checkpointSignature: packet.checkpointSignature,
+    expectedSignature: packet.signature,
+    cutError: packet.cutError,
+  };
 }

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import { requestTimelineSnapshot, restoreTimeline } from "./timelineHost";
+import { cutTranscriptRange, requestTimelineSnapshot, restoreTimeline } from "./timelineHost";
 
 function fixture() {
   const postMessage = vi.fn();
@@ -42,6 +42,48 @@ function fixture() {
   };
   return { postMessage, listeners, send, snapshot };
 }
+
+it("correlates checkpointed cut replies and keeps recovery data for partial failures", async () => {
+  const f = fixture();
+  try {
+    const pending = cutTranscriptRange({
+      sequenceId: "sequence",
+      projectId: "project",
+      start: 1,
+      end: 2,
+    });
+    expect(f.postMessage.mock.calls[0]![0]).toMatchObject({
+      type: "premiere.cut.request",
+      start: 1,
+      end: 2,
+    });
+    f.send({
+      ok: true,
+      snapshot: f.snapshot,
+      signature: "after",
+      checkpointId: "saved",
+      checkpointSignature: "before",
+      cutError: "Razor failed",
+    });
+    await expect(pending).resolves.toEqual({
+      checkpointId: "saved",
+      checkpointSignature: "before",
+      expectedSignature: "after",
+      cutError: "Razor failed",
+    });
+    const malformed = cutTranscriptRange({
+      sequenceId: "sequence",
+      projectId: "project",
+      start: 1,
+      end: 2,
+    });
+    f.send({ ok: true, snapshot: f.snapshot, signature: "after", checkpointId: null });
+    await expect(malformed).rejects.toThrow("Invalid cut response");
+    expect(f.listeners.size).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
 
 it("correlates snapshots and ignores impostor windows, origins, protocols and request IDs", async () => {
   const f = fixture();

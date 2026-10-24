@@ -78,14 +78,17 @@ function fixture() {
     checkpointId = "",
     signature = "",
     turn = 1,
+    injectedCut = null,
   ) => {
     const args = [action, checkpoint, sequenceId, checkpointId, signature, turn]
       .map(JSON.stringify)
       .join(",");
     // Premiere's ExtendScript runtime has no native JSON object.
-    const raw = vm.runInNewContext(`(${timelineOperation.toString()})(${args})`, {
+    const raw = vm.runInNewContext(`(${timelineOperation.toString()})(${args},range,injectedCut)`, {
       app: { project },
       JSON: undefined,
+      range: { start: 1, end: 2, projectId: "project-a" },
+      injectedCut,
     });
     return JSON.parse(raw.slice(5));
   };
@@ -101,6 +104,49 @@ test("snapshots clips, markers, ranges and disabled state without native ExtendS
   assert.equal(result.snapshot.markers[0].color, 6);
   assert.equal(result.snapshot.outPoint, 10);
   assert.deepEqual(JSON.parse(result.signature), result.snapshot);
+});
+
+test("a transcript cut preflights, creates a verified checkpoint, then mutates in the same host operation", () => {
+  const f = fixture();
+  const phases = [];
+  const result = f.run("cut", true, "sequence-a", "", "", 1, (seq, range, dryRun) => {
+    phases.push(dryRun);
+    assert.equal(seq, f.original);
+    assert.equal(range.start, 1);
+    if (dryRun) assert.equal(f.project.sequences.numSequences, 1);
+    else {
+      assert.equal(f.project.sequences.numSequences, 2);
+      f.clip.end.seconds = 4;
+    }
+  });
+  assert.deepEqual(phases, [true, false]);
+  assert.equal(result.ok, true);
+  assert.equal(result.checkpointId, "checkpoint-a");
+  assert.equal(result.snapshot.videoTracks[0].clips[0].end, 4);
+  assert.equal(result.cutError, null);
+});
+
+test("a transcript cut cannot mutate without a checkpoint and returns recovery data after a partial failure", () => {
+  const f = fixture();
+  f.original.clone = () => false;
+  let writes = 0;
+  const failed = f.run("cut", true, "sequence-a", "", "", 1, (_seq, _range, dryRun) => {
+    if (!dryRun) writes++;
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(writes, 0);
+  const partial = fixture();
+  const result = partial.run("cut", true, "sequence-a", "", "", 1, (_seq, _range, dryRun) => {
+    if (!dryRun) {
+      partial.clip.end.seconds = 4;
+      throw new Error("Host failed after razor");
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.cutError, /Host failed after razor/);
+  assert.equal(result.checkpointId, "checkpoint-a");
+  assert.ok(result.signature);
+  assert.ok(result.checkpointSignature);
 });
 
 test("creates and verifies a clone with new clip IDs, bins it and reactivates the original", () => {

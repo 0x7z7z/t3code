@@ -113,6 +113,31 @@ test("reads the actual host scope, including reserved characters and a zero play
   assert.equal(fields[6], "0");
 });
 
+test("streams lightweight playhead reads only while the transcript view is active", async () => {
+  const f = await panelFixture();
+  f.send({ type: "premiere.transcript.active", enabled: true }, { origin: "https://other.test" });
+  assert.equal(f.evaluations.length, 1);
+  f.send({ type: "premiere.transcript.active", enabled: true });
+  const read = f.evaluations.at(-1);
+  const raw = vm.runInNewContext(read.script, {
+    app: {
+      project: {
+        documentID: "project|a",
+        activeSequence: { sequenceID: "sequence-a", getPlayerPosition: () => ({ seconds: 4.25 }) },
+      },
+    },
+    JSON: undefined,
+  });
+  read.callback(raw);
+  assert.equal(f.messages.at(-1).packet.type, "premiere.playhead");
+  assert.equal(f.messages.at(-1).packet.projectId, "project|a");
+  assert.equal(f.messages.at(-1).packet.seconds, 4.25);
+  f.send({ type: "premiere.transcript.active", enabled: false });
+  const count = f.messages.length;
+  read.callback(raw);
+  assert.equal(f.messages.length, count);
+});
+
 test("coalesces context reads without dropping simultaneous send requests", async () => {
   const fixture = await panelFixture();
   const send = (requestId, origin = "http://127.0.0.1:5749") =>
