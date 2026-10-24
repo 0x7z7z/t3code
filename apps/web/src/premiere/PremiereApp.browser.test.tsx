@@ -12,6 +12,7 @@ import { render } from "../../test/render";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import type { PremiereContext } from "./host";
+import { transcriptStorageKey } from "./TranscriptView";
 
 const state = vi.hoisted(() => ({
   environmentId: "premiere-permission-test",
@@ -436,4 +437,58 @@ it("shows export failures in the composer error area and allows a retry", async 
   await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Remove frame-main-00-00-00-00.png" }).click();
   await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+});
+
+it("inserts quoted transcript context into the existing composer draft and opens the conversation", async () => {
+  setup("transcript-context", true);
+  const context: PremiereContext = {
+    projectName: "Film",
+    projectPath: "D:/Film.prproj",
+    projectDocumentId: "film",
+    sequenceId: "ask-axis",
+    sequenceName: "Opening",
+    fps: 25,
+    playheadSeconds: 0,
+  };
+  state.host = { connected: true, context };
+  localStorage.setItem(
+    transcriptStorageKey(context),
+    JSON.stringify({
+      transcript: {
+        source: "WhisperX JSON · voice.json",
+        timing: "word",
+        offset: 0,
+        words: [
+          { text: "Look", start: 2, end: 2.4 },
+          { text: "closer.", start: 2.5, end: 3 },
+        ],
+      },
+      undo: null,
+      uncertain: false,
+    }),
+  );
+  // The CEP panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen
+    .getByRole("textbox", { name: "Message your editing assistant" })
+    .fill("Put a shot here:");
+  await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+  await screen.getByRole("button", { name: "Look at 00:00:02.000" }).click();
+  await screen
+    .getByRole("button", { name: "closer. at 00:00:02.500" })
+    .click({ modifiers: ["Shift"] });
+  await screen.getByRole("button", { name: "Ask Axis", exact: true }).click();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Message your editing assistant" }))
+    .toHaveValue(
+      'Put a shot here:\n\nTranscript from "Opening" [00:00:02.000 - 00:00:03.000] (WhisperX JSON · voice.json):\n> Look closer.\n\n',
+    );
+  await expect
+    .element(screen.getByRole("button", { name: "Conversation", exact: true }))
+    .toHaveAttribute("aria-pressed", "true");
 });

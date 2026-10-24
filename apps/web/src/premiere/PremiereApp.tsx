@@ -32,6 +32,7 @@ import {
   formatPremierePrompt,
   samePremiereScope,
   seekPremiere,
+  setPremiereTranscriptActive,
 } from "./host";
 import {
   accountLabel,
@@ -53,6 +54,7 @@ import { useTurnChanges } from "./useTurnChanges";
 import { TurnChanges } from "./TurnChangesCard";
 import type { TurnChangeRecord } from "./turnChanges";
 import { QuestionCard } from "./QuestionCard";
+import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
@@ -93,6 +95,13 @@ export function PremiereApp() {
     : { approvals: [], userInputs: [] };
   const [draftState, setDraftState] = useState<{ key: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [panelView, setPanelView] = useState<"conversation" | "transcript">("conversation");
+  const [transcriptBusy, setTranscriptBusy] = useState(false);
+  const transcriptVisible = panelView === "transcript" && host.connected;
+  useEffect(() => {
+    setPremiereTranscriptActive(transcriptVisible);
+    return () => setPremiereTranscriptActive(false);
+  }, [transcriptVisible]);
   const [capturingFrame, setCapturingFrame] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
@@ -144,12 +153,20 @@ export function PremiereApp() {
       record={record}
       host={host}
       latest={timelineChanges.latestId === record.messageId}
-      busy={busy || running || otherActive || timelineChanges.pending || timelineChanges.undoing}
+      busy={
+        busy ||
+        transcriptBusy ||
+        running ||
+        otherActive ||
+        timelineChanges.pending ||
+        timelineChanges.undoing
+      }
       onRestored={timelineChanges.restored}
       onRestoring={timelineChanges.setUndoing}
     />
   );
   const timelineLocked =
+    transcriptBusy ||
     timelineChanges.undoing ||
     (selectedThread !== null && timelineChanges.pendingThreadId === selectedThread);
   const draftKey = `premiere-draft:${environmentId}:${project?.id}:${selectedThread ?? "new"}`;
@@ -316,6 +333,7 @@ export function PremiereApp() {
       !model ||
       (!draft.trim() && !images.length) ||
       inFlight.current ||
+      transcriptBusy ||
       capturingFrame ||
       !ready ||
       !canOperate ||
@@ -506,6 +524,22 @@ export function PremiereApp() {
           Accounts
         </button>
       </header>
+      <nav data-panel-tabs="" aria-label="Panel views">
+        <button
+          type="button"
+          aria-pressed={panelView === "conversation"}
+          onClick={() => setPanelView("conversation")}
+        >
+          Conversation
+        </button>
+        <button
+          type="button"
+          aria-pressed={panelView === "transcript"}
+          onClick={() => setPanelView("transcript")}
+        >
+          Transcript
+        </button>
+      </nav>
       {status ? (
         <p data-status="" role="status">
           {status}
@@ -521,6 +555,7 @@ export function PremiereApp() {
       ) : null}
       <div
         data-transcript=""
+        hidden={panelView !== "conversation"}
         ref={transcript}
         role="log"
         aria-label="Editing conversation messages"
@@ -633,6 +668,31 @@ export function PremiereApp() {
             {projection.subagents.length === 1 ? "" : "s"}
           </p>
         ) : null}
+      </div>
+      <div data-transcript-slot="" hidden={panelView !== "transcript"}>
+        {host.context ? (
+          <TranscriptView
+            key={transcriptStorageKey(host.context)}
+            context={host.context}
+            disabled={
+              !canOperate ||
+              !host.connected ||
+              busy ||
+              running ||
+              otherActive ||
+              timelineChanges.pending ||
+              timelineChanges.undoing
+            }
+            onBusy={setTranscriptBusy}
+            onAsk={(context) => {
+              writeDraft(`${draft.trimEnd()}${draft.trim() ? "\n\n" : ""}${context}\n\n`);
+              setPanelView("conversation");
+              textarea.current?.focus();
+            }}
+          />
+        ) : (
+          <p data-notice="">Open a sequence in Premiere to load its transcript.</p>
+        )}
       </div>
       {pending.approvals.map((request) => (
         <section key={request.requestId} data-request="">
@@ -934,6 +994,7 @@ export function PremiereApp() {
               aria-label={busy ? "Sending" : "Send"}
               disabled={
                 busy ||
+                transcriptBusy ||
                 capturingFrame ||
                 timelineChanges.pending ||
                 timelineChanges.undoing ||

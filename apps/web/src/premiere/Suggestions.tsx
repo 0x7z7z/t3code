@@ -190,22 +190,14 @@ export function Suggestions({
                 <td>{seekTime(shot.timelineOutSeconds)}</td>
                 <td>{durationLabel(shot.durationSeconds)}</td>
                 <td data-shot-description="">
-                  <span data-shot-text="" title={shot.rationale}>
-                    {shot.rationale}
-                  </span>
-                  {shot.notes ? (
-                    <small data-shot-text="" title={shot.notes}>
-                      {shot.notes}
-                    </small>
-                  ) : null}
+                  <span data-shot-text="">{shot.rationale}</span>
+                  {shot.notes ? <small data-shot-text="">{shot.notes}</small> : null}
                 </td>
                 <td data-shot-source="">
                   {names.includes(shot.assetName) ? (
                     <ClipButton name={shot.assetName} actions={actions} />
                   ) : (
-                    <span data-shot-text="" title={shot.assetName}>
-                      {shot.assetName}
-                    </span>
+                    <span data-shot-text="">{shot.assetName}</span>
                   )}
                 </td>
               </tr>

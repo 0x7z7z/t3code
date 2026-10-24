@@ -2,7 +2,16 @@
   "use strict";
 
   /* eslint-disable no-unused-vars -- These functions also run in ES3 ExtendScript. */
-  function timelineOperation(action, checkpoint, sequenceId, checkpointId, expected, turnNumber) {
+  function timelineOperation(
+    action,
+    checkpoint,
+    sequenceId,
+    checkpointId,
+    expected,
+    turnNumber,
+    range,
+    cutRange,
+  ) {
     function quote(value) {
       return (
         '"' +
@@ -199,7 +208,12 @@
           } catch (rollbackError) {}
           throw restoreError;
         }
-        return "axis:" + json({ ok: true });
+        return "axis:" + json({ ok: true, sequenceId: String(saved.sequenceID) });
+      }
+      var cutting = action === "cut";
+      if (cutting) {
+        if (before.truncated) fail("This sequence exceeds the checkpoint limit. No range was cut.");
+        cutRange(original, range, true);
       }
       var savedId = null;
       var content = null;
@@ -239,6 +253,17 @@
         )
           fail("Premiere could not reactivate the original sequence. No turn was sent.");
       }
+      var cutError = null;
+      if (cutting) {
+        if (!savedId)
+          fail(checkpointError || "No verified checkpoint could be created. No range was cut.");
+        try {
+          cutRange(original, range, false);
+        } catch (rangeError) {
+          cutError = String(rangeError).slice(0, 1000);
+        }
+        before = snapshot(original, true);
+      }
       var available = [];
       for (var n = app.project.sequences.numSequences - 1; n >= 0 && available.length < 500; n--) {
         var existing = app.project.sequences[n];
@@ -255,6 +280,7 @@
           checkpointSignature: savedId ? content : null,
           checkpointError: checkpointError,
           checkpointIds: available,
+          cutError: cutError,
         })
       );
     } catch (error) {
@@ -267,6 +293,7 @@
     if (
       data.type !== "premiere.snapshot.request" &&
       data.type !== "premiere.restore.request" &&
+      data.type !== "premiere.cut.request" &&
       data.type !== "premiere.prune.request"
     )
       return false;
@@ -276,11 +303,23 @@
     if (!valid(data.requestId, 128)) return true;
     var restore = data.type === "premiere.restore.request";
     var prune = data.type === "premiere.prune.request";
+    var cutting = data.type === "premiere.cut.request";
     if (
       (prune &&
         (!valid(data.sequenceId, 512) ||
           (data.keepId !== undefined && !valid(data.keepId, 512)))) ||
-      (!restore && !prune && typeof data.checkpoint !== "boolean") ||
+      (!restore && !prune && !cutting && typeof data.checkpoint !== "boolean") ||
+      (cutting &&
+        (!root.AxisRangeCut ||
+          !valid(data.sequenceId, 512) ||
+          !valid(data.projectId, 2048) ||
+          typeof data.start !== "number" ||
+          !isFinite(data.start) ||
+          typeof data.end !== "number" ||
+          !isFinite(data.end) ||
+          data.start < 0 ||
+          data.end <= data.start ||
+          data.end > 8640000)) ||
       (data.sequenceId !== undefined && !valid(data.sequenceId, 512)) ||
       (restore &&
         (!valid(data.sequenceId, 512) ||
@@ -298,12 +337,13 @@
       return true;
     }
     var args = [
-      restore ? "restore" : prune ? "prune" : "snapshot",
-      restore ? data.checkpointSignature : data.checkpoint === true,
+      restore ? "restore" : prune ? "prune" : cutting ? "cut" : "snapshot",
+      restore ? data.checkpointSignature : cutting || data.checkpoint === true,
       data.sequenceId || "",
       (prune ? data.keepId : data.checkpointId) || "",
       data.expectedSignature || "",
       data.turnNumber || 1,
+      cutting ? { start: data.start, end: data.end, projectId: data.projectId } : null,
     ];
     try {
       cep.evalScript(
@@ -317,6 +357,7 @@
                 .replace(/\u2029/g, "\\u2029");
             })
             .join(",") +
+          (cutting ? "," + root.AxisRangeCut.toString() : "") +
           ")",
         function (raw) {
           try {

@@ -51,6 +51,11 @@ export const isPremierePanel = () =>
   window.parent !== window &&
   window.name === "premiere-assistant-v1";
 
+export function setPremiereTranscriptActive(enabled: boolean) {
+  if (isPremierePanel())
+    window.parent.postMessage({ type: "premiere.transcript.active", protocol: 1, enabled }, "*");
+}
+
 export function parsePremiereContext(value: unknown): PremiereContext | null {
   const context = Option.getOrNull(decodeContext(value));
   if (!context) return null;
@@ -91,6 +96,20 @@ export function installPremiereHostBridge(): () => void {
       return;
     if (typeof event.data !== "object" || event.data === null) return;
     const packet = event.data as Record<string, unknown>;
+    if (packet.type === "premiere.playhead" && packet.protocol === 1) {
+      const context = state.context;
+      if (
+        context &&
+        packet.sequenceId === context.sequenceId &&
+        packet.projectId === (context.projectDocumentId || context.projectPath) &&
+        typeof packet.seconds === "number" &&
+        Number.isFinite(packet.seconds) &&
+        packet.seconds >= 0 &&
+        packet.seconds !== context.playheadSeconds
+      )
+        update({ connected: true, context: { ...context, playheadSeconds: packet.seconds } });
+      return;
+    }
     if (packet.type === "premiere.frame" && packet.protocol === 1) {
       if (typeof packet.requestId === "string") pendingFrames.get(packet.requestId)?.(packet);
       return;

@@ -20,6 +20,9 @@
 * {
   box-sizing: border-box;
 }
+[hidden] {
+  display: none !important;
+}
 html,
 body,
 #root {
@@ -943,7 +946,7 @@ svg[width] {
   color: var(--muted);
   font-weight: 500;
 }
-/* Text columns wrap to two lines; the full text is in the hover title. */
+/* Text columns wrap to two lines; Copy CSV has the full text. */
 [data-timeline-suggestions] td[data-shot-description],
 [data-timeline-suggestions] td[data-shot-source] {
   white-space: normal;
@@ -981,6 +984,150 @@ small[data-shot-text] {
 [data-shot-scroll]::-webkit-scrollbar-track,
 [data-shot-scroll]::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* Sequence transcript uses bounded pages so long interviews keep a small DOM. */
+[data-panel-tabs] {
+  display: flex;
+  gap: 6px;
+  padding: 6px max(10px, calc((100% - 880px) / 2));
+  border-bottom: 1px solid var(--border);
+}
+[data-panel-tabs] button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+[data-panel-tabs] button[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+[data-transcript-slot],
+[data-sequence-transcript] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+[data-sequence-transcript] {
+  padding: 14px max(14px, calc((100% - 880px) / 2)) 10px;
+  gap: 10px;
+}
+[data-transcript-tools],
+[data-transcript-mapping],
+[data-transcript-actions],
+[data-transcript-undo],
+[data-transcript-pages] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+[data-transcript-tools] > div {
+  flex: 1;
+  min-width: 160px;
+  overflow-wrap: anywhere;
+}
+[data-transcript-tools] small {
+  display: block;
+  color: var(--muted);
+  margin-top: 4px;
+  font-size: 11px;
+}
+[data-transcript-mapping] {
+  padding-top: 4px;
+}
+[data-transcript-mapping] label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+[data-transcript-mapping] input {
+  width: 74px;
+}
+[data-transcript-mapping] button[aria-pressed="true"] {
+  color: var(--accent);
+}
+[data-transcript-hint] {
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+  font-size: 11px;
+}
+[data-transcript-actions] {
+  padding: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 6px;
+}
+[data-transcript-actions] > span {
+  flex: 1 0 100%;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+[data-transcript-words][data-shot-scroll] {
+  flex: 1;
+  min-height: 100px;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 6px;
+}
+[data-transcript-paragraph] {
+  padding: 12px 0;
+  border-bottom: 1px solid #2c2c2c;
+}
+[data-transcript-time] {
+  color: var(--faint);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+[data-transcript-paragraph] p {
+  margin: 6px 0 0;
+  line-height: 1.9;
+  font-size: 14px;
+}
+[data-transcript-word] {
+  border: 0;
+  padding: 1px 3px;
+  margin: 0 2px 1px 0;
+  border-radius: 3px;
+  background: transparent;
+  line-height: inherit;
+  user-select: none;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+[data-transcript-word][aria-pressed="true"],
+[data-transcript-word][aria-pressed="true"]:hover:enabled {
+  background: #26486d;
+  color: #edf6ff;
+}
+[data-transcript-word][aria-current="true"],
+[data-transcript-word][aria-current="true"]:hover:enabled {
+  background: var(--accent);
+  color: #fff;
+}
+[data-transcript-empty] {
+  max-width: 450px;
+  margin: 60px auto;
+  color: var(--muted);
+  line-height: 1.65;
+}
+[data-transcript-empty] h1 {
+  color: var(--text);
+}
+[data-transcript-pages] {
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 11px;
+}
+[data-transcript-undo] {
+  color: var(--muted);
+  font-size: 11px;
 }
 [data-shot-status="done"] td:first-child {
   color: #33b86c;

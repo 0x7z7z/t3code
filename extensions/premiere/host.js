@@ -9,6 +9,8 @@
   var contextCallbacks = [];
   var readingContext = false;
   var timer = null;
+  var playheadTimer = null;
+  var readingPlayhead = false;
   var nodeRequire =
     typeof require === "function" ? require : window.cep_node && window.cep_node.require;
   var runtime;
@@ -206,6 +208,54 @@
           backendOrigin,
         );
     });
+  }
+
+  function playheadContext() {
+    try {
+      var p = app.project;
+      var s = p && p.activeSequence;
+      if (!s) return "";
+      return [
+        encodeURIComponent(String(p.documentID || p.path)),
+        encodeURIComponent(String(s.sequenceID)),
+        String(s.getPlayerPosition().seconds),
+      ].join("|");
+    } catch (error) {
+      return "premiere:playhead-error|" + String(error);
+    }
+  }
+
+  function publishPlayhead() {
+    if (readingPlayhead || !playheadTimer || !window.__adobe_cep__) return;
+    readingPlayhead = true;
+    try {
+      window.__adobe_cep__.evalScript("(" + playheadContext.toString() + ")()", function (raw) {
+        readingPlayhead = false;
+        if (!playheadTimer || !backendOrigin || !frame.contentWindow) return;
+        var fields = String(raw).split("|");
+        if (
+          fields.length !== 3 ||
+          !fields[2] ||
+          !isFinite(Number(fields[2])) ||
+          Number(fields[2]) < 0
+        )
+          return;
+        try {
+          frame.contentWindow.postMessage(
+            {
+              type: "premiere.playhead",
+              protocol: 1,
+              projectId: decodeURIComponent(fields[0]),
+              sequenceId: decodeURIComponent(fields[1]),
+              seconds: Number(fields[2]),
+            },
+            backendOrigin,
+          );
+        } catch {}
+      });
+    } catch {
+      readingPlayhead = false;
+    }
   }
 
   function exportFrame(targetPath) {
@@ -623,6 +673,15 @@
       event.data.protocol !== 1
     )
       return;
+    if (
+      event.data.type === "premiere.transcript.active" &&
+      typeof event.data.enabled === "boolean"
+    ) {
+      if (playheadTimer) clearInterval(playheadTimer);
+      playheadTimer = event.data.enabled ? setInterval(publishPlayhead, 100) : null;
+      if (playheadTimer) publishPlayhead();
+      return;
+    }
     timelineMessage(event.data, event.origin);
     if (
       event.data.type === "premiere.frame.request" &&
@@ -645,7 +704,11 @@
               }),
               requestOrigin,
             );
-          if (result.ok && request.type === "premiere.restore.request") publishContext(null);
+          if (
+            result.ok &&
+            (request.type === "premiere.restore.request" || request.type === "premiere.cut.request")
+          )
+            publishContext(null);
         })
       )
         return;
@@ -767,6 +830,7 @@
   retry.addEventListener("click", connect);
   window.addEventListener("unload", function () {
     if (timer) clearInterval(timer);
+    if (playheadTimer) clearInterval(playheadTimer);
   });
   readContext(function () {});
   connect();

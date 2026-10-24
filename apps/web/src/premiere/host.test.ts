@@ -8,6 +8,7 @@ import {
   getPremiereHostState,
   requestPremiereFrame,
   premiereSelectionSummary,
+  setPremiereTranscriptActive,
 } from "./host";
 
 const context: PremiereContext = {
@@ -137,6 +138,32 @@ const framePacket = {
   mimeType: "image/png",
   dataUrl: "data:image/png;base64,iVBORw==",
 };
+
+it("subscribes to a fast playhead feed and accepts only matching, trusted sequence updates", () => {
+  using bridge = frameBridge();
+  bridge.reply({ type: "premiere.context", context });
+  setPremiereTranscriptActive(true);
+  expect(bridge.parent.postMessage.mock.calls.at(-1)?.[0]).toEqual({
+    type: "premiere.transcript.active",
+    protocol: 1,
+    enabled: true,
+  });
+  const packet = {
+    type: "premiere.playhead",
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    seconds: 1.2,
+  };
+  bridge.reply(packet, { source: {} });
+  bridge.reply({ ...packet, projectId: "other" });
+  bridge.reply({ ...packet, sequenceId: "other" });
+  bridge.reply({ ...packet, seconds: NaN });
+  expect(getPremiereHostState().context?.playheadSeconds).toBe(0);
+  bridge.reply(packet);
+  expect(getPremiereHostState().context).toEqual({ ...context, playheadSeconds: 1.2 });
+  setPremiereTranscriptActive(false);
+  expect(bridge.parent.postMessage.mock.calls.at(-1)?.[0].enabled).toBe(false);
+});
 
 describe("Premiere frame requests", () => {
   it("correlates concurrent requests and ignores untrusted messages", async () => {
