@@ -87,6 +87,25 @@
         status("ready", "Connected");
       }
     }
+    if (
+      event.data.type === "premiere.seek" &&
+      window.__adobe_cep__ &&
+      typeof event.data.seconds === "number" &&
+      isFinite(event.data.seconds) &&
+      event.data.seconds >= 0 &&
+      typeof event.data.sequenceId === "string"
+    ) {
+      // Snap to a whole frame of the active sequence, and only if it is the one the chat refers to.
+      var seek =
+        "(function(){var s=app.project&&app.project.activeSequence;if(!s||String(s.sequenceID)!==" +
+        JSON.stringify(event.data.sequenceId) +
+        ')return "premiere:mismatch";var tb=parseFloat(s.timebase);s.setPlayerPosition(String(Math.round(' +
+        Number(event.data.seconds) +
+        '*254016000000/tb)*tb));return "premiere:ok";}())';
+      window.__adobe_cep__.evalScript(seek, function () {
+        publishContext(null);
+      });
+    }
     if (event.data.type === "premiere.accounts" && runtime && config) {
       runtime
         .pairBackend(config)

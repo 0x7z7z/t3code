@@ -98,6 +98,13 @@ export function requestPremiereContext(): Promise<PremiereContext | null> {
   });
 }
 
+/** Moves the playhead of the given sequence; Premiere ignores it if another sequence is active. */
+export function seekPremiere(seconds: number, sequenceId: string): boolean {
+  if (!isPremierePanel() || !Number.isFinite(seconds) || seconds < 0) return false;
+  window.parent.postMessage({ type: "premiere.seek", protocol: 1, seconds, sequenceId }, "*");
+  return true;
+}
+
 export function formatPremierePrompt(text: string, context: PremiereContext | null): string {
   if (/^\s*\//.test(text)) return text;
   return [

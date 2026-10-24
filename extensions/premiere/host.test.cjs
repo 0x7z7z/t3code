@@ -110,3 +110,37 @@ test("clears host context when Premiere has no active sequence", async () => {
   assert.equal(fixture.messages[0].packet.context, null);
   assert.equal(fixture.elements.get("project").textContent, "Premiere Assistant");
 });
+
+test("moves the playhead to a whole frame only in the sequence the chat refers to", async () => {
+  const fixture = await panelFixture();
+  const seek = (data) =>
+    fixture.listeners.get("message")({
+      source: fixture.contentWindow,
+      origin: "http://127.0.0.1:5749",
+      data: { type: "premiere.seek", protocol: 1, ...data },
+    });
+  const before = fixture.evaluations.length;
+  seek({ seconds: -1, sequenceId: "sequence-a" });
+  seek({ seconds: "10", sequenceId: "sequence-a" });
+  assert.equal(fixture.evaluations.length, before);
+  seek({ seconds: 1.01, sequenceId: 'sequence-"a' });
+  assert.equal(fixture.evaluations.length, before + 1);
+  const run = (sequenceID) => {
+    const positions = [];
+    const result = vm.runInNewContext(fixture.evaluations.at(-1).script, {
+      app: {
+        project: {
+          activeSequence: {
+            sequenceID,
+            timebase: "8475667200",
+            setPlayerPosition: (ticks) => positions.push(ticks),
+          },
+        },
+      },
+    });
+    return { result, positions };
+  };
+  // 1.01 s at 29.97 fps rounds to frame 30.
+  assert.deepEqual(run('sequence-"a'), { result: "premiere:ok", positions: ["254270016000"] });
+  assert.deepEqual(run("sequence-b"), { result: "premiere:mismatch", positions: [] });
+});

@@ -9,7 +9,13 @@ export interface ToolStep {
 }
 
 export type TranscriptBlock =
-  | { readonly kind: "user"; readonly id: string; readonly text: string }
+  | {
+      readonly kind: "user";
+      readonly id: string;
+      readonly text: string;
+      /** Names of images sent with the message. */
+      readonly images: ReadonlyArray<string>;
+    }
   | {
       readonly kind: "assistant";
       readonly id: string;
@@ -92,7 +98,8 @@ export function buildTranscript(
     const last = blocks.at(-1);
     if (item.type === "user_message") {
       const text = stripHostContext(item.text);
-      if (text) blocks.push({ kind: "user", id: item.id, text });
+      const images = item.attachments.map((attachment) => attachment.name);
+      if (text || images.length) blocks.push({ kind: "user", id: item.id, text, images });
       continue;
     }
     if (item.type === "assistant_message") {

@@ -13,9 +13,12 @@ describe("buildTranscript", () => {
         id: "u1",
         type: "user_message",
         text: 'Count sequences\n\n<premiere-host-context>\n{"project":"a"}',
+        attachments: [{ type: "image", name: "frame.png" }],
       }),
     ]);
-    expect(blocks).toEqual([{ kind: "user", id: "u1", text: "Count sequences" }]);
+    expect(blocks).toEqual([
+      { kind: "user", id: "u1", text: "Count sequences", images: ["frame.png"] },
+    ]);
   });
 
   it("groups consecutive tool calls and hides internal bookkeeping", () => {

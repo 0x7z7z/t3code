@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
-import { AuthOrchestrationOperateScope, type ThreadId } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, type RuntimeMode, type ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
@@ -22,8 +22,18 @@ import {
   requestPremiereContext,
   formatPremierePrompt,
   samePremiereScope,
+  seekPremiere,
 } from "./host";
-import { Markdown } from "./Markdown";
+import {
+  accountLabel,
+  readImages,
+  slashItems,
+  slashTrigger,
+  type ComposerImage,
+  type SlashItem,
+} from "./composer";
+import { AccessModeMenu, AttachButton, ImageStrip, SlashMenu } from "./ComposerParts";
+import { Markdown, type SeekHandler } from "./Markdown";
 import { editingModelOptions } from "./models";
 import { selectEditingModel, selectEditingProvider, selectEditingWorkspace } from "./selection";
 import { buildTranscript, summarizeSteps, type ToolStep } from "./transcript";
@@ -69,6 +79,13 @@ export function PremiereApp() {
   const [pairing, setPairing] = useState(false);
   const [mode, setMode] = useState<"plan" | "default">("plan");
   const [showOptions, setShowOptions] = useState(false);
+  // Auto lets supported providers approve routine actions; the editor can change it per message.
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("auto");
+  const [images, setImages] = useState<ComposerImage[]>([]);
+  const [cursor, setCursor] = useState(0);
+  const [slashHighlight, setSlashHighlight] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState<number | null>(null);
+  const textarea = useRef<HTMLTextAreaElement>(null);
   const optionDescriptors = model?.capabilities?.optionDescriptors ?? [];
   const blocks = buildTranscript(projection?.turnItems ?? []);
   const lastBlock = blocks.at(-1);
@@ -104,6 +121,40 @@ export function PremiereApp() {
     /* Browser storage can be unavailable. */
   }
   const draft = draftState?.key === draftKey ? draftState.value : storedDraft;
+  const trigger = slashTrigger(draft, Math.min(cursor, draft.length));
+  const slashOpen = trigger !== null && slashDismissed !== trigger.start && !busy;
+  const commandItems = slashOpen
+    ? slashItems(provider, project?.workspaceRoot ?? null, trigger.query).slice(0, 60)
+    : [];
+  const highlighted = Math.min(slashHighlight, Math.max(commandItems.length - 1, 0));
+
+  const seek: SeekHandler = (timecode) => {
+    const context = host.context;
+    if (!context) {
+      setError("Open the sequence in Premiere to jump to that time.");
+      return;
+    }
+    if (!seekPremiere(timecode.seconds(context.fps), context.sequenceId))
+      setError("Premiere did not accept that time.");
+  };
+
+  function pickSlashItem(item: SlashItem) {
+    if (!trigger) return;
+    const next =
+      draft.slice(0, trigger.start) + item.insert + draft.slice(trigger.end).replace(/^ /, "");
+    writeDraft(next);
+    const position = trigger.start + item.insert.length;
+    setCursor(position);
+    setSlashHighlight(0);
+    requestAnimationFrame(() => textarea.current?.setSelectionRange(position, position));
+  }
+
+  async function addImages(files: File[]) {
+    if (!files.length) return;
+    const result = await readImages(files, images);
+    setImages((current) => [...current, ...result.images]);
+    setError(result.error);
+  }
 
   useEffect(() => {
     if (paired.current) return;
@@ -144,7 +195,7 @@ export function PremiereApp() {
       !project ||
       !provider ||
       !model ||
-      !draft.trim() ||
+      (!draft.trim() && !images.length) ||
       inFlight.current ||
       !ready ||
       !canOperate ||
@@ -158,6 +209,7 @@ export function PremiereApp() {
     setBusy(true);
     setError(null);
     const prompt = draft;
+    const sentImages = images;
     const targetId = selectedThread ?? newThreadId();
     const options = editingModelOptions(model, optionValues);
     const selection = createModelSelection(provider.instanceId, model.slug, options);
@@ -177,19 +229,25 @@ export function PremiereApp() {
             messageId: newMessageId(),
             role: "user",
             text: formatPremierePrompt(prompt, context),
-            attachments: [],
+            attachments: sentImages.map((image) => ({
+              type: "image" as const,
+              name: image.name,
+              mimeType: image.mimeType,
+              sizeBytes: image.sizeBytes,
+              dataUrl: image.dataUrl,
+            })),
           },
           modelSelection: selection,
-          runtimeMode: "approval-required",
+          runtimeMode,
           interactionMode: mode,
           ...(!selectedThread
             ? {
                 bootstrap: {
                   createThread: {
                     projectId: project.id,
-                    title: prompt.trim().slice(0, 80),
+                    title: (prompt.trim() || sentImages[0]?.name || "Image").slice(0, 80),
                     modelSelection: selection,
-                    runtimeMode: "approval-required" as const,
+                    runtimeMode,
                     interactionMode: mode,
                     branch: null,
                     worktreePath: null,
@@ -215,6 +273,7 @@ export function PremiereApp() {
       }
       setSelectedThread(targetId);
       setDraftState({ key: draftKey, value: "" });
+      setImages((current) => current.filter((image) => !sentImages.includes(image)));
       followTranscript.current = true;
     } catch (failure) {
       setError(
@@ -284,6 +343,7 @@ export function PremiereApp() {
                 ),
               );
               setMode(next.interactionMode);
+              setRuntimeMode(next.runtimeMode);
             }
           }}
         >
@@ -355,12 +415,19 @@ export function PremiereApp() {
                 return (
                   <p key={block.id} data-user-message="">
                     {block.text}
+                    {block.images.length ? (
+                      <span data-sent-images="">
+                        {block.images.map((name) => (
+                          <span key={name}>{name}</span>
+                        ))}
+                      </span>
+                    ) : null}
                   </p>
                 );
               case "assistant":
                 return (
                   <div key={block.id} data-assistant-message="">
-                    <Markdown text={block.text} />
+                    <Markdown text={block.text} onSeek={seek} />
                     {block.streaming ? <span data-typing="" aria-label="Writing" /> : null}
                   </div>
                 );
@@ -534,14 +601,74 @@ export function PremiereApp() {
           edit.
         </p>
       ) : null}
-      <form data-composer="" onSubmit={(event) => void send(event)}>
+      <form
+        data-composer=""
+        onSubmit={(event) => void send(event)}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.files.length) return;
+          event.preventDefault();
+          void addImages([...event.dataTransfer.files]);
+        }}
+      >
+        {slashOpen ? (
+          <SlashMenu
+            items={commandItems}
+            highlighted={highlighted}
+            onHover={setSlashHighlight}
+            onPick={pickSlashItem}
+          />
+        ) : null}
+        <ImageStrip
+          images={images}
+          onRemove={(id) => setImages((current) => current.filter((image) => image.id !== id))}
+        />
         <textarea
+          ref={textarea}
           aria-label="Message your editing assistant"
-          placeholder={mode === "plan" ? "Ask for a plan…" : "Describe the edit…"}
+          placeholder={
+            mode === "plan"
+              ? "Ask for a plan… (/ for commands)"
+              : "Describe the edit… (/ for commands)"
+          }
           value={draft}
           disabled={busy}
-          onChange={(event) => writeDraft(event.target.value)}
+          onChange={(event) => {
+            writeDraft(event.target.value);
+            setCursor(event.target.selectionStart);
+            setSlashHighlight(0);
+            setSlashDismissed(null);
+          }}
+          onSelect={(event) => setCursor(event.currentTarget.selectionStart)}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files].filter((file) =>
+              file.type.startsWith("image/"),
+            );
+            if (!files.length) return;
+            event.preventDefault();
+            void addImages(files);
+          }}
           onKeyDown={(event) => {
+            if (slashOpen && commandItems.length) {
+              if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                event.preventDefault();
+                const step = event.key === "ArrowDown" ? 1 : -1;
+                setSlashHighlight((highlighted + step + commandItems.length) % commandItems.length);
+                return;
+              }
+              if ((event.key === "Enter" && !event.shiftKey) || event.key === "Tab") {
+                event.preventDefault();
+                pickSlashItem(commandItems[highlighted]!);
+                return;
+              }
+            }
+            if (slashOpen && event.key === "Escape" && trigger) {
+              event.preventDefault();
+              setSlashDismissed(trigger.start);
+              return;
+            }
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
               event.currentTarget.form?.requestSubmit();
@@ -596,6 +723,7 @@ export function PremiereApp() {
           </div>
         ) : null}
         <div data-composer-bar="">
+          <AttachButton disabled={busy} onFiles={(files) => void addImages(files)} />
           <div data-mode-toggle="" role="radiogroup" aria-label="Editing mode">
             {(
               [
@@ -614,6 +742,7 @@ export function PremiereApp() {
               </button>
             ))}
           </div>
+          <AccessModeMenu value={runtimeMode} disabled={busy} onChange={setRuntimeMode} />
           <select
             aria-label="Account"
             disabled={busy || running}
@@ -633,8 +762,10 @@ export function PremiereApp() {
               .filter((candidate) => candidate.enabled)
               .map((candidate) => (
                 <option key={candidate.instanceId} value={candidate.instanceId}>
-                  {candidate.displayName ?? candidate.instanceId}
-                  {candidate.auth.email ? ` · ${candidate.auth.email}` : ""}
+                  {accountLabel(
+                    candidate,
+                    providers.filter((other) => other.enabled),
+                  )}
                 </option>
               ))}
           </select>
@@ -700,7 +831,7 @@ export function PremiereApp() {
                 !host.connected ||
                 !provider ||
                 !model ||
-                !draft.trim() ||
+                (!draft.trim() && !images.length) ||
                 otherActive
               }
             >
