@@ -76,6 +76,13 @@ vi.mock("./host", async (original) => ({
   requestPremiereFrame: () => state.frame(),
 }));
 
+vi.mock("./timelineHost", async (original) => ({
+  ...(await original()),
+  requestTimelineSnapshot: async () => {
+    throw new Error("No timeline in tests.");
+  },
+}));
+
 import { PremiereApp } from "./PremiereApp";
 
 function setup(name: string, allowed: boolean) {

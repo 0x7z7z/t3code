@@ -877,3 +877,49 @@ svg[width] {
 [data-shot-status="done"] td:first-child {
   color: #33b86c;
 }
+
+[data-turn-changes] {
+  margin: 10px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: 11px;
+}
+[data-turn-changes] summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  cursor: pointer;
+}
+[data-turn-changes] ol {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+[data-turn-changes] details[open] [data-change-chevron] {
+  transform: rotate(90deg);
+}
+[data-turn-changes] li {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 4px 0;
+}
+[data-turn-changes] p {
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+[data-turn-undo] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+[data-turn-undo] button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
