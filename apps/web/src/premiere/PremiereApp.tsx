@@ -23,8 +23,10 @@ import {
   formatPremierePrompt,
   samePremiereScope,
 } from "./host";
+import { Markdown } from "./Markdown";
 import { editingModelOptions } from "./models";
 import { selectEditingModel, selectEditingProvider, selectEditingWorkspace } from "./selection";
+import { buildTranscript, summarizeSteps, type ToolStep } from "./transcript";
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
@@ -66,6 +68,20 @@ export function PremiereApp() {
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   const [mode, setMode] = useState<"plan" | "default">("plan");
+  const [showOptions, setShowOptions] = useState(false);
+  const optionDescriptors = model?.capabilities?.optionDescriptors ?? [];
+  const blocks = buildTranscript(projection?.turnItems ?? []);
+  const lastBlock = blocks.at(-1);
+  const lastStreaming = lastBlock?.kind === "assistant" && lastBlock.streaming;
+  const status = !ready
+    ? pairing
+      ? "Pairing with the assistant…"
+      : "Connecting to the assistant…"
+    : !host.connected
+      ? "Waiting for Premiere…"
+      : !host.context
+        ? "No active sequence. Open one to give the assistant timeline context."
+        : null;
   const connect = useAtomCommand(connectPairing, { reportFailure: false });
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn);
   const stopTurn = useOrchestrationCommand(threadEnvironment.interruptTurn);
@@ -109,9 +125,9 @@ export function PremiereApp() {
   }, [connect]);
 
   useEffect(() => {
-    if (projection?.messages && followTranscript.current && transcript.current)
+    if (projection?.turnItems && followTranscript.current && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
-  }, [projection?.messages]);
+  }, [projection?.turnItems]);
 
   function writeDraft(value: string) {
     setDraftState({ key: draftKey, value });
@@ -218,11 +234,11 @@ export function PremiereApp() {
 
   return (
     <main data-premiere-client="">
-      <header data-workspace-controls="">
-        <label>
-          <span>Workspace</span>
+      <header data-toolbar="">
+        {projects.length > 1 || !project ? (
           <select
             aria-label="Editing workspace"
+            data-workspace-select=""
             disabled={busy}
             value={project ? `${project.environmentId}:${project.id}` : ""}
             onChange={(event) => {
@@ -251,22 +267,7 @@ export function PremiereApp() {
               </option>
             ))}
           </select>
-        </label>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setSelectedThread(null);
-            setError(null);
-          }}
-        >
-          New edit
-        </button>
-        <button type="button" onClick={accountSetup}>
-          Accounts
-        </button>
-      </header>
-      <div data-conversation-controls="">
+        ) : null}
         <select
           aria-label="Editing conversation"
           disabled={busy}
@@ -296,18 +297,29 @@ export function PremiereApp() {
             </option>
           ))}
         </select>
-        <span role="status">
-          {ready
-            ? host.connected
-              ? host.context
-                ? "Timeline attached"
-                : "No active sequence"
-              : "Waiting for Premiere"
-            : pairing
-              ? "Pairing"
-              : "Connecting"}
-        </span>
-      </div>
+        <button
+          type="button"
+          data-icon-button=""
+          aria-label="New conversation"
+          disabled={busy}
+          onClick={() => {
+            setSelectedThread(null);
+            setError(null);
+          }}
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 3v10M3 8h10" />
+          </svg>
+        </button>
+        <button type="button" data-ghost-button="" onClick={accountSetup}>
+          Accounts
+        </button>
+      </header>
+      {status ? (
+        <p data-status="" role="status">
+          {status}
+        </p>
+      ) : null}
       <div
         data-transcript=""
         ref={transcript}
@@ -320,14 +332,10 @@ export function PremiereApp() {
               element.scrollHeight - element.scrollTop - element.clientHeight < 80;
         }}
       >
-        {!projection?.messages.length ? (
+        {!blocks.length ? (
           <section data-welcome="">
-            <span>Premiere Assistant</span>
-            <h1>What are we making?</h1>
-            <p>
-              Plan a cut, find the right footage, or revise your sequence. Start with a plan, then
-              choose Edit when you are ready.
-            </p>
+            <h1>What are we working on?</h1>
+            <p>Plan a cut, find footage, or revise the active sequence.</p>
             <div data-suggestions="">
               {[
                 "Review the active sequence",
@@ -341,55 +349,66 @@ export function PremiereApp() {
             </div>
           </section>
         ) : (
-          projection.messages
-            .filter((message) => message.role !== "system")
-            .map((message) => (
-              <article key={message.id} data-message-role={message.role}>
-                <span>
-                  {message.role === "user" ? "You" : "Assistant"}
-                  {message.streaming ? " · writing" : ""}
-                </span>
-                <p>{message.text.split("\n<premiere-host-context>")[0]}</p>
-              </article>
-            ))
+          blocks.map((block) => {
+            switch (block.kind) {
+              case "user":
+                return (
+                  <p key={block.id} data-user-message="">
+                    {block.text}
+                  </p>
+                );
+              case "assistant":
+                return (
+                  <div key={block.id} data-assistant-message="">
+                    <Markdown text={block.text} />
+                    {block.streaming ? <span data-typing="" aria-label="Writing" /> : null}
+                  </div>
+                );
+              case "tools":
+                return <ToolGroup key={block.id} steps={block.steps} />;
+              case "plan":
+                return (
+                  <section key={block.id} data-card="">
+                    <strong>Proposed edit</strong>
+                    <Markdown text={block.markdown} />
+                    <button
+                      type="button"
+                      data-primary-button=""
+                      onClick={() => {
+                        setMode("default");
+                        writeDraft(
+                          "Implement the proposed edit plan in the active sequence. Verify each placement and report any missing assets.",
+                        );
+                      }}
+                    >
+                      Prepare this edit
+                    </button>
+                  </section>
+                );
+              case "todo":
+                return (
+                  <ul key={block.id} data-checklist="">
+                    {block.steps.map((step) => (
+                      <li key={step.id} data-done={step.done ? "" : undefined}>
+                        {step.text}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              case "notice":
+                return (
+                  <p key={block.id} data-inline-notice={block.error ? "error" : ""}>
+                    {block.text}
+                  </p>
+                );
+            }
+          })
         )}
-        {projection?.turnItems
-          .filter((item) => !["user_message", "assistant_message", "reasoning"].includes(item.type))
-          .slice(-6)
-          .map((item) => (
-            <details key={item.id} data-activity="">
-              <summary>{item.type.replaceAll("_", " ")}</summary>
-              {item.type === "proposed_plan" ? (
-                <section data-edit-plan="">
-                  <p>{item.markdown}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode("default");
-                      writeDraft(
-                        "Implement the proposed edit plan in the active sequence. Verify each placement and report any missing assets.",
-                      );
-                    }}
-                  >
-                    Prepare this edit
-                  </button>
-                </section>
-              ) : null}
-              {item.type === "todo_list" ? (
-                <ol>
-                  {item.steps.map((step) => (
-                    <li key={step.id}>
-                      {step.text} ({step.status})
-                    </li>
-                  ))}
-                </ol>
-              ) : null}
-              {"title" in item && typeof item.title === "string" ? <p>{item.title}</p> : null}
-              {"summary" in item && typeof item.summary === "string" ? <p>{item.summary}</p> : null}
-            </details>
-          ))}
+        {running && blocks.at(-1)?.kind !== "tools" && !lastStreaming ? (
+          <p data-working="">Working…</p>
+        ) : null}
         {projection?.subagents.length ? (
-          <p data-task-count="">
+          <p data-inline-notice="">
             {projection.subagents.length} delegated task
             {projection.subagents.length === 1 ? "" : "s"}
           </p>
@@ -518,13 +537,83 @@ export function PremiereApp() {
       <form data-composer="" onSubmit={(event) => void send(event)}>
         <textarea
           aria-label="Message your editing assistant"
-          placeholder="Describe your edit..."
+          placeholder={mode === "plan" ? "Ask for a plan…" : "Describe the edit…"}
           value={draft}
           disabled={busy}
           onChange={(event) => writeDraft(event.target.value)}
-          rows={3}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          rows={2}
         />
-        <div data-model-controls="">
+        {showOptions && model && optionDescriptors.length ? (
+          <div data-model-options="">
+            {optionDescriptors.map((descriptor) => {
+              const value = editingModelOptions(model, optionValues).find(
+                (option) => option.id === descriptor.id,
+              )?.value;
+              return (
+                <label key={descriptor.id}>
+                  <span>{descriptor.label}</span>
+                  {descriptor.type === "select" ? (
+                    <select
+                      aria-label={descriptor.label}
+                      disabled={busy || running}
+                      value={typeof value === "string" ? value : ""}
+                      onChange={(event) =>
+                        setOptionValues((current) => ({
+                          ...current,
+                          [descriptor.id]: event.target.value,
+                        }))
+                      }
+                    >
+                      {descriptor.options.map((choice) => (
+                        <option key={choice.id} value={choice.id}>
+                          {choice.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="checkbox"
+                      aria-label={descriptor.label}
+                      disabled={busy || running}
+                      checked={value === true}
+                      onChange={(event) =>
+                        setOptionValues((current) => ({
+                          ...current,
+                          [descriptor.id]: event.target.checked,
+                        }))
+                      }
+                    />
+                  )}
+                </label>
+              );
+            })}
+          </div>
+        ) : null}
+        <div data-composer-bar="">
+          <div data-mode-toggle="" role="radiogroup" aria-label="Editing mode">
+            {(
+              [
+                ["plan", "Plan"],
+                ["default", "Edit"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={mode === value}
+                onClick={() => setMode(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <select
             aria-label="Account"
             disabled={busy || running}
@@ -569,82 +658,40 @@ export function PremiereApp() {
               </option>
             ))}
           </select>
-          <select
-            aria-label="Editing mode"
-            value={mode}
-            onChange={(event) => setMode(event.target.value === "plan" ? "plan" : "default")}
-          >
-            <option value="plan">Plan</option>
-            <option value="default">Edit</option>
-          </select>
-        </div>
-        {model ? (
-          <div data-model-options="">
-            {(model.capabilities?.optionDescriptors ?? []).map((descriptor) => {
-              const value = editingModelOptions(model, optionValues).find(
-                (option) => option.id === descriptor.id,
-              )?.value;
-              return (
-                <label key={descriptor.id}>
-                  <span>{descriptor.label}</span>
-                  {descriptor.type === "select" ? (
-                    <select
-                      aria-label={descriptor.label}
-                      disabled={busy || running}
-                      value={typeof value === "string" ? value : ""}
-                      onChange={(event) =>
-                        setOptionValues((current) => ({
-                          ...current,
-                          [descriptor.id]: event.target.value,
-                        }))
-                      }
-                    >
-                      {descriptor.options.map((choice) => (
-                        <option key={choice.id} value={choice.id}>
-                          {choice.label}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="checkbox"
-                      aria-label={descriptor.label}
-                      disabled={busy || running}
-                      checked={value === true}
-                      onChange={(event) =>
-                        setOptionValues((current) => ({
-                          ...current,
-                          [descriptor.id]: event.target.checked,
-                        }))
-                      }
-                    />
-                  )}
-                </label>
-              );
-            })}
-          </div>
-        ) : null}
-        <div data-send-controls="">
-          <span>
-            {running
-              ? thread?.runtime?.status
-              : mode === "plan"
-                ? "Plan before editing"
-                : "Edits ask for approval"}
-          </span>
+          {optionDescriptors.length ? (
+            <button
+              type="button"
+              data-icon-button=""
+              aria-label="Model settings"
+              aria-expanded={showOptions}
+              onClick={() => setShowOptions((current) => !current)}
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2 4h7M12 4h2M2 12h2M7 12h7" />
+                <circle cx="10.5" cy="4" r="1.6" />
+                <circle cx="5.5" cy="12" r="1.6" />
+              </svg>
+            </button>
+          ) : null}
           {running ? (
             <button
               type="button"
+              data-send-button=""
+              aria-label="Stop"
               onClick={() => {
                 if (environmentId && selectedThread)
                   void stopTurn({ environmentId, input: { threadId: selectedThread } });
               }}
             >
-              Stop
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+              </svg>
             </button>
           ) : (
             <button
               type="submit"
+              data-send-button=""
+              aria-label={busy ? "Sending" : "Send"}
               disabled={
                 busy ||
                 !ready ||
@@ -657,11 +704,33 @@ export function PremiereApp() {
                 otherActive
               }
             >
-              {busy ? "Sending..." : "Send"}
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+              </svg>
             </button>
           )}
         </div>
       </form>
     </main>
+  );
+}
+
+function ToolGroup({ steps }: { steps: ReadonlyArray<ToolStep> }) {
+  const running = steps.some((step) => step.status === "running");
+  const failed = steps.some((step) => step.status === "failed");
+  return (
+    <details data-tool-group={running ? "running" : failed ? "failed" : "done"}>
+      <summary>
+        <span data-tool-mark="" aria-hidden="true" />
+        {summarizeSteps(steps)}
+      </summary>
+      <ol>
+        {steps.map((step) => (
+          <li key={step.id} data-step-status={step.status}>
+            {step.label}
+          </li>
+        ))}
+      </ol>
+    </details>
   );
 }
