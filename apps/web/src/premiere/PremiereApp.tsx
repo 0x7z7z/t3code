@@ -11,6 +11,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import { createModelSelection } from "@t3tools/shared/model";
 import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import * as Option from "effect/Option";
+import { CameraIcon } from "lucide-react";
 
 import { connectPairing } from "../connection/onboarding";
 import { readHostedPairingRequest } from "../hostedPairing";
@@ -26,6 +27,8 @@ import {
   getPremiereHostState,
   subscribePremiereHost,
   requestPremiereContext,
+  requestPremiereFrame,
+  premiereSelectionSummary,
   formatPremierePrompt,
   samePremiereScope,
   seekPremiere,
@@ -83,6 +86,7 @@ export function PremiereApp() {
     : { approvals: [], userInputs: [] };
   const [draftState, setDraftState] = useState<{ key: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [capturingFrame, setCapturingFrame] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   const [mode, setMode] = useState<"plan" | "default">("plan");
@@ -216,6 +220,25 @@ export function PremiereApp() {
     setError(result.error);
   }
 
+  async function attachFrame() {
+    if (capturingFrame) return;
+    setCapturingFrame(true);
+    setError(null);
+    try {
+      const frame = await requestPremiereFrame();
+      const bytes = Uint8Array.from(atob(frame.dataUrl.slice(22)), (character) =>
+        character.charCodeAt(0),
+      );
+      await addImages([new File([bytes], frame.name, { type: frame.mimeType })]);
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "The current frame could not be attached.",
+      );
+    } finally {
+      setCapturingFrame(false);
+    }
+  }
+
   useEffect(() => {
     if (paired.current) return;
     paired.current = true;
@@ -262,6 +285,7 @@ export function PremiereApp() {
       !model ||
       (!draft.trim() && !images.length) ||
       inFlight.current ||
+      capturingFrame ||
       !ready ||
       !canOperate ||
       !host.connected ||
@@ -667,6 +691,11 @@ export function PremiereApp() {
         </p>
       ) : null}
       {usage ? <UsageCard report={usage} onClose={() => setUsage(null)} /> : null}
+      {premiereSelectionSummary(host.context) ? (
+        <p data-selection-context="" aria-label="Timeline selection included with your message">
+          {premiereSelectionSummary(host.context)}
+        </p>
+      ) : null}
       <form
         data-composer=""
         onSubmit={(event) => void send(event)}
@@ -790,6 +819,16 @@ export function PremiereApp() {
         ) : null}
         <div data-composer-bar="">
           <AttachButton disabled={busy} onFiles={(files) => void addImages(files)} />
+          <button
+            type="button"
+            data-icon-button=""
+            aria-label="Attach current frame"
+            aria-busy={capturingFrame}
+            disabled={busy || capturingFrame || !host.connected}
+            onClick={() => void attachFrame()}
+          >
+            <CameraIcon size={15} aria-hidden="true" />
+          </button>
           <div data-mode-toggle="" role="radiogroup" aria-label="Editing mode">
             {(
               [
@@ -892,6 +931,7 @@ export function PremiereApp() {
               aria-label={busy ? "Sending" : "Send"}
               disabled={
                 busy ||
+                capturingFrame ||
                 !ready ||
                 !canOperate ||
                 (selectedThread !== null && !thread) ||

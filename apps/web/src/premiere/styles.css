@@ -424,6 +424,20 @@ a {
 }
 
 /* Composer */
+[data-selection-context] {
+  align-self: flex-start;
+  max-width: calc(100% - 24px);
+  margin: 0 12px 6px;
+  padding: 3px 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 [data-composer] {
   margin: 0 10px 10px;
   border: 1px solid var(--border);
