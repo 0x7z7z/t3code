@@ -6,7 +6,13 @@ const { createServer } = require("node:http");
 const { mkdir, mkdtemp, writeFile, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
-const { validateConfig, probeBackend, pairBackend, startBackend } = require("./runtime.cjs");
+const {
+  validateConfig,
+  probeBackend,
+  pairBackend,
+  startBackend,
+  ensureBackend,
+} = require("./runtime.cjs");
 const { once } = require("node:events");
 const { readFile } = require("node:fs/promises");
 
@@ -103,4 +109,85 @@ test("reports a missing bundled connector before launching the backend", async (
   const settings = config("http://127.0.0.1:5739/", directory);
   await writeFile(settings.serverPath, 'throw new Error("must not start");');
   assert.throws(() => startBackend(settings), /bundled Premiere connector is missing/);
+});
+
+test("reuses a running backend and refuses another service without spawning", async (t) => {
+  let protocol = 1;
+  const server = createServer((_request, response) => response.end(JSON.stringify({ protocol })));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  // Deliberately missing executables: neither path may attempt to spawn.
+  const settings = config(`http://127.0.0.1:${server.address().port}/`, "missing-runtime");
+  await Promise.all([ensureBackend(settings), ensureBackend(settings)]);
+  protocol = 2;
+  await assert.rejects(ensureBackend(settings), /different server/);
+});
+
+test("waits for the backend's startup 503 response without launching another process", async (t) => {
+  let requests = 0;
+  const server = createServer((_request, response) => {
+    requests++;
+    if (requests < 3) {
+      response.writeHead(503, { "Retry-After": "1" });
+      response.end();
+    } else response.end('{"protocol":1}');
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  await ensureBackend(config(`http://127.0.0.1:${server.address().port}/`, "missing-runtime"));
+  assert.equal(requests, 3);
+});
+
+test("concurrent starts launch once and a dead backend can restart with packaged PATH", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "axis-recovery-"));
+  const listener = createServer();
+  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const port = listener.address().port;
+  await new Promise((resolve) => listener.close(resolve));
+  const settings = config(`http://127.0.0.1:${port}/`, directory);
+  settings.runtimeRoot = directory;
+  await mkdir(path.dirname(settings.connectorPath), { recursive: true });
+  await writeFile(settings.connectorPath, "// connector");
+  const resultPath = path.join(directory, "starts.jsonl");
+  await writeFile(
+    settings.serverPath,
+    `
+    import { appendFileSync } from 'node:fs';
+    import { createServer } from 'node:http';
+    appendFileSync(${JSON.stringify(resultPath)}, JSON.stringify({ pid: process.pid, path: process.env.PATH }) + '\\n');
+    createServer((req, res) => res.end('{"protocol":1}')).listen(${port}, '127.0.0.1');
+  `,
+  );
+  const childProcess = require("node:child_process");
+  const original = childProcess.spawn;
+  const children = [];
+  childProcess.spawn = (...args) => {
+    const child = original(...args);
+    children.push(child);
+    return child;
+  };
+  t.after(async () => {
+    childProcess.spawn = original;
+    for (const child of children)
+      if (child.exitCode === null && child.signalCode === null) {
+        const exited = once(child, "exit");
+        child.kill();
+        await exited;
+      }
+    await rm(directory, { recursive: true, force: true });
+  });
+  await Promise.all([ensureBackend(settings), ensureBackend(settings), ensureBackend(settings)]);
+  assert.equal(children.length, 1);
+  const exited = once(children[0], "exit");
+  children[0].kill();
+  await exited;
+  await ensureBackend(settings);
+  assert.equal(children.length, 2);
+  const starts = (await readFile(resultPath, "utf8")).trim().split("\n").map(JSON.parse);
+  assert.equal(starts.length, 2);
+  assert.ok(
+    starts[0].path.startsWith(
+      path.dirname(settings.nodePath) + path.delimiter + path.join(directory, "git/cmd"),
+    ),
+  );
 });

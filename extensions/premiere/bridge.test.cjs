@@ -121,6 +121,7 @@ test("visible panel keeps bridge errors in its status line across backend connec
   const runtime = {
     validateConfig: (value) => value,
     probeBackend: async () => {},
+    ensureBackend: async () => {},
     pairBackend: async () => "http://127.0.0.1:5749/premiere.html",
   };
   vm.runInNewContext(readFileSync(path.join(__dirname, "host.js"), "utf8"), {

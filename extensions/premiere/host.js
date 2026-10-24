@@ -703,17 +703,6 @@
     status("error", "Needs attention");
   }
 
-  function waitForBackend(attempt) {
-    return runtime.probeBackend(config).catch(function (error) {
-      if (attempt >= 40 || /different server/.test(error.message)) throw error;
-      return new Promise(function (resolve) {
-        setTimeout(resolve, 500);
-      }).then(function () {
-        return waitForBackend(attempt + 1);
-      });
-    });
-  }
-
   function connect() {
     if (connecting) return;
     if (window.AxisPremiereBridge) window.AxisPremiereBridge.retry();
@@ -736,14 +725,7 @@
           JSON.parse(fs.readFileSync(path.join(directory, "config.json"), "utf8")),
         );
         backendOrigin = new URL(config.backendUrl).origin;
-        return runtime.probeBackend(config).catch(function (error) {
-          if (/different server/.test(error.message)) throw error;
-          var child = runtime.startBackend(config);
-          child.on("error", function () {
-            fail(new Error("Could not launch Node.js. Run the extension installer again."));
-          });
-          return waitForBackend(0);
-        });
+        return runtime.ensureBackend(config);
       })
       .then(function () {
         return runtime.pairBackend(config);
@@ -756,6 +738,12 @@
         if (!timer)
           timer = setInterval(function () {
             publishContext(null);
+            if (!connecting)
+              runtime.probeBackend(config).catch(function (error) {
+                if (error.code === "ECONNREFUSED" || error.code === "AXIS_BACKEND_STARTING")
+                  connect();
+                else fail(error);
+              });
           }, 2000);
       })
       .catch(fail)
