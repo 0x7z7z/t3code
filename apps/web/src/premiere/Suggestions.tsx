@@ -5,8 +5,19 @@ import { clipNames } from "./clipLinks";
 import type { TimelineActions } from "./interactiveHost";
 import { parseSuggestion, shotMarkers, shotsCsv, type MarkerSuggestion } from "./suggestionBlocks";
 
-function timeLabel(seconds: number) {
-  return `${Math.round(seconds * 1000) / 1000}s`;
+/** Timeline-style timecode, such as 0:02:36 at 60 fps; hours appear only when needed. */
+function timecodeLabel(seconds: number, fps: number) {
+  const rate = Math.max(1, Math.round(fps));
+  const frames = Math.round(seconds * fps);
+  const whole = Math.floor(frames / rate);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const hours = Math.floor(whole / 3600);
+  const clock = `${hours ? `${hours}:${pad(Math.floor(whole / 60) % 60)}` : Math.floor(whole / 60)}:${pad(whole % 60)}`;
+  return `${clock}:${pad(frames % rate)}`;
+}
+
+function durationLabel(seconds: number) {
+  return `${Math.round(seconds * 10) / 10}s`;
 }
 
 function AddMarkers({
@@ -106,10 +117,10 @@ export function Suggestions({
     <button
       type="button"
       data-timestamp=""
-      aria-label={`Move playhead to ${timeLabel(seconds)}`}
+      aria-label={`Move playhead to ${timecodeLabel(seconds, actions.fps)}`}
       onClick={() => actions.seek(seconds)}
     >
-      {timeLabel(seconds)}
+      {timecodeLabel(seconds, actions.fps)}
     </button>
   );
   if (parsed.kind === "markers")
@@ -177,7 +188,7 @@ export function Suggestions({
                 <td>{shot.shotId}</td>
                 <td>{seekTime(shot.timelineInSeconds)}</td>
                 <td>{seekTime(shot.timelineOutSeconds)}</td>
-                <td>{timeLabel(shot.durationSeconds)}</td>
+                <td>{durationLabel(shot.durationSeconds)}</td>
                 <td>
                   <span data-shot-text="">{shot.rationale}</span>
                   {shot.notes ? <small data-shot-text="">{shot.notes}</small> : null}

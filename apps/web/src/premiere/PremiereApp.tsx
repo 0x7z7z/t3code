@@ -584,7 +584,12 @@ export function PremiereApp() {
                 return (
                   <section key={block.id} data-card="">
                     <strong>Proposed edit</strong>
-                    <Markdown text={block.markdown} />
+                    <Markdown
+                      text={block.markdown}
+                      onSeek={seek}
+                      actions={timelineActions}
+                      complete
+                    />
                     <button
                       type="button"
                       data-primary-button=""
@@ -702,24 +707,36 @@ export function PremiereApp() {
           }}
         >
           {request.questions.map((question) => (
-            <label key={question.id}>
-              <span>{question.question}</span>
+            <fieldset key={question.id} data-question="">
+              <legend>
+                <small>{question.header}</small>
+                {question.question}
+              </legend>
               {question.options.length ? (
-                <select
-                  name={question.id}
-                  multiple={question.multiSelect}
-                  required={question.required !== false && question.allowCustomAnswer === false}
-                >
-                  {!question.multiSelect ? <option value="">Choose an answer</option> : null}
+                <div data-question-options="">
                   {question.options.map((option) => (
-                    <option key={option.label} value={option.value ?? option.label}>
-                      {option.label}
-                    </option>
+                    <label key={option.label} data-question-option="">
+                      <input
+                        type={question.multiSelect ? "checkbox" : "radio"}
+                        name={question.id}
+                        value={option.value ?? option.label}
+                        required={
+                          !question.multiSelect &&
+                          question.required !== false &&
+                          question.allowCustomAnswer === false
+                        }
+                      />
+                      <span>
+                        <strong>{option.label}</strong>
+                        {option.description ? <small>{option.description}</small> : null}
+                      </span>
+                    </label>
                   ))}
-                </select>
+                </div>
               ) : (
                 <input
                   name={question.id}
+                  aria-label={question.question}
                   required={question.required !== false}
                   defaultValue={question.initialAnswer ?? ""}
                 />
@@ -728,10 +745,10 @@ export function PremiereApp() {
                 <input
                   name={`${question.id}:custom`}
                   aria-label={`Custom answer: ${question.question}`}
-                  placeholder="Or write your answer"
+                  placeholder="Something else…"
                 />
               ) : null}
-            </label>
+            </fieldset>
           ))}
           <button type="submit" disabled={request.responseCapability === "not_resumable"}>
             Send answer

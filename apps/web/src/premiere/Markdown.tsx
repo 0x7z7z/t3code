@@ -3,6 +3,7 @@ import { ClipButton } from "./ClipButton";
 import { clipNames, findClipNames } from "./clipLinks";
 import type { TimelineActions } from "./interactiveHost";
 import { Suggestions } from "./Suggestions";
+import { suggestionKind } from "./suggestionBlocks";
 import { findTimecodes, type TimecodeMatch } from "./timecode";
 
 // A small Markdown subset for assistant replies. It builds React elements
@@ -143,8 +144,10 @@ export function Markdown({
       }
       const closed = index < source.length;
       index += 1;
-      const kind = line.trim().slice(3).trim();
-      if (actions && (kind === "axis-markers" || kind === "axis-shots")) {
+      const kind = actions
+        ? suggestionKind(line.trim().slice(3).trim(), code.join("\n"), actions.fps)
+        : null;
+      if (actions && kind) {
         blocks.push(
           <Suggestions
             key={`suggestion-${index}`}

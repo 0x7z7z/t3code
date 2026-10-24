@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
-import { markerColors, parseSuggestion, shotMarkers, shotsCsv } from "./suggestionBlocks";
+import {
+  markerColors,
+  parseSuggestion,
+  shotMarkers,
+  shotsCsv,
+  suggestionKind,
+} from "./suggestionBlocks";
 
 describe("suggestions", () => {
   it("parses frame timecodes and optional marker values", () => {
@@ -114,5 +120,27 @@ describe("suggestions", () => {
     const markers = Array.from({ length: 200 }, (_, time) => ({ time, name: "Beat" }));
     const result = parseSuggestion("axis-markers", JSON.stringify(markers), 24);
     expect(result.kind === "markers" && result.markers.length).toBe(200);
+  });
+});
+
+describe("suggestionKind", () => {
+  const shots = JSON.stringify([
+    { shot: "OPEN-01", in: "00:00:00:00", out: "00:00:02:36", description: "Cold open" },
+  ]);
+  it("keeps explicit Axis fences", () => {
+    expect(suggestionKind("axis-markers", "[]", 60)).toBe("axis-markers");
+  });
+  it("recognizes a valid shot list in a plain JSON fence", () => {
+    expect(suggestionKind("json", shots, 60)).toBe("axis-shots");
+    expect(suggestionKind("", shots, 60)).toBe("axis-shots");
+  });
+  it("recognizes markers in a plain JSON fence", () => {
+    expect(suggestionKind("json", JSON.stringify([{ time: 12, name: "Hit" }]), 60)).toBe(
+      "axis-markers",
+    );
+  });
+  it("leaves other code alone", () => {
+    expect(suggestionKind("json", '{"a":1}', 60)).toBeNull();
+    expect(suggestionKind("ts", shots, 60)).toBeNull();
   });
 });

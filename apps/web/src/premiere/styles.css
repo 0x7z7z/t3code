@@ -394,8 +394,71 @@ a {
   overflow-wrap: anywhere;
   margin: 6px 0;
 }
-[data-request] label {
-  margin-bottom: 8px;
+[data-question] {
+  border: 0;
+  padding: 0;
+  margin: 0 0 12px;
+  min-width: 0;
+}
+[data-question] legend {
+  padding: 0;
+  margin-bottom: 6px;
+  line-height: 1.45;
+}
+[data-question] legend small {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+[data-question-options] {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+/* Chromium 99 has no :has(), so the row's look follows its input's sibling. */
+[data-question-option] {
+  position: relative;
+  margin: 0;
+  cursor: pointer;
+}
+[data-question-option] input {
+  position: absolute;
+  top: 9px;
+  left: 9px;
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent);
+}
+[data-question-option] span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 7px 9px 7px 30px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: inherit;
+}
+[data-question-option]:hover span {
+  border-color: #4a6a96;
+}
+[data-question-option] input:checked + span {
+  border-color: var(--accent);
+  background: #22344d;
+}
+[data-question-option] input:focus-visible + span {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+[data-question-option] small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 [data-request] button {
   margin: 3px 5px 0 0;

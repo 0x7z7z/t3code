@@ -60,7 +60,7 @@ it("adds only checked markers, seeks their times, and disables after success", a
     router: false,
   });
   await screen.getByRole("checkbox", { name: "Include marker Outro" }).click();
-  await screen.getByRole("button", { name: "Move playhead to 2.5s" }).click();
+  await screen.getByRole("button", { name: "Move playhead to 0:02:12" }).click();
   expect(timeline.seek).toHaveBeenCalledWith(2.5);
   await screen.getByRole("button", { name: "Add 1 markers" }).click();
   expect(timeline.addMarkers).toHaveBeenCalledWith([{ time: 2.5, name: "Beat", color: "red" }]);
@@ -93,7 +93,7 @@ it("renders shot rows, selects sources, exports CSV and adds duration markers", 
   await expect.element(screen.getByRole("table")).toBeVisible();
   await screen.getByRole("button", { name: "Select Hero in the timeline" }).click();
   expect(timeline.select).toHaveBeenCalledWith(timeline.clips[0]);
-  await screen.getByRole("button", { name: "Move playhead to 4.5s" }).click();
+  await screen.getByRole("button", { name: "Move playhead to 0:04:12" }).click();
   expect(timeline.seek).toHaveBeenCalledWith(4.5);
   await screen.getByRole("button", { name: "Copy CSV" }).click();
   expect(clipboard).toHaveBeenCalledWith(

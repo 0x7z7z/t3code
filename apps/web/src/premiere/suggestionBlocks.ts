@@ -165,3 +165,16 @@ export function shotsCsv(shots: readonly PlanShot[]): string {
     .map((row) => row.map(cell).join(","))
     .join("\r\n");
 }
+
+/** Which card a fence should render as. Plain JSON fences count when they hold a valid list. */
+export function suggestionKind(
+  fence: string,
+  source: string,
+  fps: number,
+): "axis-markers" | "axis-shots" | null {
+  if (fence === "axis-markers" || fence === "axis-shots") return fence;
+  if (fence !== "json" && fence !== "") return null;
+  for (const kind of ["axis-shots", "axis-markers"] as const)
+    if (parseSuggestion(kind, source, fps).kind !== "invalid") return kind;
+  return null;
+}
