@@ -4,7 +4,11 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeUtil from "node:util";
-import { validateSandboxPaths } from "./axis-sandbox-paths.mjs";
+import {
+  validateSandboxEnvironment,
+  validateSandboxPaths,
+  validateSandboxPort,
+} from "./axis-sandbox-paths.mjs";
 
 const { values } = NodeUtil.parseArgs({
   options: {
@@ -20,7 +24,16 @@ const runtimeRoot = NodePath.resolve(
 );
 const installRoot = NodePath.resolve(values["install-root"]);
 const recordPath = NodePath.join(installRoot, "install-record.json");
-const sandbox = values["sandbox-root"] && NodePath.resolve(values["sandbox-root"]);
+const sandbox = values["sandbox-root"] ?? process.env.AXIS_SANDBOX_ROOT;
+const sandboxRequested = Object.keys(process.env).some((name) =>
+  /^AXIS_(SANDBOX_ROOT|RUNTIME_DIR|CEP_DIR|DATA_DIR|WORKSPACE_DIR|BRIDGE_DIR|SKIP_REGISTRY)$/.test(
+    name,
+  ),
+);
+if (sandbox || sandboxRequested) {
+  validateSandboxEnvironment(sandbox, installRoot);
+  if (!values.uninstall) validateSandboxPort(values.port);
+}
 function inside(parent, child) {
   const relative = NodePath.relative(parent, child);
   return relative && !relative.startsWith("..") && !NodePath.isAbsolute(relative);
@@ -30,17 +43,27 @@ if (!inside(installRoot, runtimeRoot))
 if (values.uninstall) {
   const record = JSON.parse(NodeFS.readFileSync(recordPath, "utf8"));
   if (record.runtimeRoot !== runtimeRoot) throw new Error("Installation ownership changed.");
+  if ((record.sandbox || undefined) !== (sandbox || undefined))
+    throw new Error("Uninstall sandbox does not match its installation.");
+  if (sandbox) validateSandboxPaths(sandbox, { runtimeRoot, destination: record.destination });
   // Stop only PIDs captured when Axis spawned a packaged backend, after checking
   // executable and entrypoint identity. A dev backend has no such receipt.
   for (const entry of NodeFS.readdirSync(installRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith("app-")) continue;
+    if (!entry.name.startsWith("app-")) continue;
     const releaseRoot = NodePath.join(installRoot, entry.name);
-    const processFile = NodePath.join(releaseRoot, "backend-process.json");
+    const releaseFile = NodePath.join(releaseRoot, "release.json");
+    if (!NodeFS.existsSync(releaseFile)) continue;
     if (
-      !NodeFS.existsSync(NodePath.join(releaseRoot, "release.json")) ||
-      !NodeFS.existsSync(processFile)
+      entry.isSymbolicLink() ||
+      !entry.isDirectory() ||
+      NodeFS.lstatSync(releaseFile).isSymbolicLink()
     )
-      continue;
+      throw new Error("Refusing to remove a linked runtime.");
+    const release = JSON.parse(NodeFS.readFileSync(releaseFile, "utf8"));
+    if (entry.name !== `app-${release.buildId}`)
+      throw new Error("Runtime release ownership does not match its directory.");
+    const processFile = NodePath.join(releaseRoot, "backend-process.json");
+    if (!NodeFS.existsSync(processFile)) continue;
     const owned = JSON.parse(NodeFS.readFileSync(processFile, "utf8"));
     if (
       !Number.isSafeInteger(owned.pid) ||
@@ -78,6 +101,7 @@ if (values.uninstall) {
     if (config.runtimeRoot === runtimeRoot) {
       if (NodeFS.lstatSync(record.destination).isSymbolicLink())
         throw new Error("Refusing to remove a linked CEP directory.");
+      if (sandbox) validateSandboxPaths(sandbox, { destination: record.destination });
       NodeFS.rmSync(record.destination, { recursive: true });
     }
   }
@@ -85,21 +109,6 @@ if (values.uninstall) {
 } else {
   const env = { ...process.env };
   if (sandbox) {
-    validateSandboxPaths(
-      sandbox,
-      {
-        runtime: installRoot,
-        cep: env.AXIS_CEP_DIR,
-        data: env.AXIS_DATA_DIR,
-        workspace: env.AXIS_WORKSPACE_DIR,
-        bridge: env.AXIS_BRIDGE_DIR,
-      },
-      [
-        NodePath.join(env.APPDATA, "Adobe/CEP/extensions/Axis"),
-        NodePath.join(env.LOCALAPPDATA, "PremiereAssistant"),
-        NodePath.join(env.LOCALAPPDATA, "Programs/Axis"),
-      ],
-    );
     if (!inside(sandbox, installRoot))
       throw new Error("Sandbox install must stay inside its root.");
     env.LOCALAPPDATA = NodePath.join(sandbox, "Local");
@@ -134,9 +143,12 @@ if (values.uninstall) {
     ]) {
       if (!NodeFS.existsSync(previousFile)) continue;
       const previous = JSON.parse(NodeFS.readFileSync(previousFile, "utf8"));
-      for (const key of ["homeDir", "workspacePath", "bridgePath"])
-        if (previous[key] && !inside(sandbox, previous[key]))
-          throw new Error(`Sandbox ${key} points outside its root.`);
+      const paths = Object.fromEntries(
+        ["homeDir", "workspacePath", "bridgePath"]
+          .filter((key) => previous[key])
+          .map((key) => [key, previous[key]]),
+      );
+      validateSandboxPaths(sandbox, paths);
     }
   }
   const args = [

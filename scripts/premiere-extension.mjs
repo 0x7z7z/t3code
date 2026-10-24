@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
 import * as NodeChildProcess from "node:child_process";
+import { validateSandboxPaths } from "./axis-sandbox-paths.mjs";
 import {
   buildConnectorBundle,
   connectorBundlePaths,
@@ -153,6 +154,31 @@ const config = {
   ...(values["runtime-root"] ? { runtimeRoot } : {}),
 };
 const installedWorkspace = config.workspacePath;
+if (process.env.AXIS_SANDBOX_ROOT) {
+  if (!values["skip-adobe-settings"] || port === 5739)
+    throw new Error("Sandbox installs must skip Adobe settings and use a spare port.");
+  validateSandboxPaths(process.env.AXIS_SANDBOX_ROOT, {
+    destination,
+    legacyDestination,
+    dataDir,
+    homeDir: config.homeDir,
+    workspace: installedWorkspace,
+    bridge: bridgePath,
+    connectorBundle: bundlePath,
+  });
+}
+if (values["runtime-root"]) {
+  for (const target of [destination, config.homeDir, installedWorkspace, bridgePath]) {
+    const relative = NodePath.relative(NodePath.dirname(runtimeRoot), target);
+    if (
+      !relative ||
+      (!relative.startsWith(".." + NodePath.sep) &&
+        relative !== ".." &&
+        !NodePath.isAbsolute(relative))
+    )
+      throw new Error("Install CEP and user data outside the packaged runtime.");
+  }
+}
 const mcpPath = NodePath.join(installedWorkspace, ".mcp.json");
 const mcp = NodeFS.existsSync(mcpPath) ? JSON.parse(NodeFS.readFileSync(mcpPath, "utf8")) : {};
 if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))

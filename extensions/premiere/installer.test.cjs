@@ -45,6 +45,7 @@ async function fixture(t) {
     USERPROFILE: directory,
     LOCALAPPDATA: path.join(directory, "local"),
     APPDATA: path.join(directory, "roaming"),
+    AXIS_SANDBOX_ROOT: directory,
   };
   const dataRoot =
     platform === "win32"
@@ -516,4 +517,51 @@ test("explicit workspace overrides retain owned configuration after removing the
   await fs.rm(f.destination, { recursive: true });
   await f.run("--workspace-dir", workspace);
   assert.equal(existsSync(path.join(workspace, ".axis-install.json")), true);
+});
+
+test("sandbox install rejects inherited workspace and nested junction escapes before copying", async (t) => {
+  const f = await fixture(t);
+  const outside = await fs.mkdtemp(path.join(tmpdir(), "axis-outside-"));
+  t.after(() => fs.rm(outside, { recursive: true, force: true }));
+  await fs.mkdir(f.destination, { recursive: true });
+  const previous = JSON.stringify({ workspacePath: outside });
+  await fs.writeFile(path.join(f.destination, "config.json"), previous);
+  await assert.rejects(f.runDefaults("--destination", f.destination), /outside its root/);
+  assert.equal(await fs.readFile(path.join(f.destination, "config.json"), "utf8"), previous);
+  assert.equal(existsSync(path.join(f.destination, "host.js")), false);
+  await fs.rm(path.join(f.destination, "config.json"));
+  await fs.mkdir(path.join(f.data, "workspace"), { recursive: true });
+  await fs.symlink(outside, path.join(f.data, "workspace/.codex"), "junction");
+  await assert.rejects(f.run(), /outside its root/);
+  assert.equal(existsSync(path.join(outside, "config.toml")), false);
+  assert.equal(existsSync(path.join(f.destination, "host.js")), false);
+});
+
+test("sandbox bootstrap fails closed for missing overrides and real bridge paths", async (t) => {
+  const f = await fixture(t);
+  const { liveAxisPaths, validateSandboxEnvironment } = await import(
+    pathToFileURL(path.join(root, "scripts/axis-sandbox-paths.mjs")).href
+  );
+  const env = {
+    AXIS_RUNTIME_DIR: path.join(f.directory, "Programs/Axis"),
+    AXIS_CEP_DIR: f.destination,
+    AXIS_DATA_DIR: f.data,
+    AXIS_WORKSPACE_DIR: path.join(f.data, "workspace"),
+    AXIS_BRIDGE_DIR: f.bridge,
+    AXIS_SKIP_REGISTRY: "1",
+  };
+  validateSandboxEnvironment(f.directory, env.AXIS_RUNTIME_DIR, env);
+  for (const key of Object.keys(env)) {
+    assert.throws(() =>
+      validateSandboxEnvironment(f.directory, env.AXIS_RUNTIME_DIR, { ...env, [key]: "" }),
+    );
+  }
+  for (const live of liveAxisPaths()) {
+    assert.throws(() =>
+      validateSandboxEnvironment(f.directory, env.AXIS_RUNTIME_DIR, {
+        ...env,
+        AXIS_BRIDGE_DIR: live,
+      }),
+    );
+  }
 });

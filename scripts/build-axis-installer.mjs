@@ -238,7 +238,7 @@ const report = {
   payloadFiles: files,
   installerBytes: NodeFS.statSync(executable).size,
   runtimePackages: copied.size,
-  sandboxProtocol: 2,
+  sandboxProtocol: 3,
   installerSha256: NodeCrypto.createHash("sha256")
     .update(NodeFS.readFileSync(executable))
     .digest("hex"),

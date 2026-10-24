@@ -1,13 +1,14 @@
 Unicode true
+SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "StrFunc.nsh"
 ${StrStr}
+${StrCase}
 Name "Axis"
 OutFile "${OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\Axis"
 RequestExecutionLevel user
-SetCompressor /SOLID lzma
 ShowInstDetails show
 ShowUninstDetails show
 Var Sandbox
@@ -29,6 +30,30 @@ Var SkipRegistry
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
+!macro SandboxGuard PREFIX
+Function ${PREFIX}ValidateSandbox
+  ${If} $Sandbox != ""
+    InitPluginsDir
+    SetOutPath "$PLUGINSDIR"
+    File /oname=axis-guard-node.exe "${PAYLOAD}\node\node.exe"
+    File /oname=axis-sandbox-paths.mjs "${PAYLOAD}\scripts\axis-sandbox-paths.mjs"
+    !if "${PREFIX}" == ""
+      nsExec::ExecToLog '"$PLUGINSDIR\axis-guard-node.exe" "$PLUGINSDIR\axis-sandbox-paths.mjs" --runtime "$INSTDIR" --port "$Port"'
+    !else
+      nsExec::ExecToLog '"$PLUGINSDIR\axis-guard-node.exe" "$PLUGINSDIR\axis-sandbox-paths.mjs" --runtime "$INSTDIR" --uninstall'
+    !endif
+    Pop $0
+    ${If} $0 != 0
+      MessageBox MB_OK|MB_ICONSTOP "Sandbox paths failed validation. No Axis targets were changed." /SD IDOK
+      SetErrorLevel 2
+      Abort
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+!macroend
+!insertmacro SandboxGuard ""
+!insertmacro SandboxGuard "un."
+
 Function .onInit
   SetShellVarContext current
   StrCpy $Port "5739"
@@ -36,13 +61,24 @@ Function .onInit
   ; A sandbox request without its root must abort before extracting any files.
   ReadEnvStr $Sandbox "AXIS_SANDBOX_ROOT"
   ReadEnvStr $OverrideRuntime "AXIS_RUNTIME_DIR"
+  ReadEnvStr $OverrideCep "AXIS_CEP_DIR"
+  ReadEnvStr $OverrideData "AXIS_DATA_DIR"
+  ReadEnvStr $OverrideWorkspace "AXIS_WORKSPACE_DIR"
+  ReadEnvStr $OverrideBridge "AXIS_BRIDGE_DIR"
   ReadEnvStr $SkipRegistry "AXIS_SKIP_REGISTRY"
-  ${If} $OverrideRuntime != ""
-  ${AndIf} $Sandbox == ""
-    SetErrorLevel 2
-    Abort
+  ${If} $Sandbox == ""
+    ${If} $OverrideRuntime != ""
+    ${OrIf} $OverrideCep != ""
+    ${OrIf} $OverrideData != ""
+    ${OrIf} $OverrideWorkspace != ""
+    ${OrIf} $OverrideBridge != ""
+    ${OrIf} $SkipRegistry != ""
+      SetErrorLevel 2
+      Abort
+    ${EndIf}
   ${EndIf}
-  ${StrStr} $0 $CMDLINE "/SANDBOX"
+  ${StrCase} $0 $CMDLINE "U"
+  ${StrStr} $0 $0 "/SANDBOX"
   ${If} $0 != ""
   ${AndIf} $Sandbox == ""
     MessageBox MB_OK|MB_ICONSTOP "Sandbox mode requires AXIS_SANDBOX_ROOT. No files were installed." /SD IDOK
@@ -71,24 +107,14 @@ Function .onInit
       SetErrorLevel 2
       Abort
     ${EndIf}
-    GetFullPathName $Sandbox "$Sandbox"
-    ; GetFullPathName returns empty for a directory whose parents do not exist.
-    ; The test and standalone helper canonicalize the explicit runtime path.
-    ${If} $Sandbox == ""
-      SetErrorLevel 2
-      Abort
-    ${EndIf}
-    ${StrStr} $0 $OverrideRuntime "$Sandbox\"
-    ${If} $0 != $OverrideRuntime
-      MessageBox MB_OK|MB_ICONSTOP "Sandbox runtime must be inside its root. No files were installed." /SD IDOK
-      SetErrorLevel 2
-      Abort
-    ${EndIf}
     StrCpy $INSTDIR "$OverrideRuntime"
+    Call ValidateSandbox
   ${EndIf}
 FunctionEnd
 
 Section "Axis"
+  ; The directory page and /D can change INSTDIR after .onInit.
+  Call ValidateSandbox
   SetOutPath "$INSTDIR\app-${BUILD_ID}"
   SetOverwrite ifdiff
   File /r "${PAYLOAD}\*"
@@ -123,6 +149,7 @@ Section "Uninstall"
   ReadINIStr $Runtime "$INSTDIR\install.ini" "Axis" "Runtime"
   ReadINIStr $Sandbox "$INSTDIR\install.ini" "Axis" "Sandbox"
   ReadEnvStr $SkipRegistry "AXIS_SKIP_REGISTRY"
+  Call un.ValidateSandbox
   StrCpy $Arguments '"$Runtime\node\node.exe" "$Runtime\scripts\axis-install.mjs" --install-root "$INSTDIR" --uninstall'
   nsExec::ExecToLog $Arguments
   Pop $0

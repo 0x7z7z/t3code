@@ -7,7 +7,7 @@ import * as NodeModule from "node:module";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeEvents from "node:events";
 import * as NodeCrypto from "node:crypto";
-import { validateSandboxPaths } from "./axis-sandbox-paths.mjs";
+import { liveAxisPaths, validateSandboxPaths } from "./axis-sandbox-paths.mjs";
 
 const executable = NodePath.resolve(process.argv[2]);
 const buildReport = JSON.parse(
@@ -15,7 +15,7 @@ const buildReport = JSON.parse(
 );
 NodeAssert.equal(
   buildReport.sandboxProtocol,
-  2,
+  3,
   "Refusing an installer without the fail-closed sandbox contract.",
 );
 NodeAssert.equal(
@@ -40,11 +40,7 @@ const destination = NodePath.join(sandbox, "Roaming/Adobe/CEP/extensions/Axis");
 const legacyData = NodePath.join(sandbox, "Local/PremiereAssistant");
 const workspace = NodePath.join(legacyData, "workspace");
 const bridge = NodePath.join(sandbox, "User/axis-bridge");
-const protectedPaths = [
-  NodePath.join(process.env.APPDATA, "Adobe/CEP/extensions/Axis"),
-  NodePath.join(process.env.LOCALAPPDATA, "PremiereAssistant"),
-  NodePath.join(process.env.LOCALAPPDATA, "Programs/Axis"),
-];
+const protectedPaths = liveAxisPaths();
 const targets = { runtime: installRoot, cep: destination, data: legacyData, workspace, bridge };
 validateSandboxPaths(sandbox, targets, protectedPaths);
 NodeFS.mkdirSync(sandbox);
@@ -111,6 +107,13 @@ NodeFS.writeFileSync(sentinel, originalBytes);
 const log = NodePath.join(sandbox, "smoke.log");
 const installerEnvironment = {
   ...process.env,
+  TEMP: sandbox,
+  TMP: sandbox,
+  // Even a broken flag parser must fall back into this sandbox, never the live install.
+  APPDATA: NodePath.join(sandbox, "SystemRoaming"),
+  LOCALAPPDATA: NodePath.join(sandbox, "SystemLocal"),
+  USERPROFILE: NodePath.join(sandbox, "User"),
+  HOME: NodePath.join(sandbox, "User"),
   AXIS_SANDBOX_ROOT: sandbox,
   AXIS_RUNTIME_DIR: installRoot,
   AXIS_CEP_DIR: destination,
@@ -126,6 +129,7 @@ function run(command, args, options = {}) {
     windowsHide: true,
     encoding: "utf8",
     timeout: 300000,
+    env: installerEnvironment,
     ...options,
   });
   NodeFS.appendFileSync(
@@ -141,6 +145,23 @@ const children = [];
 const originalSpawn = childProcess.spawn;
 const originalEnvironment = process.env;
 try {
+  const noOverrides = { ...installerEnvironment };
+  for (const key of Object.keys(noOverrides)) if (key.startsWith("AXIS_")) delete noOverrides[key];
+  noOverrides.AXIS_SKIP_REGISTRY = "1";
+  for (const flag of ["/SANDBOX", "/sandbox", `/SANDBOX=${sandbox}`]) {
+    const missingOverrides = NodeChildProcess.spawnSync(executable, ["/S", flag], {
+      env: noOverrides,
+      cwd: sandbox,
+      windowsHide: true,
+      timeout: 30000,
+    });
+    NodeAssert.equal(
+      missingOverrides.status,
+      2,
+      "Sandbox intent must never fall back to defaults.",
+    );
+    NodeAssert.equal(NodeFS.existsSync(NodePath.join(sandbox, "SystemLocal/Programs/Axis")), false);
+  }
   const rejected = NodeChildProcess.spawnSync(executable, ["/S", "/SANDBOX"], {
     env: { ...installerEnvironment, AXIS_SANDBOX_ROOT: "" },
     cwd: sandbox,
@@ -168,6 +189,25 @@ try {
     false,
     "Rejected sandbox requests must not extract runtime files.",
   );
+  // Each failure must occur before runtime extraction, including junction aliases.
+  const outside = NodePath.join(sandbox, "outside-alias");
+  NodeFS.symlinkSync(NodeOS.userInfo().homedir, outside, "junction");
+  for (const overrides of [
+    { AXIS_RUNTIME_DIR: NodePath.join(outside, "blocked-axis-test") },
+    { AXIS_BRIDGE_DIR: NodePath.join(NodeOS.userInfo().homedir, ".premiere-pro-mcp") },
+    { AXIS_CEP_DIR: "" },
+    { AXIS_SKIP_REGISTRY: "0" },
+  ]) {
+    const refused = NodeChildProcess.spawnSync(executable, ["/S", "/SANDBOX", `/PORT=${port}`], {
+      env: { ...installerEnvironment, ...overrides },
+      cwd: sandbox,
+      windowsHide: true,
+      timeout: 30000,
+    });
+    NodeAssert.equal(refused.status, 2, "Unsafe overrides must fail before extraction.");
+    NodeAssert.equal(NodeFS.existsSync(installRoot), false);
+  }
+  NodeFS.unlinkSync(outside);
   run(executable, ["/S", "/SANDBOX", `/PORT=${port}`], { env: installerEnvironment });
   const configPath = NodePath.join(destination, "config.json");
   const config = JSON.parse(NodeFS.readFileSync(configPath, "utf8"));
@@ -237,6 +277,7 @@ try {
   const paired = new URL(await runtime.pairBackend(config));
   NodeAssert.equal(paired.origin, new URL(config.backendUrl).origin);
   NodeAssert.equal(paired.pathname, "/premiere.html");
+  NodeFS.appendFileSync(log, "Verified protocol 1, served web assets and packaged pairing CLI.\n");
   await runtime.ensureBackend(config);
   NodeAssert.equal(children.length, 1);
   // Same-version repair while the installed backend is running must reuse it.
@@ -244,10 +285,18 @@ try {
   await runtime.ensureBackend(config);
   NodeAssert.equal(children.length, 1);
   const exited = NodeEvents.once(children[0], "exit");
+  NodeFS.appendFileSync(
+    log,
+    "Verified running repair. Stopping the captured backend for recovery.\n",
+  );
   children[0].kill();
   await exited;
   await runtime.ensureBackend(config);
   NodeAssert.equal(children.length, 2);
+  NodeFS.appendFileSync(
+    log,
+    "Verified crash recovery. Uninstalling with the owned backend running.\n",
+  );
   children[1].ref();
   const stopped = NodeEvents.once(children[1], "exit");
   process.env = originalEnvironment;

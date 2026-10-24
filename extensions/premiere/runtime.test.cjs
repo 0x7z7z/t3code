@@ -78,6 +78,16 @@ test("pairs through the supported CLI and rejects a different server origin", as
   await assert.rejects(pairBackend(settings), /unexpected pairing address/);
 });
 
+test("probes use a fresh connection after the backend closes its previous sockets", async (t) => {
+  const server = createServer((_request, response) => response.end('{"protocol":1}'));
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const settings = config(`http://127.0.0.1:${server.address().port}/`, tmpdir());
+  await probeBackend(settings);
+  server.closeAllConnections();
+  await probeBackend(settings);
+});
+
 test("starts the dedicated backend with the installed connector and inherited environment", async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "premiere-start-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -138,7 +148,7 @@ test("waits for the backend's startup 503 response without launching another pro
   assert.equal(requests, 3);
 });
 
-test("concurrent starts launch once and a dead backend can restart with packaged PATH", async (t) => {
+test("independent CEP contexts launch once and a dead backend can restart with packaged PATH", async (t) => {
   const directory = await mkdtemp(path.join(tmpdir(), "axis-recovery-"));
   const listener = createServer();
   await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
@@ -176,7 +186,13 @@ test("concurrent starts launch once and a dead backend can restart with packaged
       }
     await rm(directory, { recursive: true, force: true });
   });
-  await Promise.all([ensureBackend(settings), ensureBackend(settings), ensureBackend(settings)]);
+  delete require.cache[require.resolve("./runtime.cjs")];
+  const peer = require("./runtime.cjs");
+  await Promise.all([
+    ensureBackend(settings),
+    peer.ensureBackend(settings),
+    ensureBackend(settings),
+  ]);
   assert.equal(children.length, 1);
   const exited = once(children[0], "exit");
   children[0].kill();

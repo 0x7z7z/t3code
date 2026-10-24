@@ -32,37 +32,42 @@ function validateConfig(config) {
 
 function probeBackend(config) {
   return new Promise(function (resolve, reject) {
-    var request = http.get(config.backendUrl + "premiere-extension.json", function (response) {
-      var body = "";
-      response.setEncoding("utf8");
-      response.on("data", function (chunk) {
-        body += chunk;
-        if (body.length > 4096) request.destroy(new Error("Unexpected backend response."));
-      });
-      response.on("error", reject);
-      response.on("end", function () {
-        if (response.statusCode === 503 && response.headers["retry-after"]) {
-          var starting = new Error("The local backend is still starting.");
-          starting.code = "AXIS_BACKEND_STARTING";
-          reject(starting);
-          return;
-        }
-        try {
-          if (response.statusCode !== 200 || JSON.parse(body).protocol !== 1) {
-            throw new Error(
-              "This port belongs to a different server. Choose another port when installing.",
+    // Health checks must not reuse a socket belonging to a backend that just died.
+    var request = http.get(
+      config.backendUrl + "premiere-extension.json",
+      { agent: false },
+      function (response) {
+        var body = "";
+        response.setEncoding("utf8");
+        response.on("data", function (chunk) {
+          body += chunk;
+          if (body.length > 4096) request.destroy(new Error("Unexpected backend response."));
+        });
+        response.on("error", reject);
+        response.on("end", function () {
+          if (response.statusCode === 503 && response.headers["retry-after"]) {
+            var starting = new Error("The local backend is still starting.");
+            starting.code = "AXIS_BACKEND_STARTING";
+            reject(starting);
+            return;
+          }
+          try {
+            if (response.statusCode !== 200 || JSON.parse(body).protocol !== 1) {
+              throw new Error(
+                "This port belongs to a different server. Choose another port when installing.",
+              );
+            }
+            resolve();
+          } catch {
+            reject(
+              new Error(
+                "This port belongs to a different server. Choose another port when installing.",
+              ),
             );
           }
-          resolve();
-        } catch {
-          reject(
-            new Error(
-              "This port belongs to a different server. Choose another port when installing.",
-            ),
-          );
-        }
-      });
-    });
+        });
+      },
+    );
     request.setTimeout(2500, function () {
       request.destroy(new Error("The local backend did not respond."));
     });
