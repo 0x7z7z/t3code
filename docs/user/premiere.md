@@ -56,6 +56,25 @@ Closing the panel keeps its backend and running tasks alive. Restart that dedica
 backend after reinstalling so new sessions use the updated connector configuration.
 Stop it when it is no longer needed.
 
+## Transcribe a sequence
+
+Open **Transcript** and choose **Transcribe with WhisperX** to ask the selected agent
+to transcribe the active sequence's voice-over. You can start it while the composer
+is in Plan mode. It opens a separate conversation with permission to write transcript
+files and does not edit the timeline. WhisperX and its Python transcriber must be installed on the
+backend machine. The agent reads the original media and maps word times to the clips
+used in the sequence, including trims and constant speed changes.
+
+**Fix with script** is enabled by default. The agent looks for a matching TXT,
+Markdown, DOCX or PDF script beside the project or media and corrects recognized
+words while preserving their timing. PDF text extraction requires `pypdf` or
+`pdftotext`. If the script is missing or does not match, Axis keeps the original
+transcription. Check Conversation for questions, correction counts and uncertain
+regions. The finished transcript loads and saves for the current project and sequence.
+
+You can still import WhisperX JSON, SRT or VTT manually. **Stop waiting** stops the
+automatic import; use the conversation's stop control to interrupt the agent itself.
+
 ## Compatibility
 
 The CEP manifest targets Premiere 25.x and later, including 25.3. This development

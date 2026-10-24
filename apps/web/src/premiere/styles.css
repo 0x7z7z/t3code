@@ -1014,6 +1014,7 @@ small[data-shot-text] {
   gap: 10px;
 }
 [data-transcript-tools],
+[data-whisper-controls],
 [data-transcript-mapping],
 [data-transcript-actions],
 [data-transcript-undo],
@@ -1027,6 +1028,17 @@ small[data-shot-text] {
   flex: 1;
   min-width: 160px;
   overflow-wrap: anywhere;
+}
+[data-whisper-controls] label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+[data-whisper-controls] input {
+  width: auto;
+  margin: 0;
 }
 [data-transcript-tools] small {
   display: block;

@@ -15,6 +15,7 @@
     typeof require === "function" ? require : window.cep_node && window.cep_node.require;
   var runtime;
   var config;
+  var extensionDirectory;
   var backendState = "starting";
   var backendMessage = "Starting";
   var bridgeStatus = null;
@@ -673,6 +674,31 @@
       event.data.protocol !== 1
     )
       return;
+    if (event.data.type === "premiere.transcript.load.request") {
+      var transcriptRequest = event.data;
+      if (
+        typeof transcriptRequest.requestId !== "string" ||
+        transcriptRequest.requestId.length > 128
+      )
+        return;
+      var transcriptResult;
+      try {
+        transcriptResult = nodeRequire(
+          nodeRequire("path").join(extensionDirectory, "transcript-handoff.cjs"),
+        ).loadTranscript(config, transcriptRequest, extensionDirectory);
+      } catch (error) {
+        transcriptResult = { ok: false, error: String(error.message).slice(0, 1024) };
+      }
+      frame.contentWindow.postMessage(
+        Object.assign({}, transcriptResult, {
+          type: "premiere.transcript.load",
+          protocol: 1,
+          requestId: transcriptRequest.requestId,
+        }),
+        event.origin,
+      );
+      return;
+    }
     if (
       event.data.type === "premiere.transcript.active" &&
       typeof event.data.enabled === "boolean"
@@ -794,6 +820,7 @@
         var directory = decodeURIComponent(location.pathname)
           .replace(/^\/(?:([A-Za-z]:))/, "$1")
           .replace(/\/[^/]*$/, "");
+        extensionDirectory = directory;
         runtime = nodeRequire(path.join(directory, "runtime.cjs"));
         config = runtime.validateConfig(
           JSON.parse(fs.readFileSync(path.join(directory, "config.json"), "utf8")),

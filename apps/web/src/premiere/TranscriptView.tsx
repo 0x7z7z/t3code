@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { randomUUID } from "../lib/utils";
 import { seekPremiere, type PremiereContext } from "./host";
+import { importWhisperHandoff, loadWhisperTranscript, whisperPrompt } from "./whisperTranscription";
 import {
   cutTranscriptRange,
   pruneCheckpoints,
@@ -64,11 +66,19 @@ export function TranscriptView({
   disabled,
   onAsk,
   onBusy,
+  onTranscribe,
+  transcriptionDisabled = false,
+  agentStatus = "idle",
+  agentOutcome = null,
 }: {
   context: PremiereContext;
   disabled: boolean;
   onAsk: (text: string) => void;
   onBusy: (busy: boolean) => void;
+  onTranscribe?: (prompt: string) => Promise<void>;
+  transcriptionDisabled?: boolean;
+  agentStatus?: string;
+  agentOutcome?: string | null;
 }) {
   const key = transcriptStorageKey(context);
   const [stored, setStored] = useState(() => readStored(key));
@@ -76,9 +86,22 @@ export function TranscriptView({
   const [page, setPage] = useState(0);
   const [following, setFollowing] = useState(true);
   const [offset, setOffset] = useState(String(stored.transcript?.offset ?? 0));
-  const [busy, setBusy] = useState(false);
+  const [operationBusy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCut, setConfirmCut] = useState(false);
+  const [fixScript, setFixScript] = useState(true);
+  const [job, setJob] = useState<string | null>(null);
+  const [whisperState, setWhisperState] = useState<"idle" | "transcribing" | "loaded" | "failed">(
+    "idle",
+  );
+  const busy = operationBusy || whisperState === "transcribing";
+  const mounted = useRef(true);
+  const starting = useRef(false);
+  const generation = useRef(0);
+  const outcome = useRef(agentOutcome);
+  useEffect(() => {
+    outcome.current = agentOutcome;
+  }, [agentOutcome]);
   const gesture = useRef<{ anchor: number; dragged: boolean } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const wordArea = useRef<HTMLDivElement>(null);
@@ -96,6 +119,78 @@ export function TranscriptView({
   const range = selection
     ? selectionRange(words, selection.anchor, selection.focus, context.fps)
     : null;
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!job) return;
+    let disposed = false;
+    let reading = false;
+    const poll = async () => {
+      if (reading) return;
+      reading = true;
+      try {
+        const handoff = await loadWhisperTranscript(context, job);
+        if (disposed) return;
+        if (!handoff.content) {
+          if (outcome.current)
+            throw new Error(`The agent finished without a transcript: ${outcome.current}`);
+          return;
+        }
+        const transcript = importWhisperHandoff(handoff.content, context, job);
+        persist({ transcript, undo: stored.undo, uncertain: false });
+        setOffset("0");
+        setSelection(null);
+        setPage(0);
+        setFollowing(false);
+        setConfirmCut(false);
+        setWhisperState("loaded");
+        setJob(null);
+      } catch (problem) {
+        if (disposed) return;
+        setError(problem instanceof Error ? problem.message : "Transcription failed.");
+        setWhisperState("failed");
+        setJob(null);
+      } finally {
+        reading = false;
+      }
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 3000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+    // Playhead updates must not restart in-flight file reads.
+    // A job is scoped to this keyed sequence view.
+  }, [job]);
+
+  async function transcribe() {
+    if (!onTranscribe || starting.current || job || operation.current || transcriptionDisabled)
+      return;
+    starting.current = true;
+    const attempt = ++generation.current;
+    setWhisperState("transcribing");
+    setError(null);
+    const id = randomUUID();
+    try {
+      const handoff = await loadWhisperTranscript(context, id, true);
+      if (!mounted.current || generation.current !== attempt) return;
+      await onTranscribe(whisperPrompt(context, id, handoff, fixScript));
+      if (mounted.current && generation.current === attempt) setJob(id);
+    } catch (problem) {
+      if (!mounted.current || generation.current !== attempt) return;
+      setError(problem instanceof Error ? problem.message : "Could not start transcription.");
+      setWhisperState("failed");
+    } finally {
+      starting.current = false;
+    }
+  }
 
   useEffect(() => {
     if (following && current >= 0 && wordArea.current?.offsetParent)
@@ -245,6 +340,45 @@ export function TranscriptView({
           }}
         />
       </div>
+      <div data-whisper-controls="">
+        <button
+          type="button"
+          disabled={!onTranscribe || transcriptionDisabled || busy}
+          onClick={() => void transcribe()}
+        >
+          Transcribe with WhisperX
+        </button>
+        <label>
+          <input
+            type="checkbox"
+            checked={fixScript}
+            disabled={whisperState === "transcribing"}
+            onChange={(event) => setFixScript(event.target.checked)}
+          />{" "}
+          Fix with script
+        </label>
+        {whisperState === "transcribing" ? (
+          <button
+            type="button"
+            onClick={() => {
+              generation.current++;
+              setJob(null);
+              setWhisperState("idle");
+            }}
+          >
+            Stop waiting
+          </button>
+        ) : null}
+      </div>
+      <p role="status" data-transcript-hint="">
+        {whisperState === "transcribing"
+          ? `Transcribing · ${agentStatus}. Agent details and questions are in Conversation. Stop waiting does not stop the agent.`
+          : whisperState === "loaded"
+            ? "WhisperX transcript loaded and saved."
+            : whisperState === "failed"
+              ? "WhisperX transcription failed. See the reason below."
+              : "Transcription uses a separate conversation that can write transcript files. It does not edit the timeline."}
+      </p>
       {doc ? (
         <>
           <form

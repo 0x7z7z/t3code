@@ -8,7 +8,7 @@ const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
 
-async function panelFixture() {
+async function panelFixture(settingsOverride = {}) {
   const elements = new Map();
   const listeners = new Map();
   const evaluations = [];
@@ -24,7 +24,7 @@ async function panelFixture() {
     },
   };
   document.getElementById("workspace").contentWindow = contentWindow;
-  const settings = { backendUrl: "http://127.0.0.1:5749/" };
+  const settings = { backendUrl: "http://127.0.0.1:5749/", ...settingsOverride };
   const runtime = {
     validateConfig: (value) => value,
     probeBackend: async () => {},
@@ -55,7 +55,9 @@ async function panelFixture() {
             }
           : name === "os"
             ? os
-            : runtime,
+            : name.endsWith("transcript-handoff.cjs")
+              ? require("./transcript-handoff.cjs")
+              : runtime,
     setInterval: () => 1,
     clearInterval() {},
     setTimeout: (callback, delay) => {
@@ -639,4 +641,43 @@ test("snapshot and restore replies are correlated and only sent to the trusted i
   f.evaluations.at(-1).callback('axis:{"ok":false,"error":"checkpoint gone"}');
   assert.equal(f.messages[1].packet.type, "premiere.restore");
   assert.equal(f.messages[1].packet.error, "checkpoint gone");
+});
+
+test("transcript host requests require the panel origin and read only the workspace handoff", async (t) => {
+  const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "axis-host-transcript-"));
+  t.after(() => fs.rmSync(workspacePath, { recursive: true, force: true }));
+  const f = await panelFixture({ workspacePath });
+  const request = {
+    type: "premiere.transcript.load.request",
+    requestId: "load-1",
+    jobId: "job-1",
+    projectId: "film",
+    sequenceId: "seq",
+  };
+  f.send(request, { origin: "https://other.test" });
+  f.send(request, { source: {} });
+  assert.equal(f.messages.length, 0);
+  f.send(request);
+  const result = f.messages.at(-1).packet;
+  assert.equal(result.type, "premiere.transcript.load");
+  assert.equal(result.requestId, "load-1");
+  assert.equal(result.ok, true);
+  assert.equal(result.content, null);
+  assert.ok(result.outputPath.startsWith(workspacePath + path.sep));
+  fs.mkdirSync(path.dirname(result.outputPath), { recursive: true });
+  fs.writeFileSync(
+    result.outputPath,
+    JSON.stringify({
+      version: 1,
+      requestId: "job-1",
+      projectId: "film",
+      sequenceId: "seq",
+      status: "failed",
+      error: "Source offline",
+    }),
+  );
+  f.send(request);
+  assert.equal(f.messages.at(-1).packet.error, "Source offline");
+  f.send({ ...request, jobId: "../escape" });
+  assert.equal(f.messages.at(-1).packet.ok, false);
 });

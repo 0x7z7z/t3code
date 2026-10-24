@@ -10,8 +10,10 @@ const host = vi.hoisted(() => ({
   cut: vi.fn(),
   snapshot: vi.fn(),
   restore: vi.fn(),
+  load: vi.fn(),
 }));
 vi.mock("./host", () => ({ seekPremiere: host.seek }));
+vi.mock("./interactiveHost", () => ({ requestTimelineAction: host.load }));
 vi.mock("./timelineHost", () => ({
   pruneCheckpoints: async () => {},
   cutTranscriptRange: host.cut,
@@ -20,6 +22,11 @@ vi.mock("./timelineHost", () => ({
 }));
 
 function setup(id: string, count = 3) {
+  host.load.mockReset().mockResolvedValue({
+    content: null,
+    outputPath: "D:/workspace/result.json",
+    helperPath: "D:/extension/tools/axis_transcript.py",
+  });
   host.seek.mockReset();
   host.cut.mockReset().mockResolvedValue({
     checkpointId: "checkpoint",
@@ -51,6 +58,91 @@ function setup(id: string, count = 3) {
   const props = { context, disabled: false, onAsk: vi.fn(), onBusy: vi.fn() };
   return { props, key, transcript };
 }
+
+it("transcribes in Plan mode, imports the matching handoff and persists the corrected sequence transcript", async () => {
+  const f = setup("whisper");
+  const onTranscribe = vi.fn(async (prompt: string) => {
+    const requestId = /"requestId":"([^"]+)"/.exec(prompt)![1];
+    host.load.mockResolvedValue({
+      outputPath: "D:/workspace/result.json",
+      helperPath: "D:/extension/tools/axis_transcript.py",
+      content: JSON.stringify({
+        version: 1,
+        requestId,
+        projectId: "film",
+        sequenceId: "whisper",
+        status: "complete",
+        metadata: { scriptChecked: true },
+        words: [{ word: "Frieza", start: 12, end: 13 }],
+      }),
+    });
+  });
+  await using screen = await render(
+    <TranscriptView {...f.props} disabled onTranscribe={onTranscribe} agentStatus="running" />,
+  );
+  screen.container.style.width = "440px";
+  await expect.element(screen.getByRole("checkbox", { name: "Fix with script" })).toBeChecked();
+  await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Frieza at 00:00:12.000" }))
+    .toBeVisible();
+  expect(onTranscribe).toHaveBeenCalledWith(expect.stringContaining("reconcile --input"));
+  await expect
+    .element(screen.getByRole("status"))
+    .toHaveTextContent("WhisperX transcript loaded and saved.");
+  await act(() => screen.rerender(<TranscriptView {...f.props} key="reload-whisper" />));
+  await expect.element(screen.getByText("WhisperX (Axis) · script-checked")).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Frieza at 00:00:12.000" }))
+    .toBeVisible();
+});
+
+it("shows agent progress, permits stopping the wait and keeps manual import", async () => {
+  const f = setup("waiting-whisper");
+  const onTranscribe = vi.fn(async () => {});
+  await using screen = await render(
+    <TranscriptView {...f.props} onTranscribe={onTranscribe} agentStatus="waiting" />,
+  );
+  await screen.getByRole("checkbox", { name: "Fix with script" }).click();
+  await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
+  await expect
+    .element(screen.getByRole("status"))
+    .toHaveTextContent(
+      "Transcribing · waiting. Agent details and questions are in Conversation. Stop waiting does not stop the agent.",
+    );
+  expect(onTranscribe).toHaveBeenCalledWith(expect.stringContaining("Script correction is OFF"));
+  await expect
+    .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
+    .toBeDisabled();
+  await screen.getByRole("button", { name: "Stop waiting" }).click();
+  await expect.element(screen.getByRole("button", { name: "Replace transcript" })).toBeEnabled();
+});
+
+it("shows a failed handoff's actual reason without replacing the existing transcript", async () => {
+  const f = setup("failed-whisper");
+  const onTranscribe = vi.fn(async () => {
+    host.load.mockRejectedValue(new Error("No readable voice-over media"));
+  });
+  await using screen = await render(<TranscriptView {...f.props} onTranscribe={onTranscribe} />);
+  await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("No readable voice-over media");
+  await expect.element(screen.getByRole("button", { name: "Every at 00:00:00.000" })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
+    .toBeEnabled();
+});
+
+it("reports the agent's outcome when its turn ends without producing a handoff", async () => {
+  const f = setup("no-handoff-whisper");
+  await using screen = await render(
+    <TranscriptView {...f.props} onTranscribe={async () => {}} agentOutcome="The VO is offline." />,
+  );
+  await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
+  await expect
+    .element(screen.getByRole("alert"))
+    .toHaveTextContent("The agent finished without a transcript: The VO is offline.");
+  await expect.element(screen.getByRole("button", { name: "Every at 00:00:00.000" })).toBeVisible();
+});
 
 it("seeks words, highlights the playhead and quotes a selected range", async () => {
   const f = setup("seek");

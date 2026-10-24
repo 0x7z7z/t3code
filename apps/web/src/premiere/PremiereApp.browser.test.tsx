@@ -22,6 +22,7 @@ const state = vi.hoisted(() => ({
   projection: null as OrchestrationV2ThreadProjection | null,
   host: { connected: true, context: null as PremiereContext | null },
   frame: vi.fn(),
+  handoff: vi.fn(),
 }));
 
 vi.mock("../connection/runtime", () => ({ connectionAtomRuntime: {} }));
@@ -105,10 +106,19 @@ vi.mock("./timelineHost", async (original) => ({
     throw new Error("No timeline in tests.");
   },
 }));
+vi.mock("./whisperTranscription", async (original) => ({
+  ...(await original()),
+  loadWhisperTranscript: state.handoff,
+}));
 
 import { PremiereApp } from "./PremiereApp";
 
 function setup(name: string, allowed: boolean) {
+  state.handoff.mockReset().mockResolvedValue({
+    content: null,
+    outputPath: "D:/workspace/axis-transcripts/test.json",
+    helperPath: "D:/extension/tools/axis_transcript.py",
+  });
   state.environmentId = `premiere-permission-${name}`;
   state.allowed = allowed;
   state.run.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
@@ -491,4 +501,57 @@ it("inserts quoted transcript context into the existing composer draft and opens
   await expect
     .element(screen.getByRole("button", { name: "Conversation", exact: true }))
     .toHaveAttribute("aria-pressed", "true");
+});
+
+it("starts a dedicated WhisperX artifact turn while the composer stays in Plan and keeps its draft", async () => {
+  setup("whisper-turn", true);
+  state.host = {
+    connected: true,
+    context: {
+      projectName: "Film",
+      projectPath: "D:/Film.prproj",
+      projectDocumentId: "film",
+      sequenceName: "VO",
+      sequenceId: "vo",
+      fps: 25,
+      playheadSeconds: 0,
+    },
+  };
+  // The CEP panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen
+    .getByRole("textbox", { name: "Message your editing assistant" })
+    .fill("Keep this draft");
+  await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
+    .toBeEnabled();
+  await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
+  await vi.waitFor(() =>
+    expect(state.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          interactionMode: "default",
+          bootstrap: expect.objectContaining({
+            createThread: expect.objectContaining({ interactionMode: "default" }),
+          }),
+          message: expect.objectContaining({
+            text: expect.stringContaining('<axis-whisper-instructions version="1">'),
+          }),
+        }),
+      }),
+    ),
+  );
+  await screen.getByRole("button", { name: "Conversation", exact: true }).click();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Message your editing assistant" }))
+    .toHaveValue("Keep this draft");
+  await expect
+    .element(screen.getByRole("radio", { name: "Plan", exact: true }))
+    .toHaveAttribute("aria-checked", "true");
 });
