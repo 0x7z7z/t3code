@@ -6,16 +6,22 @@ import * as NodeUtil from "node:util";
 import * as NodeChildProcess from "node:child_process";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
+import {
+  buildConnectorBundle,
+  connectorBundlePaths,
+  defaultConnectorBundle,
+  defaultConnectorRoot,
+  validateConnectorBundle,
+  validateConnectorSource,
+} from "./premiere-connector.mjs";
 
 const platform = Effect.runSync(HostProcess.Platform);
 
 const root = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 const { values } = NodeUtil.parseArgs({
   options: {
-    "connector-root": {
-      type: "string",
-      default: NodePath.resolve(root, "../premiere-pro-mcp-aftr"),
-    },
+    "connector-root": { type: "string" },
+    "connector-bundle": { type: "string" },
     destination: { type: "string" },
     "data-dir": { type: "string" },
     "bridge-dir": { type: "string" },
@@ -55,12 +61,29 @@ const source = NodePath.join(root, "extensions/premiere");
 if (destination === source || destination.startsWith(source + NodePath.sep))
   throw new Error("Install outside the extension source directory.");
 const serverPath = NodePath.join(root, "apps/server/dist/bin.mjs");
-const connectorPath = NodePath.resolve(values["connector-root"], "dist/index.js");
+if (values["connector-root"] && values["connector-bundle"])
+  throw new Error(
+    "Choose --connector-root to rebuild or --connector-bundle to use a prebuilt bundle.",
+  );
+const bundlePath = NodePath.resolve(values["connector-bundle"] ?? defaultConnectorBundle);
+const connectorRoot = NodePath.resolve(values["connector-root"] ?? defaultConnectorRoot);
+const rebuildConnector =
+  Boolean(values["connector-root"]) ||
+  (!values["connector-bundle"] && !NodeFS.existsSync(bundlePath));
+if (
+  destination === bundlePath ||
+  destination.startsWith(bundlePath + NodePath.sep) ||
+  bundlePath.startsWith(destination + NodePath.sep)
+)
+  throw new Error("Install outside the connector bundle directory.");
+if (rebuildConnector) validateConnectorSource(connectorRoot);
+else validateConnectorBundle(bundlePath);
+const connectorPath = connectorBundlePaths(NodePath.join(destination, "connector")).server;
 const workspacePath = NodePath.join(dataDir, "workspace");
+// Axis owns its own bridge directory. The standalone connector panel keeps
+// ~/.premiere-pro-mcp/bridge, so the two never process the same commands.
 const bridgePath = NodePath.resolve(
-  values["bridge-dir"] ??
-    process.env.PREMIERE_TEMP_DIR ??
-    NodePath.join(NodeOS.homedir(), ".premiere-pro-mcp/bridge"),
+  values["bridge-dir"] ?? NodePath.join(NodeOS.homedir(), ".premiere-pro-mcp/axis-bridge"),
 );
 const config = {
   backendUrl: `http://127.0.0.1:${port}/`,
@@ -73,19 +96,29 @@ const config = {
 };
 if (!NodeFS.existsSync(serverPath))
   throw new Error("Build the fork first: vp run --filter t3 build");
-if (!NodeFS.existsSync(connectorPath))
-  throw new Error("Build the existing Premiere MCP connector first, or supply --connector-root.");
 const mcpPath = NodePath.join(workspacePath, ".mcp.json");
 const mcp = NodeFS.existsSync(mcpPath) ? JSON.parse(NodeFS.readFileSync(mcpPath, "utf8")) : {};
 if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))
   throw new Error("The existing MCP configuration must be an object.");
 mcp.mcpServers ??= {};
+if (typeof mcp.mcpServers !== "object" || Array.isArray(mcp.mcpServers))
+  throw new Error("The existing MCP servers configuration must be an object.");
 const legacyPremiereServer = { command: process.execPath, args: [connectorPath] };
 const premiereServer = { ...legacyPremiereServer, env: { PREMIERE_TEMP_DIR: bridgePath } };
+const previousConfigPath = NodePath.join(destination, "config.json");
+const previousConfig = NodeFS.existsSync(previousConfigPath)
+  ? JSON.parse(NodeFS.readFileSync(previousConfigPath, "utf8"))
+  : undefined;
+const previousServers = [legacyPremiereServer, premiereServer];
+if (previousConfig?.nodePath && previousConfig?.connectorPath) {
+  const previous = { command: previousConfig.nodePath, args: [previousConfig.connectorPath] };
+  previousServers.push(previous);
+  if (previousConfig.bridgePath)
+    previousServers.push({ ...previous, env: { PREMIERE_TEMP_DIR: previousConfig.bridgePath } });
+}
 if (
   mcp.mcpServers.premiere &&
-  JSON.stringify(mcp.mcpServers.premiere) !== JSON.stringify(premiereServer) &&
-  JSON.stringify(mcp.mcpServers.premiere) !== JSON.stringify(legacyPremiereServer)
+  !previousServers.some((server) => NodeUtil.isDeepStrictEqual(mcp.mcpServers.premiere, server))
 ) {
   throw new Error(
     "The editing workspace already has a different Premiere MCP configuration. Choose --data-dir to keep it.",
@@ -93,13 +126,18 @@ if (
 }
 mcp.mcpServers.premiere = premiereServer;
 const codexPath = NodePath.join(workspacePath, ".codex/config.toml");
-const legacyCodexConfig = `[mcp_servers.premiere]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(connectorPath)}]\n`;
-const codexConfig =
-  legacyCodexConfig +
-  `\n[mcp_servers.premiere.env]\nPREMIERE_TEMP_DIR = ${JSON.stringify(bridgePath)}\n`;
+function codexConfiguration(server) {
+  return (
+    `[mcp_servers.premiere]\ncommand = ${JSON.stringify(server.command)}\nargs = [${server.args.map((arg) => JSON.stringify(arg)).join(", ")}]\n` +
+    (server.env
+      ? `\n[mcp_servers.premiere.env]\nPREMIERE_TEMP_DIR = ${JSON.stringify(server.env.PREMIERE_TEMP_DIR)}\n`
+      : "")
+  );
+}
+const codexConfig = codexConfiguration(premiereServer);
 if (
   NodeFS.existsSync(codexPath) &&
-  ![legacyCodexConfig, codexConfig].includes(NodeFS.readFileSync(codexPath, "utf8"))
+  !previousServers.map(codexConfiguration).includes(NodeFS.readFileSync(codexPath, "utf8"))
 ) {
   throw new Error(
     "The editing workspace already has a different Codex configuration. Choose --data-dir to keep it.",
@@ -115,17 +153,31 @@ if (values["dry-run"]) {
         serverPath,
         connectorPath,
         bridgePath,
+        connectorBundle: bundlePath,
+        connectorBuild: rebuildConnector ? connectorRoot : null,
+        config,
+        mcp,
+        codexConfig,
       },
       null,
       2,
     ),
   );
 } else {
+  const bundle = rebuildConnector
+    ? await buildConnectorBundle(connectorRoot, bundlePath)
+    : validateConnectorBundle(bundlePath);
+  // Use exactly the connector's ACL/ancestry checks before the CEP panel can process commands.
+  const { ensurePrivateBridgeDirectory } = await import(
+    NodeURL.pathToFileURL(bundle.privateBridge).href
+  );
+  ensurePrivateBridgeDirectory(bridgePath);
   NodeFS.mkdirSync(destination, { recursive: true });
   NodeFS.cpSync(source, destination, {
     recursive: true,
     filter: (file) => !file.endsWith(".test.cjs"),
   });
+  NodeFS.cpSync(bundlePath, NodePath.join(destination, "connector"), { recursive: true });
   NodeFS.writeFileSync(
     NodePath.join(destination, "config.json"),
     JSON.stringify(config, null, 2) + "\n",
@@ -184,6 +236,5 @@ if (values["dry-run"]) {
   console.log(`Installed Premiere Assistant: ${destination}`);
   console.log(`Backend: ${config.backendUrl}`);
   console.log("Restart Premiere, then open Window > Extensions > Premiere Assistant.");
-  console.log("Keep the existing MCP for Adobe Premiere Pro connector enabled for editing tools.");
-  console.log(`Set its Temp directory field to: ${bridgePath}`);
+  console.log("The extension runs the Premiere bridge itself.");
 }

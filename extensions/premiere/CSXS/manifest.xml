@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ExtensionManifest Version="7.0" ExtensionBundleId="com.premiere.assistant" ExtensionBundleVersion="0.1.0" ExtensionBundleName="Premiere Assistant">
-  <ExtensionList><Extension Id="com.premiere.assistant.panel" Version="0.1.0"/></ExtensionList>
+  <ExtensionList>
+    <Extension Id="com.premiere.assistant.panel" Version="0.1.0"/>
+    <Extension Id="com.premiere.assistant.headless" Version="0.1.0"/>
+  </ExtensionList>
   <ExecutionEnvironment>
     <HostList><Host Name="PPRO" Version="[25.0,99.9]"/></HostList>
     <LocaleList><Locale Code="All"/></LocaleList>
@@ -9,12 +12,30 @@
   <DispatchInfoList><Extension Id="com.premiere.assistant.panel"><DispatchInfo>
     <Resources>
       <MainPath>./index.html</MainPath>
+      <ScriptPath>./host.jsx</ScriptPath>
       <CEFCommandLine><Parameter>--enable-nodejs</Parameter></CEFCommandLine>
     </Resources>
     <Lifecycle><AutoVisible>true</AutoVisible></Lifecycle>
     <UI><Type>Panel</Type><Menu>Premiere Assistant</Menu><Geometry>
       <Size><Width>440</Width><Height>720</Height></Size>
       <MinSize><Width>320</Width><Height>320</Height></MinSize>
+    </Geometry></UI>
+  </DispatchInfo></Extension>
+  <Extension Id="com.premiere.assistant.headless"><DispatchInfo>
+    <Resources>
+      <MainPath>./headless.html</MainPath>
+      <ScriptPath>./host.jsx</ScriptPath>
+      <CEFCommandLine><Parameter>--enable-nodejs</Parameter></CEFCommandLine>
+    </Resources>
+    <Lifecycle>
+      <AutoVisible>false</AutoVisible>
+      <StartOn>
+        <Event>com.adobe.csxs.events.ApplicationActivate</Event>
+        <Event>applicationActivate</Event>
+      </StartOn>
+    </Lifecycle>
+    <UI><Type>Custom</Type><Geometry>
+      <Size><Width>1</Width><Height>1</Height></Size>
     </Geometry></UI>
   </DispatchInfo></Extension></DispatchInfoList>
 </ExtensionManifest>

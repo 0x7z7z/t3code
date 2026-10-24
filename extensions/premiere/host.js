@@ -13,11 +13,33 @@
     typeof require === "function" ? require : window.cep_node && window.cep_node.require;
   var runtime;
   var config;
+  var backendState = "starting";
+  var backendMessage = "Starting";
+  var bridgeStatus = null;
 
   function status(state, message) {
-    connection.setAttribute("data-state", state);
-    connection.textContent = message;
+    backendState = state;
+    backendMessage = message;
+    renderStatus();
   }
+
+  function renderStatus() {
+    var bridgeError = bridgeStatus && bridgeStatus.state === "error";
+    connection.setAttribute("data-state", bridgeError ? "error" : backendState);
+    connection.textContent = bridgeError
+      ? "Bridge needs attention"
+      : backendMessage +
+        (bridgeStatus
+          ? " · " + (bridgeStatus.state === "standby" ? "Bridge shared" : bridgeStatus.message)
+          : "");
+    connection.title = backendMessage + (bridgeStatus ? " · " + bridgeStatus.message : "");
+  }
+
+  if (window.AxisPremiereBridge)
+    window.AxisPremiereBridge.subscribe(function (value) {
+      bridgeStatus = value;
+      renderStatus();
+    });
 
   function readContext(callback) {
     if (!window.__adobe_cep__) return callback(null);
@@ -145,6 +167,7 @@
 
   function connect() {
     if (connecting) return;
+    if (window.AxisPremiereBridge) window.AxisPremiereBridge.retry();
     connecting = true;
     retry.hidden = true;
     status("starting", "Connecting");

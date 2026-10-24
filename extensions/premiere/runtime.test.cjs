@@ -3,7 +3,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { createServer } = require("node:http");
-const { mkdtemp, writeFile, rm } = require("node:fs/promises");
+const { mkdir, mkdtemp, writeFile, rm } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 const { validateConfig, probeBackend, pairBackend, startBackend } = require("./runtime.cjs");
@@ -17,7 +17,7 @@ function config(backendUrl, directory) {
     serverPath: path.join(directory, "server.mjs"),
     homeDir: directory,
     workspacePath: directory,
-    connectorPath: path.join(directory, "connector.mjs"),
+    connectorPath: path.join(directory, "connector", "dist", "index.mjs"),
     bridgePath: path.join(directory, "bridge"),
   };
 }
@@ -75,6 +75,8 @@ test("starts the dedicated backend with the installed connector and inherited en
   const directory = await mkdtemp(path.join(tmpdir(), "premiere-start-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const settings = config("http://127.0.0.1:5739/", directory);
+  await mkdir(path.dirname(settings.connectorPath), { recursive: true });
+  await writeFile(settings.connectorPath, "// installed connector");
   const resultPath = path.join(directory, "started.json");
   await writeFile(
     settings.serverPath,
@@ -92,4 +94,12 @@ test("starts the dedicated backend with the installed connector and inherited en
     env: { PREMIERE_TEMP_DIR: settings.bridgePath },
   });
   assert.equal(result.inherited, process.env.PATH);
+});
+
+test("reports a missing bundled connector before launching the backend", async (t) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "premiere-missing-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const settings = config("http://127.0.0.1:5739/", directory);
+  await writeFile(settings.serverPath, 'throw new Error("must not start");');
+  assert.throws(() => startBackend(settings), /bundled Premiere connector is missing/);
 });

@@ -65,6 +65,8 @@ function probeBackend(config) {
 function startBackend(config) {
   if (!fs.existsSync(config.serverPath))
     throw new Error("Build T3 Code first with vp run --filter t3 build.");
+  if (!fs.existsSync(config.connectorPath))
+    throw new Error("The bundled Premiere connector is missing. Reinstall the extension.");
   fs.mkdirSync(config.homeDir, { recursive: true });
   var url = new URL(config.backendUrl);
   var child = childProcess.spawn(
