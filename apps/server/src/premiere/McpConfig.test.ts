@@ -6,7 +6,7 @@ import { claudeMcpQueryOverrides } from "../orchestration-v2/Adapters/ClaudeAdap
 
 const server = {
   command: "C:/Node/node.exe",
-  args: ["C:/Adobe/CEP/extensions/Premiere Assistant/connector/dist/index.mjs"],
+  args: ["C:/Adobe/CEP/extensions/Axis/connector/dist/index.mjs"],
   env: { PREMIERE_TEMP_DIR: "C:/Editing/bridge" },
 };
 const environment = {

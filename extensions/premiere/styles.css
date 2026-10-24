@@ -31,12 +31,12 @@ body {
   flex-shrink: 0;
   width: 24px;
   height: 24px;
-  border: 1px solid #9999ff;
+  border: 1px solid #378ef0;
   border-radius: 5px;
-  color: #9999ff;
+  color: #378ef0;
   font-size: 11px;
   font-weight: 700;
-  background: #00005b;
+  background: #1e1e1e;
 }
 .host-heading {
   min-width: 0;

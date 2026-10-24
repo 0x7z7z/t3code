@@ -64,7 +64,7 @@ function probeBackend(config) {
 
 function startBackend(config) {
   if (!fs.existsSync(config.serverPath))
-    throw new Error("Build T3 Code first with vp run --filter t3 build.");
+    throw new Error("Build the backend first with vp run --filter t3 build.");
   if (!fs.existsSync(config.connectorPath))
     throw new Error("The bundled Premiere connector is missing. Reinstall the extension.");
   fs.mkdirSync(config.homeDir, { recursive: true });
@@ -126,7 +126,7 @@ function pairBackend(config) {
           return reject(new Error("The backend returned an unexpected pairing address."));
         }
         url.searchParams.set("host", config.backendUrl);
-        url.searchParams.set("label", "Premiere Assistant");
+        url.searchParams.set("label", "Axis");
         url.pathname = "/premiere.html";
         // This URL contains a one-use credential. Keep it in memory and out of logs.
         resolve(url.href);

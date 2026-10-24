@@ -38,15 +38,12 @@ if (platform !== "win32" && platform !== "darwin" && !values.destination) {
     "Premiere Pro is supported on Windows and macOS. Use --destination to prepare a bundle on another platform.",
   );
 }
-const dataDir = NodePath.resolve(
-  values["data-dir"] ??
-    (platform === "win32"
-      ? NodePath.join(
-          process.env.LOCALAPPDATA ?? NodePath.join(NodeOS.homedir(), "AppData/Local"),
-          "PremiereAssistant",
-        )
-      : NodePath.join(NodeOS.homedir(), "Library/Application Support/PremiereAssistant")),
-);
+const dataRoot =
+  platform === "win32"
+    ? (process.env.LOCALAPPDATA ?? NodePath.join(NodeOS.homedir(), "AppData/Local"))
+    : NodePath.join(NodeOS.homedir(), "Library/Application Support");
+const legacyDataDir = NodePath.resolve(dataRoot, "PremiereAssistant");
+let dataDir = NodePath.resolve(values["data-dir"] ?? NodePath.join(dataRoot, "Axis"));
 const cepRoot =
   platform === "win32"
     ? NodePath.join(
@@ -54,9 +51,28 @@ const cepRoot =
         "Adobe/CEP/extensions",
       )
     : NodePath.join(NodeOS.homedir(), "Library/Application Support/Adobe/CEP/extensions");
-const destination = NodePath.resolve(
-  values.destination ?? NodePath.join(cepRoot, "PremiereAssistant"),
-);
+const destination = NodePath.resolve(values.destination ?? NodePath.join(cepRoot, "Axis"));
+const legacyDestination = NodePath.resolve(cepRoot, "PremiereAssistant");
+function isLegacyExtension() {
+  try {
+    // Do not remove an unrelated extension or follow a linked installation.
+    if (
+      !NodeFS.lstatSync(legacyDestination).isDirectory() ||
+      NodePath.dirname(NodeFS.realpathSync(legacyDestination)) !== NodeFS.realpathSync(cepRoot)
+    )
+      return false;
+    for (const file of ["CSXS", "CSXS/manifest.xml"])
+      if (NodeFS.lstatSync(NodePath.join(legacyDestination, file)).isSymbolicLink()) return false;
+    return /^\s*(?:<\?xml[^>]*\?>\s*)?<ExtensionManifest\b[^>]*\bExtensionBundleId\s*=\s*(["'])com\.premiere\.assistant\1/.test(
+      NodeFS.readFileSync(NodePath.join(legacyDestination, "CSXS/manifest.xml"), "utf8"),
+    );
+  } catch {
+    return false;
+  }
+}
+const legacyExtension = isLegacyExtension();
+if (legacyExtension && destination.startsWith(legacyDestination + NodePath.sep))
+  throw new Error("Install outside the previous extension directory.");
 const source = NodePath.join(root, "extensions/premiere");
 if (destination === source || destination.startsWith(source + NodePath.sep))
   throw new Error("Install outside the extension source directory.");
@@ -78,6 +94,22 @@ if (
   throw new Error("Install outside the connector bundle directory.");
 if (rebuildConnector) validateConnectorSource(connectorRoot);
 else validateConnectorBundle(bundlePath);
+if (!NodeFS.existsSync(serverPath))
+  throw new Error("Build the fork first: vp run --filter t3 build");
+const previousConfigPath = NodeFS.existsSync(NodePath.join(destination, "config.json"))
+  ? NodePath.join(destination, "config.json")
+  : NodePath.join(legacyExtension ? legacyDestination : destination, "config.json");
+const previousConfig = NodeFS.existsSync(previousConfigPath)
+  ? JSON.parse(NodeFS.readFileSync(previousConfigPath, "utf8"))
+  : undefined;
+
+// Conversations record their workspace by absolute path, so an existing
+// PremiereAssistant data directory stays where it is rather than being renamed.
+let dataMigration = null;
+if (!values["data-dir"] && !NodeFS.existsSync(dataDir) && NodeFS.existsSync(legacyDataDir)) {
+  dataMigration = { from: legacyDataDir, to: dataDir, action: "keep-legacy" };
+  dataDir = legacyDataDir;
+}
 const connectorPath = connectorBundlePaths(NodePath.join(destination, "connector")).server;
 const workspacePath = NodePath.join(dataDir, "workspace");
 // Axis owns its own bridge directory. The standalone connector panel keeps
@@ -94,8 +126,6 @@ const config = {
   connectorPath,
   bridgePath,
 };
-if (!NodeFS.existsSync(serverPath))
-  throw new Error("Build the fork first: vp run --filter t3 build");
 const mcpPath = NodePath.join(workspacePath, ".mcp.json");
 const mcp = NodeFS.existsSync(mcpPath) ? JSON.parse(NodeFS.readFileSync(mcpPath, "utf8")) : {};
 if (!mcp || typeof mcp !== "object" || Array.isArray(mcp))
@@ -105,10 +135,6 @@ if (typeof mcp.mcpServers !== "object" || Array.isArray(mcp.mcpServers))
   throw new Error("The existing MCP servers configuration must be an object.");
 const legacyPremiereServer = { command: process.execPath, args: [connectorPath] };
 const premiereServer = { ...legacyPremiereServer, env: { PREMIERE_TEMP_DIR: bridgePath } };
-const previousConfigPath = NodePath.join(destination, "config.json");
-const previousConfig = NodeFS.existsSync(previousConfigPath)
-  ? JSON.parse(NodeFS.readFileSync(previousConfigPath, "utf8"))
-  : undefined;
 const previousServers = [legacyPremiereServer, premiereServer];
 if (previousConfig?.nodePath && previousConfig?.connectorPath) {
   const previous = { command: previousConfig.nodePath, args: [previousConfig.connectorPath] };
@@ -148,6 +174,9 @@ if (values["dry-run"]) {
     JSON.stringify(
       {
         destination,
+        dataMigration,
+        legacyExtensionCleanup:
+          legacyExtension && destination !== legacyDestination ? legacyDestination : null,
         backendUrl: config.backendUrl,
         workspacePath,
         serverPath,
@@ -233,8 +262,12 @@ if (values["dry-run"]) {
     if (result.status !== 0)
       throw new Error("The extension was copied, but Adobe development mode could not be enabled.");
   }
-  console.log(`Installed Premiere Assistant: ${destination}`);
+  if (destination !== legacyDestination && isLegacyExtension()) {
+    NodeFS.rmSync(legacyDestination, { recursive: true });
+    console.log(`Removed the previous extension: ${legacyDestination}`);
+  }
+  console.log(`Installed Axis: ${destination}`);
   console.log(`Backend: ${config.backendUrl}`);
-  console.log("Restart Premiere, then open Window > Extensions > Premiere Assistant.");
+  console.log("Restart Premiere, then open Window > Extensions > Axis.");
   console.log("The extension runs the Premiere bridge itself.");
 }

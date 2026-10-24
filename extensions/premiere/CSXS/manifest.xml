@@ -1,27 +1,27 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.premiere.assistant" ExtensionBundleVersion="0.1.0" ExtensionBundleName="Premiere Assistant">
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.axis.editingagent" ExtensionBundleVersion="0.1.0" ExtensionBundleName="Axis">
   <ExtensionList>
-    <Extension Id="com.premiere.assistant.panel" Version="0.1.0"/>
-    <Extension Id="com.premiere.assistant.headless" Version="0.1.0"/>
+    <Extension Id="com.axis.editingagent.panel" Version="0.1.0"/>
+    <Extension Id="com.axis.editingagent.headless" Version="0.1.0"/>
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList><Host Name="PPRO" Version="[25.0,99.9]"/></HostList>
     <LocaleList><Locale Code="All"/></LocaleList>
     <RequiredRuntimeList><RequiredRuntime Name="CSXS" Version="12.0"/></RequiredRuntimeList>
   </ExecutionEnvironment>
-  <DispatchInfoList><Extension Id="com.premiere.assistant.panel"><DispatchInfo>
+  <DispatchInfoList><Extension Id="com.axis.editingagent.panel"><DispatchInfo>
     <Resources>
       <MainPath>./index.html</MainPath>
       <ScriptPath>./host.jsx</ScriptPath>
       <CEFCommandLine><Parameter>--enable-nodejs</Parameter></CEFCommandLine>
     </Resources>
     <Lifecycle><AutoVisible>true</AutoVisible></Lifecycle>
-    <UI><Type>Panel</Type><Menu>Premiere Assistant</Menu><Geometry>
+    <UI><Type>Panel</Type><Menu>Axis</Menu><Geometry>
       <Size><Width>440</Width><Height>720</Height></Size>
       <MinSize><Width>320</Width><Height>320</Height></MinSize>
     </Geometry></UI>
   </DispatchInfo></Extension>
-  <Extension Id="com.premiere.assistant.headless"><DispatchInfo>
+  <Extension Id="com.axis.editingagent.headless"><DispatchInfo>
     <Resources>
       <MainPath>./headless.html</MainPath>
       <ScriptPath>./host.jsx</ScriptPath>

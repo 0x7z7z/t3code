@@ -64,6 +64,7 @@ test("pairs through the supported CLI and rejects a different server origin", as
   assert.equal(paired.origin, "http://127.0.0.1:5739");
   assert.equal(paired.searchParams.get("host"), settings.backendUrl);
   assert.equal(paired.searchParams.get("token"), "fixture-only");
+  assert.equal(paired.searchParams.get("label"), "Axis");
   await writeFile(
     settings.serverPath,
     'console.log("Pairing URL: http://127.0.0.1:3773/pair?token=fixture-only")',

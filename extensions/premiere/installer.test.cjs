@@ -9,11 +9,14 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { promisify } = require("node:util");
 const execFile = promisify(require("node:child_process").execFile);
+const { createServer } = require("node:net");
 
 const root = path.resolve(__dirname, "../..");
 const installer = path.join(root, "scripts/premiere-extension.mjs");
 
 async function fixture(t) {
+  // oxlint-disable-next-line t3code/no-global-process-runtime -- E2E paths must match the real installer subprocess's OS.
+  const platform = process.platform;
   const directory = await fs.mkdtemp(path.join(tmpdir(), "premiere-installer-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const bundle = path.join(directory, "prebuilt");
@@ -36,6 +39,29 @@ async function fixture(t) {
   const destination = path.join(directory, "extension");
   const data = path.join(directory, "data");
   const bridge = path.join(directory, "private-bridge");
+  const environment = {
+    ...process.env,
+    HOME: directory,
+    USERPROFILE: directory,
+    LOCALAPPDATA: path.join(directory, "local"),
+    APPDATA: path.join(directory, "roaming"),
+  };
+  const dataRoot =
+    platform === "win32"
+      ? environment.LOCALAPPDATA
+      : path.join(directory, "Library/Application Support");
+  const cepRoot =
+    platform === "win32"
+      ? path.join(environment.APPDATA, "Adobe/CEP/extensions")
+      : path.join(dataRoot, "Adobe/CEP/extensions");
+  const legacyData = path.join(dataRoot, "PremiereAssistant");
+  const axisData = path.join(dataRoot, "Axis");
+  const legacyExtension = path.join(cepRoot, "PremiereAssistant");
+  const axisExtension = path.join(cepRoot, "Axis");
+  const listener = createServer();
+  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const port = listener.address().port;
+  await new Promise((resolve) => listener.close(resolve));
   const args = [
     "--connector-bundle",
     bundle,
@@ -46,14 +72,171 @@ async function fixture(t) {
     "--bridge-dir",
     bridge,
     "--skip-adobe-settings",
+    "--port",
+    String(port),
   ];
   const run = (...extra) =>
     execFile(process.execPath, [installer, ...args, ...extra], {
       cwd: directory,
       windowsHide: true,
+      env: environment,
     });
-  return { directory, bundle, destination, data, bridge, args, run };
+  const runDefaults = (...extra) =>
+    execFile(
+      process.execPath,
+      [
+        installer,
+        "--connector-bundle",
+        bundle,
+        "--bridge-dir",
+        bridge,
+        "--skip-adobe-settings",
+        "--port",
+        String(port),
+        ...(platform !== "win32" && platform !== "darwin" ? ["--destination", axisExtension] : []),
+        ...extra,
+      ],
+      { cwd: directory, windowsHide: true, env: environment },
+    );
+  const writeLegacyManifest = async (id = "com.premiere.assistant") => {
+    await fs.mkdir(path.join(legacyExtension, "CSXS"), { recursive: true });
+    await fs.writeFile(
+      path.join(legacyExtension, "CSXS/manifest.xml"),
+      `<?xml version="1.0"?><ExtensionManifest ExtensionBundleId="${id}"></ExtensionManifest>`,
+    );
+  };
+  return {
+    directory,
+    bundle,
+    destination,
+    data,
+    bridge,
+    args,
+    run,
+    runDefaults,
+    legacyData,
+    axisData,
+    legacyExtension,
+    axisExtension,
+    writeLegacyManifest,
+    environment,
+  };
 }
+
+test("default installation uses Axis paths", async (t) => {
+  const f = await fixture(t);
+  const { stdout } = await f.runDefaults("--dry-run");
+  const plan = JSON.parse(stdout);
+  assert.equal(plan.destination, f.axisExtension);
+  assert.equal(plan.config.homeDir, path.join(f.axisData, "backend"));
+  assert.equal(existsSync(f.axisData), false);
+});
+
+test("keeps legacy accounts, conversations and owned MCP configs in place and removes the old panel", async (t) => {
+  const f = await fixture(t);
+  await fs.mkdir(path.join(f.legacyData, "backend/userdata"), { recursive: true });
+  const accountData = Buffer.from([0, 1, 2, 255]);
+  await fs.writeFile(path.join(f.legacyData, "backend/userdata/statev2.sqlite"), accountData);
+  await f.writeLegacyManifest();
+  const oldConnector = path.join(f.legacyExtension, "connector/dist/index.mjs");
+  await fs.writeFile(
+    path.join(f.legacyExtension, "config.json"),
+    JSON.stringify({
+      nodePath: process.execPath,
+      connectorPath: oldConnector,
+      bridgePath: f.bridge,
+    }),
+  );
+  const workspace = path.join(f.legacyData, "workspace");
+  await fs.mkdir(path.join(workspace, ".codex"), { recursive: true });
+  await fs.writeFile(path.join(workspace, "notes.txt"), "keep my editing workspace");
+  await fs.writeFile(
+    path.join(workspace, ".mcp.json"),
+    JSON.stringify({
+      mcpServers: {
+        premiere: {
+          command: process.execPath,
+          args: [oldConnector],
+          env: { PREMIERE_TEMP_DIR: f.bridge },
+        },
+        other: { command: "keep-me" },
+      },
+    }),
+  );
+  await fs.writeFile(
+    path.join(workspace, ".codex/config.toml"),
+    `[mcp_servers.premiere]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(oldConnector)}]\n\n[mcp_servers.premiere.env]\nPREMIERE_TEMP_DIR = ${JSON.stringify(f.bridge)}\n`,
+  );
+  const { stdout } = await f.runDefaults();
+  assert.match(stdout, /Installed Axis/);
+  assert.match(stdout, /Window > Extensions > Axis/);
+  assert.equal(existsSync(f.axisData), false);
+  assert.equal(existsSync(f.legacyExtension), false);
+  assert.deepEqual(
+    await fs.readFile(path.join(f.legacyData, "backend/userdata/statev2.sqlite")),
+    accountData,
+  );
+  assert.equal(
+    await fs.readFile(path.join(f.legacyData, "workspace/notes.txt"), "utf8"),
+    "keep my editing workspace",
+  );
+  const mcp = JSON.parse(await fs.readFile(path.join(f.legacyData, "workspace/.mcp.json"), "utf8"));
+  assert.equal(mcp.mcpServers.other.command, "keep-me");
+  assert.equal(
+    mcp.mcpServers.premiere.args[0],
+    path.join(f.axisExtension, "connector/dist/index.mjs"),
+  );
+  const settings = JSON.parse(await fs.readFile(path.join(f.axisExtension, "config.json"), "utf8"));
+  assert.equal(settings.homeDir, path.join(f.legacyData, "backend"));
+});
+
+test("dry-run previews legacy migration and cleanup without changing any legacy files", async (t) => {
+  const f = await fixture(t);
+  await fs.mkdir(f.legacyData, { recursive: true });
+  await fs.writeFile(path.join(f.legacyData, "account.json"), "existing account");
+  await f.writeLegacyManifest();
+  const manifest = await fs.readFile(path.join(f.legacyExtension, "CSXS/manifest.xml"), "utf8");
+  const { stdout } = await f.runDefaults("--dry-run");
+  const plan = JSON.parse(stdout);
+  assert.equal(plan.dataMigration.action, "keep-legacy");
+  assert.equal(plan.legacyExtensionCleanup, f.legacyExtension);
+  assert.equal(plan.config.homeDir, path.join(f.legacyData, "backend"));
+  assert.equal(
+    await fs.readFile(path.join(f.legacyData, "account.json"), "utf8"),
+    "existing account",
+  );
+  assert.equal(
+    await fs.readFile(path.join(f.legacyExtension, "CSXS/manifest.xml"), "utf8"),
+    manifest,
+  );
+  for (const directory of [f.axisData, f.axisExtension, f.bridge])
+    assert.equal(existsSync(directory), false);
+});
+
+test("preserves an existing Axis data directory and an unrelated old-named CEP folder", async (t) => {
+  const f = await fixture(t);
+  for (const directory of [f.axisData, f.legacyData]) {
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, "account.json"), directory);
+  }
+  await f.writeLegacyManifest("com.someone.else");
+  await f.runDefaults();
+  for (const directory of [f.axisData, f.legacyData])
+    assert.equal(await fs.readFile(path.join(directory, "account.json"), "utf8"), directory);
+  assert.match(
+    await fs.readFile(path.join(f.legacyExtension, "CSXS/manifest.xml"), "utf8"),
+    /com.someone.else/,
+  );
+});
+
+test("explicit data paths do not migrate the default legacy data", async (t) => {
+  const f = await fixture(t);
+  await fs.mkdir(f.legacyData, { recursive: true });
+  await fs.writeFile(path.join(f.legacyData, "account.json"), "keep legacy");
+  await f.run();
+  assert.equal(await fs.readFile(path.join(f.legacyData, "account.json"), "utf8"), "keep legacy");
+  assert.equal(existsSync(f.axisData), false);
+});
 
 test("dry-run previews installed paths and MCP configuration without creating directories", async (t) => {
   const f = await fixture(t);
