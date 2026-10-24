@@ -4,6 +4,7 @@ import { act, render } from "../../test/render";
 import type { PremiereContext } from "./host";
 import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
 import { parseTranscript } from "./sequenceTranscript";
+import "./styles.css";
 
 const host = vi.hoisted(() => ({
   seek: vi.fn(),
@@ -118,7 +119,9 @@ it("shows agent progress, permits stopping the wait and keeps manual import", as
   await expect
     .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
     .toBeDisabled();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await screen.getByRole("button", { name: "Stop waiting" }).click();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await expect.element(screen.getByRole("button", { name: "Replace transcript" })).toBeEnabled();
   await expect
     .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
@@ -241,15 +244,20 @@ it("retains checkpoint recovery after partial failures and refuses undo after la
 it("renders long transcripts as paragraphs, follows scrubbing and selects across paragraphs", async () => {
   const f = setup("long", 3000);
   await using screen = await render(<TranscriptView {...f.props} />);
+  screen.container.style.cssText = "height: 600px; display: flex; flex-direction: column";
   expect(screen.container.querySelectorAll("[data-transcript-word]")).toHaveLength(3000);
-  expect(screen.container.querySelectorAll("[data-transcript-paragraph]").length).toBeGreaterThan(30);
+  expect(screen.container.querySelectorAll("[data-transcript-paragraph]").length).toBeGreaterThan(
+    30,
+  );
   await screen.getByRole("button", { name: "Every at 00:00:00.000" }).click();
   await screen
     .getByRole("button", { name: "Every at 00:02:00.000" })
     .click({ modifiers: ["Shift"] });
-  await expect
-    .element(screen.getByRole("group", { name: "Transcript selection actions" }))
-    .toHaveTextContent("121 words");
+  await vi.waitFor(() =>
+    expect(
+      screen.container.querySelectorAll('[data-transcript-word][aria-pressed="true"]'),
+    ).toHaveLength(121),
+  );
   await screen.getByRole("button", { name: "Ask Axis" }).click();
   expect(f.props.onAsk).toHaveBeenCalledWith(
     expect.stringContaining("[00:00:00.000 - 00:02:00.800]"),
@@ -304,4 +312,61 @@ it("imports a file through the file input, maps an offset and reloads scoped sta
   await act(() => screen.rerender(<TranscriptView {...f.props} key="reload" />));
   await expect.element(screen.getByRole("button", { name: "Hello at 00:00:05.000" })).toBeVisible();
   await expect.element(screen.getByText("Sequence time + 4 s · vo.srt")).toBeVisible();
+});
+
+it("links an imported transcript to its voice-over clip and follows trims made in Premiere", async () => {
+  const f = setup("linked", 4);
+  localStorage.setItem(
+    f.key,
+    JSON.stringify({
+      transcript: { ...f.transcript, source: "WhisperX JSON · VO_take_sentences.json" },
+      undo: null,
+      uncertain: false,
+    }),
+  );
+  const timeline = (start: number, inPoint: number) => ({
+    signature: "s",
+    checkpointIds: [],
+    snapshot: {
+      projectId: "film",
+      sequenceId: "linked",
+      name: "Main edit",
+      videoTrackCount: 0,
+      audioTrackCount: 1,
+      videoTracks: [],
+      audioTracks: [
+        {
+          index: 0,
+          clips: [
+            {
+              name: "VO_take.wav",
+              nodeId: "",
+              projectItemName: "VO_take.wav",
+              start,
+              end: start + 4 - inPoint,
+              inPoint,
+              outPoint: 4,
+              enabled: true,
+            },
+          ],
+        },
+      ],
+      markers: [],
+      inPoint: null,
+      outPoint: null,
+      truncated: false,
+    },
+  });
+  host.snapshot.mockResolvedValue(timeline(10, 0));
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await expect.element(screen.getByRole("button", { name: "Every at 00:00:10.000" })).toBeVisible();
+  await expect.element(screen.getByText("Synced to A1 · VO_take.wav")).toBeVisible();
+  // The editor trims the first second off the clip head and slides it to 20 s.
+  host.snapshot.mockResolvedValue(timeline(20, 1));
+  await expect
+    .element(screen.getByRole("button", { name: "frame at 00:00:20.000" }), { timeout: 6000 })
+    .toBeVisible();
+  expect(screen.container.querySelectorAll("[data-transcript-word]")).toHaveLength(3);
+  await screen.getByRole("button", { name: "matters. at 00:00:21.000" }).click();
+  expect(host.seek).toHaveBeenLastCalledWith(21, "linked");
 });

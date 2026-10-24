@@ -1196,6 +1196,7 @@ small[data-shot-text] {
 [data-transcript-check] input {
   width: auto;
   margin: 0;
+  accent-color: var(--accent);
 }
 [data-transcript-meta] {
   display: flex;
@@ -1220,6 +1221,11 @@ small[data-shot-text] {
 }
 [data-transcript-meta] > span:last-child {
   flex-shrink: 0;
+}
+[data-transcript-source] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 [data-transcript-banner],
 [data-transcript-undo] {
@@ -1315,8 +1321,9 @@ small[data-shot-text] {
 }
 [data-transcript-word] {
   border: 0;
-  padding: 1px 2px;
-  margin: 0 1px 0 0;
+  /* No margin, so a selected run reads as one continuous highlight. */
+  padding: 1px 3px;
+  margin: 0;
   border-radius: 3px;
   background: transparent;
   line-height: inherit;

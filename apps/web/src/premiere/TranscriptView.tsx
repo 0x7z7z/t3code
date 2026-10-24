@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { memo, useEffect, useEffectEvent, useRef, useState, type KeyboardEvent } from "react";
 import { randomUUID } from "../lib/utils";
 import { seekPremiere, type PremiereContext } from "./host";
 import { importWhisperHandoff, loadWhisperTranscript, whisperPrompt } from "./whisperTranscription";
@@ -46,7 +46,7 @@ interface StoredTranscript {
    * clips on the timeline, so trims, moves and cuts made anywhere stay in sync.
    * `undefined` marks records saved before linking existed.
    */
-  readonly link?: VoiceLink | null;
+  readonly link?: VoiceLink | null | undefined;
 }
 
 export function transcriptStorageKey(context: PremiereContext, sequenceId = context.sequenceId) {
@@ -259,29 +259,37 @@ export function TranscriptView({
   const menu = useRef<HTMLDivElement>(null);
   const wordArea = useRef<HTMLDivElement>(null);
   const operation = useRef(false);
+  // Async work reads the latest record; persist() also updates it synchronously.
   const storedRef = useRef(stored);
-  storedRef.current = stored;
+  useEffect(() => {
+    storedRef.current = stored;
+  }, [stored]);
 
   const live = usePlayheadClock(active);
-  const playhead = live ?? context.playheadSeconds;
+  // The hook is mocked to null in tests that drive the playhead through context.
+  const playhead = active && live != null ? live : context.playheadSeconds;
   const fps = context.fps > 0 ? context.fps : 30;
   const doc = stored.transcript;
   const link = stored.link ?? null;
-  const words = useMemo<readonly TranscriptWord[]>(
-    () => (!doc ? [] : link ? placeWords(sourceTimes(doc), link.segments) : doc.words),
-    [doc, link],
-  );
-  const blocks = useMemo(() => paragraphs(words), [words]);
+  const words: readonly TranscriptWord[] = !doc
+    ? []
+    : link
+      ? placeWords(sourceTimes(doc), link.segments)
+      : doc.words;
+  const blocks = paragraphs(words);
   const current = wordAtTime(words, playhead, fps);
   const anchorWord = current >= 0 ? current : lastWordBefore(words, playhead, fps);
   const range = selection ? selectionRange(words, selection.anchor, selection.focus, fps) : null;
 
-  const normalized = useMemo(() => words.map((word) => normalize(word.text)), [words]);
-  const tokens = useMemo(() => query.split(/\s+/).map(normalize).filter(Boolean), [query]);
-  const matches = useMemo(() => {
-    const found: number[] = [];
-    if (!tokens.length) return found;
-    for (let index = 0; index + tokens.length <= normalized.length && found.length < 5000; index++)
+  const normalized = words.map((word) => normalize(word.text));
+  const tokens = query.split(/\s+/).map(normalize).filter(Boolean);
+  const matches: number[] = [];
+  if (tokens.length)
+    for (
+      let index = 0;
+      index + tokens.length <= normalized.length && matches.length < 5000;
+      index++
+    )
       if (
         tokens.every((token, k) =>
           k === tokens.length - 1
@@ -289,17 +297,12 @@ export function TranscriptView({
             : normalized[index + k] === token,
         )
       )
-        found.push(index);
-    return found;
-  }, [normalized, tokens]);
+        matches.push(index);
   const cursor = matches.length ? Math.min(matchCursor, matches.length - 1) : -1;
-  const marks = useMemo(() => {
-    const result = new Uint8Array(words.length);
-    matches.forEach((start, n) => {
-      for (let k = 0; k < tokens.length; k++) result[start + k] = n === cursor ? 2 : 1;
-    });
-    return result;
-  }, [words.length, matches, tokens.length, cursor]);
+  const marks = new Uint8Array(words.length);
+  matches.forEach((start, n) => {
+    for (let k = 0; k < tokens.length; k++) marks[start + k] = n === cursor ? 2 : 1;
+  });
 
   useEffect(() => {
     mounted.current = true;
@@ -326,64 +329,65 @@ export function TranscriptView({
   }
 
   // Older imports are linked to their voice-over clip once, when the timeline allows it.
+  const autoLink = useEffectEvent(async (legacy: SequenceTranscript, cancelled: () => boolean) => {
+    const timeline = linkable(legacy) ? await snapshot().catch(() => null) : null;
+    if (cancelled() || storedRef.current.transcript !== legacy) return;
+    const found = timeline ? findVoiceLink(timeline, sourceFile(legacy)) : null;
+    persist({
+      ...storedRef.current,
+      transcript: found ? { ...legacy, offset: 0, words: sourceTimes(legacy) } : legacy,
+      link: found,
+    });
+    if (found) setOffset("0");
+  });
+  const unlinked = stored.link === undefined;
   useEffect(() => {
-    if (!active || !doc || stored.link !== undefined) return;
+    if (!active || !doc || !unlinked) return;
     let disposed = false;
-    void (async () => {
-      const timeline = linkable(doc) ? await snapshot().catch(() => null) : null;
-      if (disposed || storedRef.current.transcript !== doc) return;
-      const found = timeline ? findVoiceLink(timeline, sourceFile(doc)) : null;
-      persist({
-        ...storedRef.current,
-        transcript: found ? { ...doc, offset: 0, words: sourceTimes(doc) } : doc,
-        link: found,
-      });
-      if (found) setOffset("0");
-    })();
+    void autoLink(doc, () => disposed);
     return () => {
       disposed = true;
     };
-  }, [active, doc, stored.link]);
+  }, [active, doc, unlinked]);
 
   // A linked transcript re-reads its clips while the playhead rests, so edits made
   // anywhere in Premiere move the words with the audio.
   const resting = useRef({ playhead, still: 0 });
+  const refreshLink = useEffectEvent(async (cancelled: () => boolean) => {
+    const timeline = await snapshot().catch(() => null);
+    const saved = storedRef.current;
+    if (cancelled() || !timeline || !saved.link) return;
+    const fresh = refreshVoiceLink(timeline, saved.link);
+    if (!fresh) {
+      setNotice(
+        `"${saved.link.mediaName}" is no longer on A${saved.link.trackIndex + 1}. Relink it from the menu.`,
+      );
+      return;
+    }
+    setNotice(null);
+    if (JSON.stringify(fresh.segments) !== JSON.stringify(saved.link.segments)) {
+      persist({ ...saved, link: fresh });
+      setSelection(null);
+      setConfirmCut(false);
+    }
+  });
+  const linked = link !== null;
   useEffect(() => {
-    if (!active || !link || busy) return;
+    if (!active || !linked || busy) return;
     let disposed = false;
     let reading = false;
     const timer = setInterval(() => {
-      const rest = resting.current;
-      if (reading || rest.still < 2) return;
+      if (reading || resting.current.still < 2) return;
       reading = true;
-      void snapshot()
-        .then((timeline) => {
-          const saved = storedRef.current;
-          if (disposed || !timeline || !saved.link) return;
-          const fresh = refreshVoiceLink(timeline, saved.link);
-          if (!fresh) {
-            setNotice(
-              `"${saved.link.mediaName}" is no longer on A${saved.link.trackIndex + 1}. Relink it from the menu.`,
-            );
-            return;
-          }
-          setNotice(null);
-          if (JSON.stringify(fresh.segments) !== JSON.stringify(saved.link.segments)) {
-            persist({ ...saved, link: fresh });
-            setSelection(null);
-            setConfirmCut(false);
-          }
-        })
-        .catch(() => {})
-        .finally(() => {
-          reading = false;
-        });
+      void refreshLink(() => disposed).finally(() => {
+        reading = false;
+      });
     }, 1000);
     return () => {
       disposed = true;
       clearInterval(timer);
     };
-  }, [active, link?.mediaName, link?.trackIndex, busy, context.sequenceId]);
+  }, [active, linked, busy]);
   useEffect(() => {
     const rest = resting.current;
     if (rest.playhead !== playhead) resting.current = { playhead, still: 0 };
@@ -393,46 +397,47 @@ export function TranscriptView({
     return () => clearInterval(timer);
   }, []);
 
+  const pollJob = useEffectEvent(async (id: string, cancelled: () => boolean) => {
+    try {
+      const handoff = await loadWhisperTranscript(context, id);
+      if (cancelled()) return;
+      if (!handoff.content) {
+        if (outcome.current)
+          throw new Error(`The agent finished without a transcript: ${outcome.current}`);
+        return;
+      }
+      const transcript = importWhisperHandoff(handoff.content, context, id);
+      persist({ transcript, undo: storedRef.current.undo, uncertain: false, link: null });
+      setOffset("0");
+      setSelection(null);
+      setFollowing(true);
+      setConfirmCut(false);
+      setWhisperState("loaded");
+      setJob(null);
+    } catch (problem) {
+      if (cancelled()) return;
+      setError(problem instanceof Error ? problem.message : "Transcription failed.");
+      setWhisperState("failed");
+      setJob(null);
+    }
+  });
   useEffect(() => {
     if (!job) return;
     let disposed = false;
     let reading = false;
-    const poll = async () => {
+    const poll = () => {
       if (reading) return;
       reading = true;
-      try {
-        const handoff = await loadWhisperTranscript(context, job);
-        if (disposed) return;
-        if (!handoff.content) {
-          if (outcome.current)
-            throw new Error(`The agent finished without a transcript: ${outcome.current}`);
-          return;
-        }
-        const transcript = importWhisperHandoff(handoff.content, context, job);
-        persist({ transcript, undo: storedRef.current.undo, uncertain: false, link: null });
-        setOffset("0");
-        setSelection(null);
-        setFollowing(true);
-        setConfirmCut(false);
-        setWhisperState("loaded");
-        setJob(null);
-      } catch (problem) {
-        if (disposed) return;
-        setError(problem instanceof Error ? problem.message : "Transcription failed.");
-        setWhisperState("failed");
-        setJob(null);
-      } finally {
+      void pollJob(job, () => disposed).finally(() => {
         reading = false;
-      }
+      });
     };
-    void poll();
-    const timer = setInterval(() => void poll(), 3000);
+    poll();
+    const timer = setInterval(poll, 3000);
     return () => {
       disposed = true;
       clearInterval(timer);
     };
-    // Playhead updates must not restart in-flight file reads.
-    // A job is scoped to this keyed sequence view.
   }, [job]);
 
   async function transcribe() {
@@ -473,15 +478,22 @@ export function TranscriptView({
       top: area.scrollTop + distance,
       behavior: Math.abs(distance) > box.height * 1.5 ? "auto" : "smooth",
     });
-  }, [anchorWord, following, words]);
+  }, [anchorWord, following]);
 
   useEffect(() => {
     if (!menuOpen) return;
     const close = (event: PointerEvent) => {
       if (!menu.current?.contains(event.target as Node)) setMenuOpen(false);
     };
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
     document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", escape);
+    };
   }, [menuOpen]);
 
   async function importFile(file: File) {
@@ -526,7 +538,11 @@ export function TranscriptView({
     if (!doc) return;
     setError(null);
     if (value === "sequence") {
-      persist({ ...stored, transcript: { ...doc, offset: 0, words: sourceTimes(doc) }, link: null });
+      persist({
+        ...stored,
+        transcript: { ...doc, offset: 0, words: sourceTimes(doc) },
+        link: null,
+      });
       setOffset("0");
       setNotice(null);
       return;
@@ -819,7 +835,10 @@ export function TranscriptView({
                         </option>
                       ) : null}
                       {(candidates ?? []).map((candidate, index) => (
-                        <option key={`${candidate.trackIndex}:${candidate.mediaName}`} value={index}>
+                        <option
+                          key={`${candidate.trackIndex}:${candidate.mediaName}`}
+                          value={index}
+                        >
                           A{candidate.trackIndex + 1} · {candidate.mediaName}
                         </option>
                       ))}
@@ -834,7 +853,8 @@ export function TranscriptView({
                           event.preventDefault();
                           setError(null);
                           try {
-                            if (!offset.trim()) throw new Error("Enter a sequence offset in seconds.");
+                            if (!offset.trim())
+                              throw new Error("Enter a sequence offset in seconds.");
                             const delta = Number(offset) - doc.offset;
                             persist({
                               ...stored,
@@ -847,7 +867,9 @@ export function TranscriptView({
                             setSelection(null);
                             setConfirmCut(false);
                           } catch (problem) {
-                            setError(problem instanceof Error ? problem.message : "Invalid offset.");
+                            setError(
+                              problem instanceof Error ? problem.message : "Invalid offset.",
+                            );
                           }
                         }}
                       >
@@ -882,12 +904,14 @@ export function TranscriptView({
       {doc ? (
         <p data-transcript-meta="">
           <span data-synced={link ? "" : undefined} aria-hidden="true" />
-          {link
-            ? `Synced to A${link.trackIndex + 1} · ${link.mediaName}`
-            : linkable(doc)
-              ? `Sequence time${doc.offset ? ` + ${doc.offset} s` : ""} · ${sourceFile(doc)}`
-              : doc.source}
-          <span> · {words.length.toLocaleString()} words</span>
+          <span data-transcript-source="">
+            {link
+              ? `Synced to A${link.trackIndex + 1} · ${link.mediaName}`
+              : linkable(doc)
+                ? `Sequence time${doc.offset ? ` + ${doc.offset} s` : ""} · ${sourceFile(doc)}`
+                : doc.source}
+          </span>
+          <span>· {words.length.toLocaleString()} words</span>
         </p>
       ) : null}
       {transcribing || whisperState === "loaded" || whisperState === "failed" ? (
