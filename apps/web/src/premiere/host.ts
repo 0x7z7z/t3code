@@ -232,6 +232,8 @@ export function formatPremierePrompt(text: string, context: PremiereContext | nu
     "Before each mutation, verify that both the project identity and sequence ID still match this context. Stop if they changed.",
     "Parallel workers may research and review. Keep all timeline mutations with one editing agent and verify the resulting timeline.",
     "Do not use Git checkpoints to restore a Premiere project. Use Premiere save and undo operations appropriate to the edit.",
+    "To suggest markers, use an axis-markers JSON fence: [{time: seconds or HH:MM:SS:FF, name, comment?, color?, duration?}].",
+    "For shot lists use an axis-shots JSON fence: [{shot, in, out, description, source?, notes?, status?: todo|done}]. The panel renders interactive cards; use quoted JSON keys and strings.",
     "</premiere-host-context>",
   ].join("\n");
 }
