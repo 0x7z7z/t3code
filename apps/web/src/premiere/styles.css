@@ -154,14 +154,15 @@ svg {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px 14px 18px;
+  /* A full-screen panel keeps a readable column instead of stretching edge to edge. */
+  padding: 14px max(14px, calc((100% - 880px) / 2)) 18px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   line-height: 1.55;
 }
 [data-transcript]::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 [data-transcript]::-webkit-scrollbar-thumb {
   background: #3d3d3d;
@@ -490,7 +491,7 @@ a {
 [data-selection-context] {
   align-self: flex-start;
   max-width: calc(100% - 24px);
-  margin: 0 12px 6px;
+  margin: 0 max(12px, calc((100% - 876px) / 2)) 6px;
   padding: 3px 7px;
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -502,7 +503,7 @@ a {
 }
 
 [data-composer] {
-  margin: 0 10px 10px;
+  margin: 0 max(10px, calc((100% - 880px) / 2)) 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
@@ -930,12 +931,44 @@ svg[width] {
   color: var(--muted);
   font-weight: 500;
 }
+/* Text columns wrap to two lines; the full text is in the hover title. */
+[data-timeline-suggestions] td[data-shot-description],
+[data-timeline-suggestions] td[data-shot-source] {
+  white-space: normal;
+}
+[data-shot-description] {
+  min-width: 170px;
+}
+[data-shot-source] {
+  min-width: 110px;
+  max-width: 220px;
+}
 [data-shot-text] {
-  display: block;
-  max-width: 140px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+small[data-shot-text] {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+[data-shot-scroll]::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+[data-shot-scroll]::-webkit-scrollbar-thumb {
+  background: #3d3d3d;
+  border-radius: 2px;
+}
+[data-shot-scroll]::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+[data-shot-scroll]::-webkit-scrollbar-track,
+[data-shot-scroll]::-webkit-scrollbar-corner {
+  background: transparent;
 }
 [data-shot-status="done"] td:first-child {
   color: #33b86c;
