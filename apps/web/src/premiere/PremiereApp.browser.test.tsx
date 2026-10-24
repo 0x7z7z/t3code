@@ -1,4 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
+import { userEvent } from "vite-plus/test/browser";
 import { render } from "../../test/render";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 
@@ -30,6 +31,7 @@ vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.run })
 vi.mock("../state/entities", () => ({
   useProjects: () => [{ id: "editing", environmentId: state.environmentId, name: "Editing" }],
   useThreadShellsForProjectRefs: () => [],
+  useServerConfigs: () => new Map(),
 }));
 vi.mock("../state/environments", () => ({
   useEnvironments: () => ({ environments: [{ environmentId: state.environmentId }] }),
@@ -43,6 +45,8 @@ vi.mock("../state/environments", () => ({
             enabled: true,
             installed: true,
             auth: { email: "" },
+            slashCommands: [],
+            skills: [],
             models: [{ slug: "gpt-6-luna", name: "Luna", isCustom: false, capabilities: null }],
           },
         ],
@@ -108,5 +112,25 @@ it("keeps the draft and disables sending for a read-only paired session", async 
   await message.fill("Keep this draft until access is available.");
   await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   await expect.element(message).toHaveValue("Keep this draft until access is available.");
+  expect(state.run).not.toHaveBeenCalled();
+});
+
+it("answers panel commands such as /edit without sending them to the agent", async () => {
+  setup("panel-command", true);
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  const message = screen.getByRole("textbox", { name: "Message your editing assistant" });
+  await message.fill("/edi");
+  await expect.element(screen.getByRole("option", { name: /edit/ })).toBeVisible();
+  await userEvent.keyboard("{Enter}");
+  await expect
+    .element(screen.getByRole("radio", { name: "Edit" }))
+    .toHaveAttribute("aria-checked", "true");
+  await expect.element(message).toHaveValue("");
   expect(state.run).not.toHaveBeenCalled();
 });

@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
-import { AuthOrchestrationOperateScope, type RuntimeMode, type ThreadId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type RuntimeMode,
+  type ThreadId,
+  type UsageLimitsReport,
+} from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { createModelSelection } from "@t3tools/shared/model";
+import { collectProviderUsageLimits } from "@t3tools/shared/usageLimits";
 import * as Option from "effect/Option";
 
 import { connectPairing } from "../connection/onboarding";
 import { readHostedPairingRequest } from "../hostedPairing";
 import { newMessageId, newThreadId } from "../lib/utils";
-import { useProjects, useThreadShellsForProjectRefs } from "../state/entities";
+import { useProjects, useServerConfigs, useThreadShellsForProjectRefs } from "../state/entities";
 import { useEnvironmentProviders, useEnvironments } from "../state/environments";
 import { useEnvironmentShellStatus } from "../state/shell";
 import { useEnvironmentScope } from "../state/session";
@@ -26,13 +32,15 @@ import {
 } from "./host";
 import {
   accountLabel,
+  panelActionFor,
   readImages,
+  type PanelAction,
   slashItems,
   slashTrigger,
   type ComposerImage,
   type SlashItem,
 } from "./composer";
-import { AccessModeMenu, AttachButton, ImageStrip, SlashMenu } from "./ComposerParts";
+import { AccessModeMenu, AttachButton, ImageStrip, SlashMenu, UsageCard } from "./ComposerParts";
 import { Markdown, type SeekHandler } from "./Markdown";
 import { editingModelOptions } from "./models";
 import { selectEditingModel, selectEditingProvider, selectEditingWorkspace } from "./selection";
@@ -124,7 +132,12 @@ export function PremiereApp() {
   const trigger = slashTrigger(draft, Math.min(cursor, draft.length));
   const slashOpen = trigger !== null && slashDismissed !== trigger.start && !busy;
   const commandItems = slashOpen
-    ? slashItems(provider, project?.workspaceRoot ?? null, trigger.query).slice(0, 60)
+    ? slashItems(
+        provider,
+        project?.workspaceRoot ?? null,
+        trigger.query,
+        draft.slice(0, trigger.start).trim() === "",
+      ).slice(0, 60)
     : [];
   const highlighted = Math.min(slashHighlight, Math.max(commandItems.length - 1, 0));
 
@@ -138,8 +151,55 @@ export function PremiereApp() {
       setError("Premiere did not accept that time.");
   };
 
+  const serverConfigs = useServerConfigs();
+  const [usage, setUsage] = useState<UsageLimitsReport | null>(null);
+  const modelSelect = useRef<HTMLSelectElement>(null);
+
+  /** Runs a command the panel answers itself. Returns false when it cannot. */
+  function runPanelAction(action: PanelAction): boolean {
+    switch (action) {
+      case "plan":
+        setMode("plan");
+        return true;
+      case "edit":
+        setMode("default");
+        return true;
+      case "model":
+        requestAnimationFrame(() => {
+          modelSelect.current?.focus();
+          modelSelect.current?.showPicker?.();
+        });
+        return true;
+      case "new":
+        setSelectedThread(null);
+        setError(null);
+        return true;
+      case "usage-limits": {
+        const config = environmentId ? serverConfigs.get(environmentId) : undefined;
+        const report = provider
+          ? collectProviderUsageLimits(
+              provider.instanceId,
+              providers,
+              config?.usageLimitSources ?? [],
+              Date.now(),
+            )
+          : null;
+        setUsage(report);
+        if (!report) setError("Usage limits are not available for this account yet.");
+        return true;
+      }
+    }
+  }
+
   function pickSlashItem(item: SlashItem) {
     if (!trigger) return;
+    if (item.action) {
+      // The command itself is not sent; only the text around it stays.
+      writeDraft((draft.slice(0, trigger.start) + draft.slice(trigger.end)).trim());
+      setSlashHighlight(0);
+      runPanelAction(item.action);
+      return;
+    }
     const next =
       draft.slice(0, trigger.start) + item.insert + draft.slice(trigger.end).replace(/^ /, "");
     writeDraft(next);
@@ -191,6 +251,11 @@ export function PremiereApp() {
 
   async function send(event: FormEvent) {
     event.preventDefault();
+    const action = images.length ? null : panelActionFor(draft);
+    if (action && runPanelAction(action)) {
+      writeDraft("");
+      return;
+    }
     if (
       !project ||
       !provider ||
@@ -601,6 +666,7 @@ export function PremiereApp() {
           edit.
         </p>
       ) : null}
+      {usage ? <UsageCard report={usage} onClose={() => setUsage(null)} /> : null}
       <form
         data-composer=""
         onSubmit={(event) => void send(event)}
@@ -770,6 +836,7 @@ export function PremiereApp() {
               ))}
           </select>
           <select
+            ref={modelSelect}
             aria-label="Model"
             disabled={busy || running}
             value={model?.slug ?? ""}

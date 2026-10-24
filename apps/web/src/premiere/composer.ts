@@ -38,34 +38,77 @@ export function slashTrigger(text: string, cursor: number): SlashTrigger | null 
   return { start, end: cursor, query: match[1]!.toLowerCase() };
 }
 
+/** Commands the panel answers itself; the agent never receives them. */
+export type PanelAction = "plan" | "edit" | "model" | "new" | "usage-limits";
+
+const PANEL_COMMANDS: ReadonlyArray<{ name: string; action: PanelAction; description: string }> = [
+  { name: "plan", action: "plan", description: "Plan first, without changing the timeline" },
+  { name: "edit", action: "edit", description: "Let the assistant edit the timeline" },
+  { name: "model", action: "model", description: "Choose the model" },
+  { name: "new", action: "new", description: "Start a new conversation" },
+];
+
 export interface SlashItem {
   readonly id: string;
-  readonly kind: "command" | "skill";
+  readonly kind: "action" | "command" | "skill";
   readonly name: string;
   readonly description: string | undefined;
   /** Text that replaces the typed "/query". T3 resolves "$name" to the skill for each provider. */
   readonly insert: string;
+  readonly action?: PanelAction;
 }
 
+/** The panel action a whole message names, such as "/plan" sent on its own. */
+export function panelActionFor(text: string): PanelAction | null {
+  const name = /^\s*\/([\w-]+)\s*$/.exec(text)?.[1]?.toLowerCase();
+  if (!name) return null;
+  if (name === "usage-limits") return "usage-limits";
+  if (name === "default") return "edit";
+  return PANEL_COMMANDS.find((command) => command.name === name)?.action ?? null;
+}
+
+/**
+ * Lists what "/" can run. Providers only expand their own commands at the very
+ * start of a message, so those are offered there and nowhere else.
+ */
 export function slashItems(
   provider: ServerProvider | null,
   cwd: string | null,
   query: string,
+  atStart: boolean,
 ): SlashItem[] {
-  if (!provider) return [];
-  const skills = getProviderSkillsForSlashMenu(resolveProviderSkillsForCwd(provider, cwd), true);
-  const commands = getProviderSlashCommandsForSlashMenu(
-    resolveProviderSlashCommandsForCwd(provider, cwd),
-    skills,
-  );
+  const skills = provider
+    ? getProviderSkillsForSlashMenu(resolveProviderSkillsForCwd(provider, cwd), true)
+    : [];
+  const commands =
+    provider && atStart
+      ? getProviderSlashCommandsForSlashMenu(
+          resolveProviderSlashCommandsForCwd(provider, cwd),
+          skills,
+        )
+      : [];
   const items: SlashItem[] = [
-    ...commands.map((command) => ({
-      id: `command:${command.name}`,
-      kind: "command" as const,
-      name: command.name,
-      description: command.description,
-      insert: `/${command.name} `,
-    })),
+    ...(atStart
+      ? PANEL_COMMANDS.map((command) => ({
+          id: `action:${command.name}`,
+          kind: "action" as const,
+          name: command.name,
+          description: command.description,
+          insert: "",
+          action: command.action,
+        }))
+      : []),
+    ...commands.map((command) => {
+      const action = panelActionFor(`/${command.name}`);
+      return {
+        id: `command:${command.name}`,
+        kind: action ? ("action" as const) : ("command" as const),
+        name: command.name,
+        description: command.description,
+        insert: action ? "" : `/${command.name} `,
+        ...(action ? { action } : {}),
+      };
+    }),
     ...skills.map((skill) => ({
       id: `skill:${skill.name}`,
       kind: "skill" as const,

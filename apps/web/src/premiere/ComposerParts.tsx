@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import type { RuntimeMode } from "@t3tools/contracts";
+import type { RuntimeMode, UsageLimitsReport } from "@t3tools/contracts";
+import { formatResetsIn, limitsNotice, remainingPercent } from "@t3tools/shared/usageLimits";
 import { ChevronDownIcon, PaperclipIcon, XIcon } from "lucide-react";
 
 import { runtimeModeConfig, runtimeModeOptions } from "../components/chat/runtimeModeConfig";
@@ -120,6 +121,7 @@ export function SlashMenu({
             <strong>
               /{item.name}
               {item.kind === "skill" ? <em>skill</em> : null}
+              {item.kind === "action" ? <em>panel</em> : null}
             </strong>
             {item.description ? <span>{item.description}</span> : null}
           </button>
@@ -186,5 +188,53 @@ export function AttachButton({
         }}
       />
     </>
+  );
+}
+
+/** The /usage-limits answer: remaining quota per window, read from T3's last limits check. */
+export function UsageCard({ report, onClose }: { report: UsageLimitsReport; onClose: () => void }) {
+  const now = Date.parse(report.createdAt);
+  return (
+    <section data-usage-card="" aria-label="Usage limits">
+      <header>
+        <strong>Usage limits</strong>
+        <button type="button" data-icon-button="" aria-label="Close usage limits" onClick={onClose}>
+          <XIcon size={13} aria-hidden="true" />
+        </button>
+      </header>
+      {report.accounts.map((account) => {
+        const notice = limitsNotice(account.limits);
+        return (
+          <div key={account.id} data-usage-account="">
+            <span>
+              {account.displayName || account.label}
+              {account.plan ? ` · ${account.plan}` : ""}
+            </span>
+            {notice ? (
+              <p>{notice}</p>
+            ) : (
+              account.limits.windows.map((window) => {
+                const remaining = remainingPercent(window);
+                return (
+                  <div key={window.id} data-usage-window="">
+                    <div>
+                      <span>{window.label}</span>
+                      <span>
+                        {remaining}% left
+                        {formatResetsIn(window, now) ? ` · ${formatResetsIn(window, now)}` : ""}
+                      </span>
+                    </div>
+                    <meter min={0} max={100} low={20} high={50} optimum={100} value={remaining} />
+                  </div>
+                );
+              })
+            )}
+          </div>
+        );
+      })}
+      {report.notices.map((notice) => (
+        <p key={notice}>{notice}</p>
+      ))}
+    </section>
   );
 }

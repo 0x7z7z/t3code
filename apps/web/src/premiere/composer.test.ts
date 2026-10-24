@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { ServerProvider } from "@t3tools/contracts";
-import { accountLabel, slashItems, slashTrigger } from "./composer";
+import { accountLabel, panelActionFor, slashItems, slashTrigger } from "./composer";
 
 const account = (instanceId: string, displayName: string, email?: string) =>
   ({
@@ -30,7 +30,11 @@ describe("slashTrigger", () => {
 
 describe("slashItems", () => {
   const provider = {
-    slashCommands: [{ name: "review", description: "Review changes" }, { name: "shot-plan" }],
+    slashCommands: [
+      { name: "review", description: "Review changes" },
+      { name: "shot-plan" },
+      { name: "usage-limits", description: "Show this provider's usage limits" },
+    ],
     skills: [
       { name: "shot-plan", path: "a", enabled: true, description: "Plan shots" },
       {
@@ -44,18 +48,36 @@ describe("slashItems", () => {
     workspaceSnapshots: [],
   } as unknown as ServerProvider;
 
-  it("lists commands and enabled skills, inserting skills as $mentions", () => {
-    expect(slashItems(provider, null, "").map((item) => item.insert)).toEqual([
+  it("offers panel and provider commands only at the start of a message", () => {
+    expect(slashItems(provider, null, "", true).map((item) => item.insert || item.action)).toEqual([
+      "plan",
+      "edit",
+      "model",
+      "new",
       "/review ",
+      "usage-limits",
+      "$shot-plan ",
+      "$premiere-shot-placement ",
+    ]);
+    expect(slashItems(provider, null, "", false).map((item) => item.insert)).toEqual([
       "$shot-plan ",
       "$premiere-shot-placement ",
     ]);
   });
 
   it("puts name prefix matches before other matches", () => {
-    expect(slashItems(provider, null, "shot").map((item) => item.name)).toEqual([
+    expect(slashItems(provider, null, "shot", true).map((item) => item.name)).toEqual([
       "shot-plan",
       "premiere-shot-placement",
     ]);
+  });
+});
+
+describe("panelActionFor", () => {
+  it("recognises commands the panel answers itself", () => {
+    expect(panelActionFor(" /usage-limits ")).toBe("usage-limits");
+    expect(panelActionFor("/default")).toBe("edit");
+    expect(panelActionFor("/plan the intro")).toBeNull();
+    expect(panelActionFor("/review")).toBeNull();
   });
 });
