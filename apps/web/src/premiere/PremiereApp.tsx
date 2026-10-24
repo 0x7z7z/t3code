@@ -45,6 +45,7 @@ import {
 } from "./composer";
 import { AccessModeMenu, AttachButton, ImageStrip, SlashMenu, UsageCard } from "./ComposerParts";
 import { Markdown, type SeekHandler } from "./Markdown";
+import { createTimelineActions, useTimelineClips } from "./interactiveHost";
 import { editingModelOptions } from "./models";
 import { selectEditingModel, selectEditingProvider, selectEditingWorkspace } from "./selection";
 import { buildTranscript, summarizeSteps, type ToolStep } from "./transcript";
@@ -56,6 +57,7 @@ export function PremiereApp() {
   const { environments } = useEnvironments();
   const providerMap = useEnvironmentProviders();
   const host = useSyncExternalStore(subscribePremiereHost, getPremiereHostState);
+  const clips = useTimelineClips(host.context);
   const [workspaceKey, setWorkspaceKey] = useState<string | null>(null);
   const project = selectEditingWorkspace(projects, workspaceKey);
   const projectRef = project
@@ -63,6 +65,7 @@ export function PremiereApp() {
     : null;
   const environmentId = project?.environmentId ?? environments[0]?.environmentId ?? null;
   const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const timelineActions = createTimelineActions(host.context, clips, canOperate);
   const providers = environmentId ? (providerMap.get(environmentId) ?? []) : [];
   const [providerKey, setProviderKey] = useState<string | null>(null);
   const provider = selectEditingProvider(providers, providerKey);
@@ -516,7 +519,12 @@ export function PremiereApp() {
               case "assistant":
                 return (
                   <div key={block.id} data-assistant-message="">
-                    <Markdown text={block.text} onSeek={seek} />
+                    <Markdown
+                      text={block.text}
+                      onSeek={seek}
+                      actions={timelineActions}
+                      complete={!block.streaming}
+                    />
                     {block.streaming ? <span data-typing="" aria-label="Writing" /> : null}
                   </div>
                 );

@@ -346,6 +346,275 @@
     }
   }
 
+  // These functions are serialized into ExtendScript. No native JSON is required there.
+  function timelineClips(sequenceId) {
+    try {
+      var s = app.project && app.project.activeSequence;
+      if (!s || String(s.sequenceID) !== sequenceId)
+        return "axis:error|Sequence changed. Refresh the timeline.";
+      var rows = [];
+      var groups = [s.videoTracks, s.audioTracks];
+      for (var g = 0; g < groups.length; g++) {
+        var tracks = groups[g];
+        for (var t = 0; t < tracks.numTracks && t < 10000; t++) {
+          var clips = tracks[t].clips;
+          for (var c = 0; c < clips.numItems; c++) {
+            if (rows.length >= 2000) return "axis:clips|" + rows.join("\n");
+            var clip = clips[c];
+            var row = [
+              String(clip.name || "").slice(0, 512),
+              String(clip.nodeId || "").slice(0, 512),
+              g === 0 ? "V" : "A",
+              t,
+              clip.start.seconds,
+              clip.end.seconds,
+            ];
+            for (var i = 0; i < row.length; i++) row[i] = encodeURIComponent(String(row[i]));
+            rows.push(row.join("|"));
+          }
+        }
+      }
+      return "axis:clips|" + rows.join("\n");
+    } catch (error) {
+      return "axis:error|" + encodeURIComponent(String(error).slice(0, 500));
+    }
+  }
+
+  function timelineSelect(request) {
+    try {
+      var s = app.project && app.project.activeSequence;
+      if (!s || String(s.sequenceID) !== request.sequenceId)
+        return "axis:error|Sequence changed. Refresh the timeline.";
+      var target = null;
+      var groups = [s.videoTracks, s.audioTracks];
+      for (var g = 0; g < groups.length && !target; g++) {
+        var tracks = groups[g];
+        for (var t = 0; t < tracks.numTracks && !target; t++) {
+          if (
+            !request.nodeId &&
+            (request.trackType !== (g === 0 ? "V" : "A") || request.trackIndex !== t)
+          )
+            continue;
+          var clips = tracks[t].clips;
+          for (var c = 0; c < clips.numItems; c++) {
+            var clip = clips[c];
+            if (
+              request.nodeId
+                ? String(clip.nodeId) === request.nodeId
+                : Math.abs(Number(clip.start.seconds) - request.start) < 0.000001
+            ) {
+              target = clip;
+              break;
+            }
+          }
+        }
+      }
+      if (!target) return "axis:error|Clip no longer exists. Wait for the clip index to refresh.";
+      var selected = s.getSelection();
+      for (var i = 0; i < selected.length; i++) selected[i].setSelected(false, true);
+      target.setSelected(true, true);
+      s.setPlayerPosition(String(target.start.ticks));
+      return "axis:ok";
+    } catch (error) {
+      return "axis:error|" + encodeURIComponent(String(error).slice(0, 500));
+    }
+  }
+
+  function timelineMarkers(request) {
+    var created = [];
+    var markers;
+    try {
+      var s = app.project && app.project.activeSequence;
+      if (!s || String(s.sequenceID) !== request.sequenceId)
+        return "axis:error|Sequence changed. Refresh the timeline.";
+      markers = s.markers;
+      if (!markers || typeof markers.createMarker !== "function")
+        return "axis:error|Sequence markers are unavailable.";
+      var colors = {
+        green: 0,
+        red: 1,
+        purple: 2,
+        magenta: 2,
+        orange: 3,
+        yellow: 4,
+        blue: 6,
+        cyan: 7,
+      };
+      var end = Number(s.end) / 254016000000;
+      var i;
+      for (i = 0; i < request.markers.length; i++) {
+        var check = request.markers[i];
+        if (isFinite(end) && check.time + (check.duration || 0) > end + 0.000001)
+          return "axis:error|A marker extends beyond the sequence end.";
+      }
+      for (i = 0; i < request.markers.length; i++) {
+        var row = request.markers[i];
+        var marker = markers.createMarker(row.time);
+        if (!marker) throw new Error("Premiere could not create a marker.");
+        created.push(marker);
+        marker.name = row.name;
+        marker.comments = row.comment || "";
+        if (row.duration) marker.end = row.time + row.duration;
+        if (row.color) marker.setColorByIndex(colors[row.color]);
+      }
+      return "axis:ok";
+    } catch (error) {
+      var rollbackFailure = "";
+      for (var j = created.length - 1; j >= 0; j--) {
+        try {
+          markers.deleteMarker(created[j]);
+        } catch (rollbackError) {
+          rollbackFailure = String(rollbackError).slice(0, 100);
+        }
+      }
+      return (
+        "axis:error|" +
+        encodeURIComponent(
+          String(error).slice(0, 400) +
+            (rollbackFailure
+              ? " Some markers remain. Inspect the timeline before retrying. " + rollbackFailure
+              : " No markers were added."),
+        )
+      );
+    }
+  }
+
+  function timelineMessage(data, origin) {
+    if (
+      ["premiere.clips.request", "premiere.select", "premiere.markers.add"].indexOf(data.type) < 0
+    )
+      return;
+    if (typeof data.requestId !== "string" || !data.requestId || data.requestId.length > 128)
+      return;
+    var type = data.type === "premiere.clips.request" ? "premiere.clips" : data.type;
+    function reply(result) {
+      if (backendOrigin === origin && frame.contentWindow)
+        frame.contentWindow.postMessage(
+          Object.assign(
+            { type: type, protocol: 1, requestId: data.requestId, sequenceId: data.sequenceId },
+            result,
+          ),
+          origin,
+        );
+    }
+    function text(value, limit) {
+      return typeof value === "string" && value.length > 0 && value.length <= limit;
+    }
+    function seconds(value) {
+      return typeof value === "number" && isFinite(value) && value >= 0 && value <= 8640000;
+    }
+    if (!text(data.sequenceId, 32768)) return reply({ ok: false, error: "Invalid sequence ID." });
+    var operation = timelineClips;
+    var argument = data.sequenceId;
+    if (data.type === "premiere.select") {
+      if (
+        !(
+          text(data.nodeId, 512) ||
+          ((data.nodeId === undefined || data.nodeId === "") &&
+            (data.trackType === "V" || data.trackType === "A") &&
+            Number.isInteger(data.trackIndex) &&
+            data.trackIndex >= 0 &&
+            data.trackIndex < 10000 &&
+            seconds(data.start))
+        )
+      )
+        return reply({ ok: false, error: "Invalid clip selection." });
+      operation = timelineSelect;
+      argument = text(data.nodeId, 512)
+        ? { sequenceId: data.sequenceId, nodeId: data.nodeId }
+        : {
+            sequenceId: data.sequenceId,
+            trackType: data.trackType,
+            trackIndex: data.trackIndex,
+            start: data.start,
+          };
+    }
+    if (data.type === "premiere.markers.add") {
+      if (!Array.isArray(data.markers) || !data.markers.length || data.markers.length > 200)
+        return reply({ ok: false, error: "Expected 1-200 markers." });
+      var colors = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "magenta"];
+      if (
+        data.markers.some(function (row) {
+          return (
+            !row ||
+            typeof row !== "object" ||
+            !seconds(row.time) ||
+            typeof row.name !== "string" ||
+            row.name.length > 512 ||
+            (row.comment !== undefined &&
+              (typeof row.comment !== "string" || row.comment.length > 2000)) ||
+            (row.color !== undefined && colors.indexOf(row.color) < 0) ||
+            (row.duration !== undefined && !seconds(row.duration)) ||
+            row.time + (row.duration || 0) > 8640000
+          );
+        })
+      )
+        return reply({ ok: false, error: "Invalid marker values." });
+      operation = timelineMarkers;
+      argument = {
+        sequenceId: data.sequenceId,
+        markers: data.markers.map(function (row) {
+          return {
+            time: row.time,
+            name: row.name,
+            comment: row.comment,
+            color: row.color,
+            duration: row.duration,
+          };
+        }),
+      };
+    }
+    if (!window.__adobe_cep__)
+      return reply({ ok: false, error: "Premiere scripting is unavailable." });
+    var encoded = JSON.stringify(argument)
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029");
+    try {
+      window.__adobe_cep__.evalScript(
+        "(" + operation.toString() + ")(" + encoded + ")",
+        function (raw) {
+          try {
+            if (raw === "axis:ok") {
+              reply({ ok: true });
+              publishContext(null);
+              return;
+            }
+            if (type === "premiere.clips" && String(raw).indexOf("axis:clips|") === 0) {
+              var body = raw.slice(11);
+              var clips = body
+                ? body.split("\n").map(function (row) {
+                    var fields = row.split("|").map(decodeURIComponent);
+                    if (fields.length !== 6) throw new Error("Invalid clip index.");
+                    return {
+                      name: fields[0],
+                      nodeId: fields[1],
+                      trackType: fields[2],
+                      trackIndex: Number(fields[3]),
+                      start: Number(fields[4]),
+                      end: Number(fields[5]),
+                    };
+                  })
+                : [];
+              reply({ ok: true, clips: clips });
+              return;
+            }
+            reply({
+              ok: false,
+              error:
+                String(raw).indexOf("axis:error|") === 0
+                  ? decodeURIComponent(raw.slice(11)).slice(0, 1024)
+                  : "Premiere could not complete this action.",
+            });
+          } catch (error) {
+            reply({ ok: false, error: String(error).slice(0, 1024) });
+          }
+        },
+      );
+    } catch (error) {
+      reply({ ok: false, error: String(error).slice(0, 1024) });
+    }
+  }
+
   window.addEventListener("message", function (event) {
     if (
       event.source !== frame.contentWindow ||
@@ -354,6 +623,7 @@
       event.data.protocol !== 1
     )
       return;
+    timelineMessage(event.data, event.origin);
     if (
       event.data.type === "premiere.frame.request" &&
       typeof event.data.requestId === "string" &&
