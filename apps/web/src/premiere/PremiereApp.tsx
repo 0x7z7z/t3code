@@ -52,6 +52,7 @@ import { buildTranscript, summarizeSteps, type ToolStep } from "./transcript";
 import { useTurnChanges } from "./useTurnChanges";
 import { TurnChanges } from "./TurnChangesCard";
 import type { TurnChangeRecord } from "./turnChanges";
+import { QuestionCard } from "./QuestionCard";
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
@@ -121,7 +122,6 @@ export function PremiereApp() {
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn);
   const stopTurn = useOrchestrationCommand(threadEnvironment.interruptTurn);
   const approve = useOrchestrationCommand(threadEnvironment.respondToApproval);
-  const answer = useOrchestrationCommand(threadEnvironment.respondToUserInput);
   const paired = useRef(false);
   const inFlight = useRef(false);
   const transcript = useRef<HTMLDivElement>(null);
@@ -670,91 +670,18 @@ export function PremiereApp() {
           </div>
         </section>
       ))}
-      {pending.userInputs.map((request) => (
-        <form
-          key={request.requestId}
-          data-request=""
-          onSubmit={(event) => {
-            event.preventDefault();
-            const data = new FormData(event.currentTarget);
-            const answers = Object.fromEntries(
-              request.questions.map((question) => [
-                question.id,
-                {
-                  answers: String(data.get(`${question.id}:custom`) ?? "").trim()
-                    ? [String(data.get(`${question.id}:custom`)).trim()]
-                    : data.getAll(question.id).map(String).filter(Boolean),
-                },
-              ]),
-            );
-            if (
-              request.questions.some(
-                (question) =>
-                  question.required !== false && (answers[question.id]?.answers.length ?? 0) === 0,
-              )
-            ) {
-              setError("Answer each required question before sending.");
-              return;
-            }
-            if (environmentId && selectedThread)
-              void answer({
-                environmentId,
-                input: { threadId: selectedThread, requestId: request.requestId, answers },
-              }).then((result) => {
-                if (result._tag !== "Success")
-                  setError("The answer could not be sent. Your conversation is unchanged.");
-              });
-          }}
-        >
-          {request.questions.map((question) => (
-            <fieldset key={question.id} data-question="">
-              <legend>
-                <small>{question.header}</small>
-                {question.question}
-              </legend>
-              {question.options.length ? (
-                <div data-question-options="">
-                  {question.options.map((option) => (
-                    <label key={option.label} data-question-option="">
-                      <input
-                        type={question.multiSelect ? "checkbox" : "radio"}
-                        name={question.id}
-                        value={option.value ?? option.label}
-                        required={
-                          !question.multiSelect &&
-                          question.required !== false &&
-                          question.allowCustomAnswer === false
-                        }
-                      />
-                      <span>
-                        <strong>{option.label}</strong>
-                        {option.description ? <small>{option.description}</small> : null}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <input
-                  name={question.id}
-                  aria-label={question.question}
-                  required={question.required !== false}
-                  defaultValue={question.initialAnswer ?? ""}
-                />
-              )}
-              {question.options.length && question.allowCustomAnswer !== false ? (
-                <input
-                  name={`${question.id}:custom`}
-                  aria-label={`Custom answer: ${question.question}`}
-                  placeholder="Something else…"
-                />
-              ) : null}
-            </fieldset>
-          ))}
-          <button type="submit" disabled={request.responseCapability === "not_resumable"}>
-            Send answer
-          </button>
-        </form>
-      ))}
+      {environmentId && selectedThread
+        ? pending.userInputs.map((request) => (
+            <QuestionCard
+              key={JSON.stringify([environmentId, selectedThread, request.requestId])}
+              environmentId={environmentId}
+              threadId={selectedThread}
+              request={request}
+              canOperate={canOperate}
+              onError={setError}
+            />
+          ))
+        : null}
       {error ? (
         <p data-error="" role="alert">
           {error}

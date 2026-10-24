@@ -24,6 +24,7 @@ import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import {
@@ -58,6 +59,11 @@ const TARGET = new PrimaryConnectionTarget({
   wsBaseUrl: "wss://environment.example.test",
 });
 
+class ModeUpdateRejected extends Schema.TaggedError<ModeUpdateRejected>()(
+  "ModeUpdateRejected",
+  {},
+) {}
+
 const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(function* (input: {
   readonly commands: OrchestrationV2Command[];
   readonly projects: ProjectMutation[];
@@ -66,11 +72,15 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
   readonly projectionRequests?: ThreadId[];
   readonly advertiseServerResolvedCommandContext?: boolean;
   readonly advertiseThreadStop?: boolean;
+  readonly rejectCommandType?: OrchestrationV2Command["type"];
 }) {
   const client = {
     [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
-      Effect.sync(() => {
+      Effect.gen(function* () {
         input.commands.push(command);
+        if (command.type === input.rejectCommandType) {
+          return yield* new ModeUpdateRejected();
+        }
         return { sequence: input.commands.length };
       }),
     [ORCHESTRATION_V2_WS_METHODS.getThreadProjection]: (requestInput: {
@@ -137,6 +147,122 @@ const makeSupervisor = Effect.fn("TestEnvironmentCommands.makeSupervisor")(funct
 });
 
 describe("V2 environment commands", () => {
+  it.effect("does not send a message when a required mode update is rejected", () =>
+    Effect.gen(function* () {
+      const commands: OrchestrationV2Command[] = [];
+      const supervisor = yield* makeSupervisor({
+        commands,
+        projects: [],
+        rejectCommandType: "thread.interaction-mode.set",
+      });
+      const result = yield* startThreadTurn(
+        {
+          commandId: CommandId.make("rejected-mode"),
+          threadId: v2ThreadId,
+          message: {
+            messageId: MessageId.make("rejected-mode-message"),
+            role: "user",
+            text: "Apply",
+            attachments: [],
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        },
+        { runtimeMode: "full-access", interactionMode: "plan" },
+      ).pipe(
+        Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor),
+        Effect.flip,
+      );
+      expect(result).toBeInstanceOf(ModeUpdateRejected);
+      expect(commands.map((command) => command.type)).toEqual(["thread.interaction-mode.set"]);
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
+  it.effect("applies changed turn modes before dispatch, including unknown thread modes", () =>
+    Effect.gen(function* () {
+      const cases = [
+        {
+          current: { runtimeMode: "full-access", interactionMode: "plan" },
+          interactionMode: "default",
+          runtimeMode: "full-access",
+          changes: ["thread.interaction-mode.set"],
+        },
+        {
+          current: { runtimeMode: "full-access", interactionMode: "default" },
+          interactionMode: "plan",
+          runtimeMode: "full-access",
+          changes: ["thread.interaction-mode.set"],
+        },
+        {
+          current: { runtimeMode: "full-access", interactionMode: "default" },
+          interactionMode: "default",
+          runtimeMode: "approval-required",
+          changes: ["thread.runtime-mode.set"],
+        },
+        {
+          current: { runtimeMode: "full-access", interactionMode: "default" },
+          interactionMode: "default",
+          runtimeMode: "full-access",
+          changes: [],
+        },
+        {
+          current: undefined,
+          interactionMode: "default",
+          runtimeMode: "full-access",
+          changes: ["thread.runtime-mode.set", "thread.interaction-mode.set"],
+        },
+      ] as const;
+      for (const dispatchMode of ["auto", "start", "queue", "steer", "restart"] as const) {
+        for (const [index, testCase] of cases.entries()) {
+          const commands: OrchestrationV2Command[] = [];
+          const projectionRequests: ThreadId[] = [];
+          const supervisor = yield* makeSupervisor({ commands, projects: [], projectionRequests });
+          const commandId = CommandId.make(`mode-${dispatchMode}-${index}`);
+          yield* startThreadTurn(
+            {
+              commandId,
+              threadId: v2ThreadId,
+              message: {
+                messageId: MessageId.make("mode-message"),
+                role: "user",
+                text: "Apply the plan",
+                attachments: [],
+              },
+              runtimeMode: testCase.runtimeMode,
+              interactionMode: testCase.interactionMode,
+              dispatchMode,
+            },
+            testCase.current,
+          ).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+          expect(commands.map((command) => command.type)).toEqual([
+            ...testCase.changes,
+            "message.dispatch",
+          ]);
+          for (const command of commands) {
+            if (command.type === "thread.interaction-mode.set") {
+              expect(command).toEqual({
+                type: command.type,
+                commandId: `${commandId}:interaction-mode`,
+                threadId: v2ThreadId,
+                interactionMode: testCase.interactionMode,
+              });
+            } else if (command.type === "thread.runtime-mode.set") {
+              expect(command).toEqual({
+                type: command.type,
+                commandId: `${commandId}:runtime-mode`,
+                threadId: v2ThreadId,
+                runtimeMode: testCase.runtimeMode,
+              });
+            } else {
+              expect(command.commandId).toBe(commandId);
+            }
+          }
+          expect(projectionRequests).toEqual([]);
+        }
+      }
+    }).pipe(Effect.provide(layerTestCrypto)),
+  );
+
   it.effect("distinguishes sending a selected queued message from resuming queue order", () =>
     Effect.gen(function* () {
       const commands: OrchestrationV2Command[] = [];

@@ -26,7 +26,10 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
-import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
+import {
+  buildCodexTurnStartParams,
+  CodexProviderCapabilitiesV2,
+} from "./Adapters/CodexAdapterV2.ts";
 import * as DelegatedTaskQuestionReactor from "./DelegatedTaskQuestionReactor.ts";
 import * as EffectOutbox from "./EffectOutbox.ts";
 import * as EventSink from "./EventSink.ts";
@@ -34,6 +37,7 @@ import * as Orchestrator from "./Orchestrator.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
+import * as RuntimePolicy from "./RuntimePolicy.ts";
 import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
 
 const instanceId = ProviderInstanceId.make("codex");
@@ -55,6 +59,69 @@ const layerTest = Layer.mergeAll(
     ProviderAdapterRegistry.layerFromAdapters([adapter]),
     { databaseLayer: layerDatabase, runEffectWorker: false },
   ),
+);
+
+it.effect("uses persisted mode changes for a Codex turn on an existing plan thread", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const threadId = ThreadId.make("thread:plan-to-edit");
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("create-plan-to-edit"),
+      threadId,
+      projectId: ProjectId.make("project:plan-to-edit"),
+      title: "Plan the opening from my script",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "plan",
+      branch: null,
+      worktreePath: null,
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const params = () =>
+      Effect.gen(function* () {
+        const thread = yield* projections.getThread(threadId);
+        const runtimePolicy = yield* (yield* RuntimePolicy.RuntimePolicyV2).resolve({
+          thread,
+          modelSelection,
+        });
+        return yield* buildCodexTurnStartParams({
+          nativeThreadId: "native-plan-to-edit",
+          codexInput: [{ type: "text", text: "Apply the plan" }],
+          runtimePolicy,
+          modelSelection,
+          hasT3Mcp: true,
+          previousCollaborationMode: "plan",
+        });
+      }).pipe(Effect.provide(RuntimePolicy.layer));
+    assert.equal((yield* params()).collaborationMode?.mode, "plan");
+    yield* orchestrator.dispatch({
+      type: "thread.interaction-mode.set",
+      commandId: CommandId.make("plan-to-edit:interaction-mode"),
+      threadId,
+      interactionMode: "default",
+    });
+    yield* orchestrator.dispatch({
+      type: "thread.runtime-mode.set",
+      commandId: CommandId.make("plan-to-edit:runtime-mode"),
+      threadId,
+      runtimeMode: "approval-required",
+    });
+    const thread = yield* projections.getThread(threadId);
+    assert.equal(thread.interactionMode, "default");
+    assert.equal(thread.runtimeMode, "approval-required");
+    const edit = yield* params();
+    assert.equal(edit.collaborationMode?.mode, "default");
+    assert.include(
+      edit.collaborationMode?.settings.developer_instructions,
+      "# Collaboration Mode: Default",
+    );
+    assert.notInclude(edit.collaborationMode?.settings.developer_instructions, "# Plan Mode");
+    assert.equal(edit.approvalPolicy, "untrusted");
+    assert.equal(edit.sandboxPolicy?.type, "readOnly");
+  }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect(

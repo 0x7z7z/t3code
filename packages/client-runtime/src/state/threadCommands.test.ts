@@ -3,6 +3,7 @@ import {
   CommandId,
   RuntimeRequestId,
   EnvironmentId,
+  MessageId,
   ORCHESTRATION_V2_WS_METHODS,
   ProjectId,
   ProviderInstanceId,
@@ -89,6 +90,9 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* () {
     target: { environmentId: ENVIRONMENT_ID },
     session: yield* SubscriptionRef.make(
       Option.some({
+        initialConfig: Effect.succeed({
+          environment: { capabilities: { serverResolvedCommandContext: true } },
+        }),
         client: {
           [ORCHESTRATION_V2_WS_METHODS.dispatchCommand]: (command: OrchestrationV2Command) =>
             Effect.gen(function* () {
@@ -125,6 +129,45 @@ const makeHarness = Effect.fn("TestThreadCommands.makeHarness")(function* () {
 });
 
 describe("remote thread lifecycle commands", () => {
+  it.effect.each(["plan", "default", "missing"] as const)(
+    "uses shell modes when starting a turn with %s thread state",
+    (mode) =>
+      Effect.gen(function* () {
+        const h = yield* makeHarness();
+        h.registry.set(h.snapshotAtom(ENVIRONMENT_ID), {
+          ...SNAPSHOT,
+          threads: mode === "missing" ? [] : [{ ...SNAPSHOT.threads[0]!, interactionMode: mode }],
+        });
+        const result = h.commands.startTurn.run(h.registry, {
+          environmentId: ENVIRONMENT_ID,
+          input: {
+            commandId: CommandId.make("start-mode"),
+            threadId: THREAD_ID,
+            message: {
+              messageId: MessageId.make("start-mode-message"),
+              role: "user",
+              text: "Apply",
+              attachments: [],
+            },
+            runtimeMode: "full-access",
+            interactionMode: "default",
+          },
+        });
+        const expected =
+          mode === "missing"
+            ? ["thread.runtime-mode.set", "thread.interaction-mode.set", "message.dispatch"]
+            : mode === "plan"
+              ? ["thread.interaction-mode.set", "message.dispatch"]
+              : ["message.dispatch"];
+        for (const type of expected) {
+          const request = yield* Queue.take(h.requests);
+          expect(request.command.type).toBe(type);
+          yield* Deferred.succeed(request.reply, { sequence: 2 });
+        }
+        expect((yield* Effect.promise(() => result))._tag).toBe("Success");
+      }),
+  );
+
   const actions = [
     ["settle", {}, { settledOverride: "settled", pinnedAt: null, snoozedUntil: null }],
     ["unsettle", { reason: "user" }, { settledOverride: "active", settledAt: null }],

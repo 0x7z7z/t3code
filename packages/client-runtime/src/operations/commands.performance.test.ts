@@ -204,19 +204,22 @@ describe("routine command transport budget", () => {
         commands,
       });
 
-      const receipt = yield* startThreadTurn({
-        commandId: CommandId.make("perf-send"),
-        threadId: v2ThreadId,
-        message: {
-          messageId: MessageId.make("message-perf"),
-          role: "user",
-          text: "continue",
-          attachments: [],
+      const receipt = yield* startThreadTurn(
+        {
+          commandId: CommandId.make("perf-send"),
+          threadId: v2ThreadId,
+          message: {
+            messageId: MessageId.make("message-perf"),
+            role: "user",
+            text: "continue",
+            attachments: [],
+          },
+          runtimeMode: "full-access",
+          interactionMode: "default",
+          titleSeed: "continue",
         },
-        runtimeMode: "full-access",
-        interactionMode: "default",
-        titleSeed: "continue",
-      }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
+        projection.thread,
+      ).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
 
       const command = commands[0]!;
       if (command.type !== "message.dispatch") {

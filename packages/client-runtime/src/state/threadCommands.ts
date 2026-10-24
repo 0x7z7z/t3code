@@ -295,7 +295,13 @@ export function createThreadEnvironmentAtoms<R, E>(
     }),
     startTurn: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:start-turn",
-      execute: (input: StartThreadTurnInput) => startThreadTurn(input),
+      execute: (input: StartThreadTurnInput, registry, environmentId) =>
+        startThreadTurn(
+          input,
+          registry
+            .get(snapshotAtom(environmentId))
+            ?.threads.find((thread) => thread.id === input.threadId),
+        ),
       scheduler,
       concurrency,
     }),

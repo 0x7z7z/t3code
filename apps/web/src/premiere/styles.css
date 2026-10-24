@@ -464,6 +464,18 @@ a {
 [data-request] button {
   margin: 3px 5px 0 0;
 }
+[data-question-card] {
+  position: relative;
+}
+[data-question-card] [data-question] legend {
+  padding-right: 24px;
+}
+[data-question-card] [data-dismiss-question] {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  margin: 0;
+}
 [data-error],
 [data-notice] {
   font-size: 11px;

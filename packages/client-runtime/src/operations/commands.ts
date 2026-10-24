@@ -624,6 +624,7 @@ export const setThreadInteractionMode = Effect.fn("EnvironmentCommands.setThread
 
 export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(function* (
   input: StartThreadTurnInput,
+  currentModes?: Pick<StartThreadTurnInput, "runtimeMode" | "interactionMode">,
 ) {
   const commandId = yield* allocateCommandId(input);
   const attachments = yield* persistAttachments(
@@ -682,6 +683,25 @@ export const startThreadTurn = Effect.fn("EnvironmentCommands.startThreadTurn")(
         ...(context ? { context } : {}),
         attachments,
       },
+    });
+  }
+
+  // message.dispatch uses the persisted thread modes, not this turn's inputs.
+  // Missing shell state must still apply the requested modes before delivery.
+  if (currentModes?.runtimeMode !== input.runtimeMode) {
+    yield* dispatch({
+      type: "thread.runtime-mode.set",
+      commandId: CommandId.make(`${commandId}:runtime-mode`),
+      threadId: input.threadId,
+      runtimeMode: input.runtimeMode,
+    });
+  }
+  if (currentModes?.interactionMode !== input.interactionMode) {
+    yield* dispatch({
+      type: "thread.interaction-mode.set",
+      commandId: CommandId.make(`${commandId}:interaction-mode`),
+      threadId: input.threadId,
+      interactionMode: input.interactionMode,
     });
   }
 

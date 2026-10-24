@@ -1,13 +1,24 @@
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
+import {
+  NodeId,
+  ProviderSessionId,
+  RuntimeRequestId,
+  TurnItemId,
+  type OrchestrationV2ThreadProjection,
+} from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import { render } from "../../test/render";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
+import { makeThreadProjectionFixture } from "../test-fixtures";
 import type { PremiereContext } from "./host";
 
 const state = vi.hoisted(() => ({
   environmentId: "premiere-permission-test",
   allowed: true,
   run: vi.fn(),
+  dismiss: vi.fn(),
+  projection: null as OrchestrationV2ThreadProjection | null,
   host: { connected: true, context: null as PremiereContext | null },
   frame: vi.fn(),
 }));
@@ -29,10 +40,16 @@ vi.mock("@t3tools/client-runtime/state/session", async () => {
   return { createEnvironmentSessionAtoms: () => ({ sessionStateAtom: sessions }) };
 });
 vi.mock("../connection/onboarding", () => ({ connectPairing: {} }));
-vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => state.run }));
+vi.mock("../state/use-atom-command", () => ({
+  useAtomCommand: (command: { label?: string }) =>
+    command.label === "dismiss-user-input" ? state.dismiss : state.run,
+}));
 vi.mock("../state/entities", () => ({
   useProjects: () => [{ id: "editing", environmentId: state.environmentId, name: "Editing" }],
-  useThreadShellsForProjectRefs: () => [],
+  useThreadShellsForProjectRefs: () =>
+    state.projection
+      ? [{ ...state.projection.thread, environmentId: state.environmentId, runtime: null }]
+      : [],
   useServerConfigs: () => new Map(),
 }));
 vi.mock("../state/environments", () => ({
@@ -64,8 +81,13 @@ vi.mock("../state/threads", async () => {
       interruptTurn: {},
       respondToApproval: {},
       respondToUserInput: {},
+      dismissUserInput: { label: "dismiss-user-input" },
     },
-    useEnvironmentThread: () => ({ data: Option.none() }),
+    useEnvironmentThread: (_environmentId: string, threadId: string | null) => ({
+      data:
+        state.projection?.thread.id === threadId ? Option.some(state.projection) : Option.none(),
+      status: "live",
+    }),
   };
 });
 vi.mock("./host", async (original) => ({
@@ -89,6 +111,8 @@ function setup(name: string, allowed: boolean) {
   state.environmentId = `premiere-permission-${name}`;
   state.allowed = allowed;
   state.run.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
+  state.dismiss.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
+  state.projection = null;
   state.host = { connected: true, context: null };
   state.frame.mockReset().mockResolvedValue({
     id: "current-frame",
@@ -100,6 +124,185 @@ function setup(name: string, allowed: boolean) {
   });
   localStorage.removeItem(`premiere-draft:${state.environmentId}:editing:new`);
 }
+
+function setupQuestion(name: string, capability: "live" | "message" | "not_resumable" = "live") {
+  setup(name, true);
+  const projection = makeThreadProjectionFixture();
+  const requestId = RuntimeRequestId.make(`footage-${name}`);
+  const nodeId = NodeId.make("question-node");
+  state.projection = {
+    ...projection,
+    runtimeRequests: [
+      {
+        id: requestId,
+        nodeId,
+        providerTurnId: null,
+        nativeRequestRef: null,
+        kind: "user_input",
+        status: "pending",
+        responseCapability:
+          capability === "live"
+            ? { type: "live", providerSessionId: ProviderSessionId.make("codex-session") }
+            : capability === "message"
+              ? { type: "message" }
+              : { type: "not_resumable", reason: "Session expired." },
+        createdAt: projection.updatedAt,
+        resolvedAt: null,
+      },
+    ],
+    turnItems: [
+      {
+        id: TurnItemId.make("footage-question"),
+        threadId: projection.thread.id,
+        runId: null,
+        nodeId,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed",
+        title: null,
+        startedAt: projection.updatedAt,
+        completedAt: projection.updatedAt,
+        updatedAt: projection.updatedAt,
+        type: "user_input_request",
+        requestId,
+        questions: [
+          {
+            id: "footage",
+            header: "Source footage",
+            question: "Which footage should I use?",
+            options: [
+              { label: "Use clean 480p footage", value: "clean-480p", description: "Clean source" },
+              { label: "Use 1080p footage", description: "Larger source" },
+            ],
+            allowCustomAnswer: true,
+            multiSelect: false,
+          },
+        ],
+      },
+    ],
+  };
+  return { threadId: projection.thread.id, requestId };
+}
+
+it("sends custom text as a string keyed by question id instead of the selected option", async () => {
+  const { threadId, requestId } = setupQuestion("custom-answer");
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(threadId);
+  await screen.getByRole("radio", { name: /Use clean 480p footage/ }).click();
+  await screen
+    .getByRole("textbox", { name: /Custom answer:/ })
+    .fill("  use the clean 480p footage  ");
+  await expect
+    .element(screen.getByRole("radio", { name: /Use clean 480p footage/ }))
+    .not.toBeChecked();
+  await screen.getByRole("button", { name: "Send answer" }).click();
+  await vi.waitFor(() =>
+    expect(state.run).toHaveBeenCalledWith({
+      environmentId: state.environmentId,
+      input: { threadId, requestId, answers: { footage: "use the clean 480p footage" } },
+    }),
+  );
+  await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
+});
+
+it("sends a selected radio's value as a string and clears previous custom text", async () => {
+  const { threadId, requestId } = setupQuestion("radio-answer");
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(threadId);
+  await screen.getByRole("textbox", { name: /Custom answer:/ }).fill("old custom answer");
+  await screen.getByRole("radio", { name: /Use clean 480p footage/ }).click();
+  await expect.element(screen.getByRole("textbox", { name: /Custom answer:/ })).toHaveValue("");
+  await screen.getByRole("button", { name: "Send answer" }).click();
+  await vi.waitFor(() =>
+    expect(state.run).toHaveBeenCalledWith({
+      environmentId: state.environmentId,
+      input: { threadId, requestId, answers: { footage: "clean-480p" } },
+    }),
+  );
+});
+
+it("shows the backend error for an answer that fails and keeps the question available", async () => {
+  const { threadId } = setupQuestion("stale-answer");
+  state.run.mockResolvedValue({
+    _tag: "Failure",
+    cause: Cause.fail(new Error("This question has already been answered.")),
+  });
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(threadId);
+  await screen.getByRole("radio", { name: /Use clean 480p footage/ }).click();
+  await screen.getByRole("button", { name: "Send answer" }).click();
+  await expect
+    .element(screen.getByRole("alert"))
+    .toHaveTextContent("This question has already been answered.");
+  await expect.element(screen.getByRole("button", { name: "Dismiss question" })).toBeEnabled();
+});
+
+it("dismisses an expired question locally and remembers it after remounting", async () => {
+  const { threadId } = setupQuestion("dismiss-expired", "not_resumable");
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(threadId);
+  await expect.element(screen.getByRole("button", { name: "Send answer" })).toBeDisabled();
+  await screen.getByRole("button", { name: "Dismiss question" }).click();
+  await expect.element(screen.getByRole("button", { name: "Send answer" })).not.toBeInTheDocument();
+  expect(state.dismiss).not.toHaveBeenCalled();
+  expect(state.run).not.toHaveBeenCalled();
+  await screen.rerender(<span />);
+  await screen.rerender(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+  );
+  await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(threadId);
+  await expect.element(screen.getByRole("button", { name: "Send answer" })).not.toBeInTheDocument();
+});
+
+it("also dismisses asynchronous questions on the server", async () => {
+  const { threadId, requestId } = setupQuestion("dismiss-message", "message");
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(threadId);
+  await screen.getByRole("button", { name: "Dismiss question" }).click();
+  await expect.element(screen.getByRole("button", { name: "Send answer" })).not.toBeInTheDocument();
+  await vi.waitFor(() =>
+    expect(state.dismiss).toHaveBeenCalledWith({
+      environmentId: state.environmentId,
+      input: { threadId, requestId },
+    }),
+  );
+  expect(state.run).not.toHaveBeenCalled();
+});
 
 it("sends the first draft after loading the paired session's permission", async () => {
   setup("allowed", true);

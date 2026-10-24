@@ -128,6 +128,20 @@
       }
       return item.createBin("Axis checkpoints");
     }
+    // The bin holding a project item; Premiere's ExtendScript has no parent link.
+    function parentBin(target) {
+      if (!target || !target.nodeId) return null;
+      var pending = [app.project.rootItem];
+      while (pending.length) {
+        var folder = pending.shift();
+        for (var c = 0; c < folder.children.numItems; c++) {
+          var child = folder.children[c];
+          if (String(child.nodeId) === String(target.nodeId)) return folder;
+          if (child.type === 2) pending.push(child);
+        }
+      }
+      return null;
+    }
     function prefix(id) {
       return "[Axis checkpoint " + id + "] ";
     }
@@ -164,6 +178,7 @@
         var name = String(original.name);
         var savedName = String(saved.name);
         var destination = bin();
+        var home = parentBin(original.projectItem);
         try {
           app.project.openSequence(String(saved.sequenceID));
           if (
@@ -174,6 +189,8 @@
           original.name = name.slice(0, 210) + " (after turn " + turnNumber + ")";
           original.projectItem.moveBin(destination);
           saved.name = name;
+          // The restored version takes the original's place in the project panel.
+          if (home) saved.projectItem.moveBin(home);
         } catch (restoreError) {
           try {
             original.name = name;

@@ -156,6 +156,24 @@ test("opens the checkpoint on restore and preserves the after version without de
   assert.equal(f.moves.at(-1).id, "sequence-a");
 });
 
+test("puts the restored version in the bin the original sequence was in", () => {
+  const f = fixture();
+  const edits = { name: "Edits", type: 2, children: { numItems: 1, 0: { nodeId: "main-item" } } };
+  f.project.rootItem.children = { numItems: 1, 0: edits };
+  f.original.projectItem.nodeId = "main-item";
+  const checkpoint = f.run("snapshot", true);
+  f.clip.end.seconds = 4;
+  const after = f.run();
+  f.run("restore", checkpoint.checkpointSignature, "sequence-a", "checkpoint-a", after.signature);
+  assert.deepEqual(
+    f.moves.slice(-2).map((move) => [move.id, move.value.name]),
+    [
+      ["sequence-a", "Axis checkpoints"],
+      ["checkpoint-a", "Edits"],
+    ],
+  );
+});
+
 test("rejects restore after later edits, missing checkpoints, or sequence switches", () => {
   const f = fixture();
   const checkpoint = f.run("snapshot", true);
