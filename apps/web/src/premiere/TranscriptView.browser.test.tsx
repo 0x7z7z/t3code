@@ -13,6 +13,7 @@ const host = vi.hoisted(() => ({
   load: vi.fn(),
 }));
 vi.mock("./host", () => ({ seekPremiere: host.seek }));
+vi.mock("./usePlayheadClock", () => ({ usePlayheadClock: () => null }));
 vi.mock("./interactiveHost", () => ({ requestTimelineAction: host.load }));
 vi.mock("./timelineHost", () => ({
   pruneCheckpoints: async () => {},
@@ -81,6 +82,7 @@ it("transcribes in Plan mode, imports the matching handoff and persists the corr
     <TranscriptView {...f.props} disabled onTranscribe={onTranscribe} agentStatus="running" />,
   );
   screen.container.style.width = "440px";
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await expect.element(screen.getByRole("checkbox", { name: "Fix with script" })).toBeChecked();
   await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
   await expect
@@ -103,6 +105,7 @@ it("shows agent progress, permits stopping the wait and keeps manual import", as
   await using screen = await render(
     <TranscriptView {...f.props} onTranscribe={onTranscribe} agentStatus="waiting" />,
   );
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await screen.getByRole("checkbox", { name: "Fix with script" }).click();
   await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
   await expect
@@ -111,11 +114,15 @@ it("shows agent progress, permits stopping the wait and keeps manual import", as
       "Transcribing · waiting. Agent details and questions are in Conversation. Stop waiting does not stop the agent.",
     );
   expect(onTranscribe).toHaveBeenCalledWith(expect.stringContaining("Script correction is OFF"));
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await expect
     .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
     .toBeDisabled();
   await screen.getByRole("button", { name: "Stop waiting" }).click();
   await expect.element(screen.getByRole("button", { name: "Replace transcript" })).toBeEnabled();
+  await expect
+    .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
+    .toBeEnabled();
 });
 
 it("shows a failed handoff's actual reason without replacing the existing transcript", async () => {
@@ -124,9 +131,11 @@ it("shows a failed handoff's actual reason without replacing the existing transc
     host.load.mockRejectedValue(new Error("No readable voice-over media"));
   });
   await using screen = await render(<TranscriptView {...f.props} onTranscribe={onTranscribe} />);
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
   await expect.element(screen.getByRole("alert")).toHaveTextContent("No readable voice-over media");
   await expect.element(screen.getByRole("button", { name: "Every at 00:00:00.000" })).toBeVisible();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await expect
     .element(screen.getByRole("button", { name: "Transcribe with WhisperX" }))
     .toBeEnabled();
@@ -137,6 +146,7 @@ it("reports the agent's outcome when its turn ends without producing a handoff",
   await using screen = await render(
     <TranscriptView {...f.props} onTranscribe={async () => {}} agentOutcome="The VO is offline." />,
   );
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await screen.getByRole("button", { name: "Transcribe with WhisperX" }).click();
   await expect
     .element(screen.getByRole("alert"))
@@ -216,6 +226,7 @@ it("retains checkpoint recovery after partial failures and refuses undo after la
   await expect
     .element(screen.getByRole("alert"))
     .toHaveTextContent("QE refused a boundary The checkpoint is available below.");
+  await screen.getByRole("button", { name: "frame at 00:00:01.000" }).click();
   await expect.element(screen.getByRole("button", { name: "Cut from timeline" })).toBeDisabled();
   host.snapshot.mockResolvedValueOnce({ signature: "later edit", checkpointIds: ["checkpoint"] });
   await screen.getByRole("button", { name: "Undo transcript cut" }).click();
@@ -227,32 +238,54 @@ it("retains checkpoint recovery after partial failures and refuses undo after la
   expect(host.restore).not.toHaveBeenCalled();
 });
 
-it("bounds long transcripts, follows scrubbing and allows selections across pages", async () => {
+it("renders long transcripts as paragraphs, follows scrubbing and selects across paragraphs", async () => {
   const f = setup("long", 3000);
   await using screen = await render(<TranscriptView {...f.props} />);
-  expect(screen.container.querySelectorAll("[data-transcript-word]")).toHaveLength(120);
+  expect(screen.container.querySelectorAll("[data-transcript-word]")).toHaveLength(3000);
+  expect(screen.container.querySelectorAll("[data-transcript-paragraph]").length).toBeGreaterThan(30);
   await screen.getByRole("button", { name: "Every at 00:00:00.000" }).click();
-  await screen.getByRole("button", { name: "Next words" }).click();
   await screen
     .getByRole("button", { name: "Every at 00:02:00.000" })
     .click({ modifiers: ["Shift"] });
+  await expect
+    .element(screen.getByRole("group", { name: "Transcript selection actions" }))
+    .toHaveTextContent("121 words");
   await screen.getByRole("button", { name: "Ask Axis" }).click();
   expect(f.props.onAsk).toHaveBeenCalledWith(
     expect.stringContaining("[00:00:00.000 - 00:02:00.800]"),
   );
-  await screen.getByRole("button", { name: "Follow playhead" }).click();
+  await screen.getByRole("button", { name: "Clear selection" }).click();
   await screen.rerender(
     <TranscriptView {...f.props} context={{ ...f.props.context, playheadSeconds: 2500.2 }} />,
   );
   await expect
     .element(screen.getByRole("button", { name: "frame at 00:41:40.000" }))
     .toHaveAttribute("aria-current", "true");
-  expect(screen.container.querySelectorAll("[data-transcript-word]")).toHaveLength(120);
+  await expect
+    .element(screen.getByRole("button", { name: "frame at 00:41:40.000" }))
+    .toBeInViewport();
   await screen.rerender(
     <TranscriptView {...f.props} context={{ ...f.props.context, playheadSeconds: 2500.9 }} />,
   );
-  await expect.element(screen.getByRole("button", { name: "frame at 00:41:40.000" })).toBeVisible();
   expect(screen.container.querySelector('[aria-current="true"]')).toBeNull();
+});
+
+it("searches phrases, steps through matches and selects the current one", async () => {
+  const f = setup("search", 30);
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await screen.getByRole("searchbox", { name: "Search transcript" }).fill("frame matt");
+  await expect.element(screen.getByText("1 / 10")).toBeVisible();
+  expect(screen.container.querySelectorAll('[data-match="current"]')).toHaveLength(2);
+  await userEvent.keyboard("{Enter}");
+  await expect.element(screen.getByText("2 / 10")).toBeVisible();
+  expect(host.seek).toHaveBeenLastCalledWith(4, "search");
+  await expect
+    .element(screen.getByRole("button", { name: "matters. at 00:00:05.000" }))
+    .toHaveAttribute("aria-pressed", "true");
+  await screen.getByRole("button", { name: "Previous match" }).click();
+  await expect.element(screen.getByText("1 / 10")).toBeVisible();
+  await screen.getByRole("searchbox", { name: "Search transcript" }).fill("nothing here");
+  await expect.element(screen.getByText("No matches")).toBeVisible();
 });
 
 it("imports a file through the file input, maps an offset and reloads scoped state", async () => {
@@ -264,10 +297,11 @@ it("imports a file through the file input, maps an offset and reloads scoped sta
   });
   await userEvent.upload(screen.getByLabelText("Import transcript file"), file);
   await expect.element(screen.getByRole("button", { name: "Hello at 00:00:01.000" })).toBeVisible();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
   await screen.getByRole("spinbutton", { name: "Sequence offset (seconds)" }).fill("4");
   await screen.getByRole("button", { name: "Apply offset" }).click();
   await expect.element(screen.getByRole("button", { name: "Hello at 00:00:05.000" })).toBeVisible();
   await act(() => screen.rerender(<TranscriptView {...f.props} key="reload" />));
   await expect.element(screen.getByRole("button", { name: "Hello at 00:00:05.000" })).toBeVisible();
-  await expect.element(screen.getByText("SRT · vo.srt")).toBeVisible();
+  await expect.element(screen.getByText("Sequence time + 4 s · vo.srt")).toBeVisible();
 });

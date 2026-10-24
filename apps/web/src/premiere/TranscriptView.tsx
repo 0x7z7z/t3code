@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { randomUUID } from "../lib/utils";
 import { seekPremiere, type PremiereContext } from "./host";
 import { importWhisperHandoff, loadWhisperTranscript, whisperPrompt } from "./whisperTranscription";
@@ -9,7 +9,6 @@ import {
   restoreTimeline,
 } from "./timelineHost";
 import {
-  precedingWord,
   mapTranscript,
   parseStoredTranscript,
   parseTranscript,
@@ -18,7 +17,19 @@ import {
   transcriptContext,
   transcriptTime,
   type SequenceTranscript,
+  type TranscriptWord,
 } from "./sequenceTranscript";
+import {
+  findVoiceLink,
+  lastWordBefore,
+  placeWords,
+  refreshVoiceLink,
+  seekTime,
+  voiceCandidates,
+  wordAtTime,
+  type VoiceLink,
+} from "./transcriptSync";
+import { usePlayheadClock } from "./usePlayheadClock";
 
 interface CutUndo {
   readonly before: SequenceTranscript;
@@ -30,10 +41,44 @@ interface StoredTranscript {
   readonly transcript: SequenceTranscript | null;
   readonly undo: CutUndo | null;
   readonly uncertain: boolean;
+  /**
+   * A linked transcript keeps source-media times and is placed through the voice-over
+   * clips on the timeline, so trims, moves and cuts made anywhere stay in sync.
+   * `undefined` marks records saved before linking existed.
+   */
+  readonly link?: VoiceLink | null;
 }
 
 export function transcriptStorageKey(context: PremiereContext, sequenceId = context.sequenceId) {
   return `axis-transcript-v1:${JSON.stringify([context.projectDocumentId || context.projectPath, sequenceId])}`;
+}
+
+const finite = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
+
+function parseLink(value: unknown): VoiceLink | null | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null) return null;
+  const link = value as Record<string, unknown>;
+  if (
+    !finite(link.trackIndex) ||
+    typeof link.mediaName !== "string" ||
+    link.mediaName.length > 2048 ||
+    !Array.isArray(link.segments) ||
+    link.segments.length > 2000 ||
+    !link.segments.every(
+      (segment: Record<string, unknown>) =>
+        typeof segment === "object" &&
+        segment !== null &&
+        finite(segment.sequenceStart) &&
+        finite(segment.sequenceEnd) &&
+        finite(segment.sourceIn) &&
+        finite(segment.speed) &&
+        (segment.speed as number) > 0,
+    )
+  )
+    return null;
+  return value as VoiceLink;
 }
 
 function readStored(key: string): StoredTranscript {
@@ -53,13 +98,112 @@ function readStored(key: string): StoredTranscript {
       candidate.expectedSignature.length <= 4000000
         ? { ...candidate, before }
         : null;
-    return { transcript, undo, uncertain: data?.uncertain === true };
+    return { transcript, undo, uncertain: data?.uncertain === true, link: parseLink(data?.link) };
   } catch {
     return { transcript: null, undo: null, uncertain: false };
   }
 }
 
-const PAGE_SIZE = 120;
+/** Imported files carry source-media times; Axis WhisperX output is already in sequence time. */
+const linkable = (doc: SequenceTranscript) => !doc.source.startsWith("WhisperX (Axis)");
+const sourceFile = (doc: SequenceTranscript) => doc.source.split(" · ").at(-1) ?? doc.source;
+const sourceTimes = (doc: SequenceTranscript): TranscriptWord[] =>
+  doc.offset
+    ? doc.words.map((word) => ({
+        ...word,
+        start: Math.max(0, word.start - doc.offset),
+        end: Math.max(0, word.end - doc.offset),
+      }))
+    : [...doc.words];
+
+/** Paragraphs break on sentence ends once long enough, on pauses, and at a hard cap. */
+function paragraphs(words: readonly TranscriptWord[]): Array<readonly [number, number]> {
+  const result: Array<readonly [number, number]> = [];
+  let from = 0;
+  for (let index = 0; index < words.length; index++) {
+    const size = index - from + 1;
+    const next = words[index + 1];
+    const pause = next ? next.start - words[index]!.end : 0;
+    if (
+      !next ||
+      pause >= 1.5 ||
+      size >= 90 ||
+      (size >= 28 && /[.?!…]["')\]]*$/.test(words[index]!.text))
+    ) {
+      result.push([from, index + 1]);
+      from = index + 1;
+    }
+  }
+  return result;
+}
+
+const normalize = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}']+/gu, "");
+
+function clock(seconds: number) {
+  const whole = Math.max(0, Math.floor(seconds));
+  const pad = (value: number) => String(value).padStart(2, "0");
+  const hours = Math.floor(whole / 3600);
+  return hours
+    ? `${hours}:${pad(Math.floor(whole / 60) % 60)}:${pad(whole % 60)}`
+    : `${Math.floor(whole / 60)}:${pad(whole % 60)}`;
+}
+
+const Paragraph = memo(function Paragraph({
+  words,
+  from,
+  to,
+  active,
+  selFirst,
+  selLast,
+  marks,
+  current,
+  busy,
+}: {
+  words: readonly TranscriptWord[];
+  from: number;
+  to: number;
+  active: number;
+  selFirst: number;
+  selLast: number;
+  marks: Uint8Array;
+  current: boolean;
+  busy: boolean;
+}) {
+  const items = [];
+  for (let index = from; index < to; index++) {
+    const word = words[index]!;
+    items.push(
+      <button
+        type="button"
+        data-transcript-word=""
+        data-index={index}
+        key={index}
+        aria-label={`${word.text} at ${transcriptTime(word.start)}`}
+        aria-pressed={index >= selFirst && index <= selLast}
+        aria-current={index === active ? "true" : undefined}
+        data-match={marks[index] === 2 ? "current" : marks[index] === 1 ? "" : undefined}
+        disabled={busy}
+      >
+        {word.text}
+      </button>,
+    );
+  }
+  return (
+    <div data-transcript-paragraph="" data-current={current ? "" : undefined}>
+      <button
+        type="button"
+        data-transcript-time=""
+        data-seek={from}
+        tabIndex={-1}
+        aria-label={`Seek to ${transcriptTime(words[from]!.start)}`}
+        disabled={busy}
+      >
+        {clock(words[from]!.start)}
+      </button>
+      <p>{items}</p>
+    </div>
+  );
+});
 
 export function TranscriptView({
   context,
@@ -70,6 +214,7 @@ export function TranscriptView({
   transcriptionDisabled = false,
   agentStatus = "idle",
   agentOutcome = null,
+  active = true,
 }: {
   context: PremiereContext;
   disabled: boolean;
@@ -79,17 +224,23 @@ export function TranscriptView({
   transcriptionDisabled?: boolean;
   agentStatus?: string;
   agentOutcome?: string | null;
+  /** The tab is visible; only then does the view follow the playhead and timeline. */
+  active?: boolean;
 }) {
   const key = transcriptStorageKey(context);
   const [stored, setStored] = useState(() => readStored(key));
   const [selection, setSelection] = useState<{ anchor: number; focus: number } | null>(null);
-  const [page, setPage] = useState(0);
   const [following, setFollowing] = useState(true);
   const [offset, setOffset] = useState(String(stored.transcript?.offset ?? 0));
   const [operationBusy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [confirmCut, setConfirmCut] = useState(false);
   const [fixScript, setFixScript] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [candidates, setCandidates] = useState<ReturnType<typeof voiceCandidates> | null>(null);
+  const [query, setQuery] = useState("");
+  const [matchCursor, setMatchCursor] = useState(0);
   const [job, setJob] = useState<string | null>(null);
   const [whisperState, setWhisperState] = useState<"idle" | "transcribing" | "loaded" | "failed">(
     "idle",
@@ -104,27 +255,142 @@ export function TranscriptView({
   }, [agentOutcome]);
   const gesture = useRef<{ anchor: number; dragged: boolean } | null>(null);
   const input = useRef<HTMLInputElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const wordArea = useRef<HTMLDivElement>(null);
   const operation = useRef(false);
+  const storedRef = useRef(stored);
+  storedRef.current = stored;
+
+  const live = usePlayheadClock(active);
+  const playhead = live ?? context.playheadSeconds;
+  const fps = context.fps > 0 ? context.fps : 30;
   const doc = stored.transcript;
-  const words = doc?.words ?? [];
-  const preceding = precedingWord(words, context.playheadSeconds);
-  const current =
-    preceding >= 0 && words[preceding]!.end > context.playheadSeconds ? preceding : -1;
-  const currentPage =
-    following && preceding >= 0
-      ? Math.floor(preceding / PAGE_SIZE)
-      : Math.min(page, Math.max(0, Math.ceil(words.length / PAGE_SIZE) - 1));
-  const first = currentPage * PAGE_SIZE;
-  const range = selection
-    ? selectionRange(words, selection.anchor, selection.focus, context.fps)
-    : null;
+  const link = stored.link ?? null;
+  const words = useMemo<readonly TranscriptWord[]>(
+    () => (!doc ? [] : link ? placeWords(sourceTimes(doc), link.segments) : doc.words),
+    [doc, link],
+  );
+  const blocks = useMemo(() => paragraphs(words), [words]);
+  const current = wordAtTime(words, playhead, fps);
+  const anchorWord = current >= 0 ? current : lastWordBefore(words, playhead, fps);
+  const range = selection ? selectionRange(words, selection.anchor, selection.focus, fps) : null;
+
+  const normalized = useMemo(() => words.map((word) => normalize(word.text)), [words]);
+  const tokens = useMemo(() => query.split(/\s+/).map(normalize).filter(Boolean), [query]);
+  const matches = useMemo(() => {
+    const found: number[] = [];
+    if (!tokens.length) return found;
+    for (let index = 0; index + tokens.length <= normalized.length && found.length < 5000; index++)
+      if (
+        tokens.every((token, k) =>
+          k === tokens.length - 1
+            ? normalized[index + k]!.startsWith(token)
+            : normalized[index + k] === token,
+        )
+      )
+        found.push(index);
+    return found;
+  }, [normalized, tokens]);
+  const cursor = matches.length ? Math.min(matchCursor, matches.length - 1) : -1;
+  const marks = useMemo(() => {
+    const result = new Uint8Array(words.length);
+    matches.forEach((start, n) => {
+      for (let k = 0; k < tokens.length; k++) result[start + k] = n === cursor ? 2 : 1;
+    });
+    return result;
+  }, [words.length, matches, tokens.length, cursor]);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
+  }, []);
+
+  function persist(next: StoredTranscript, destination = key) {
+    storedRef.current = next;
+    setStored(next);
+    try {
+      localStorage.setItem(destination, JSON.stringify(next));
+    } catch {
+      setError(
+        "Browser storage is full or unavailable. Keep this panel open; the transcript and undo could not be saved.",
+      );
+    }
+  }
+
+  async function snapshot() {
+    const reply = await requestTimelineSnapshot(false, context.sequenceId);
+    return reply.snapshot ?? null;
+  }
+
+  // Older imports are linked to their voice-over clip once, when the timeline allows it.
+  useEffect(() => {
+    if (!active || !doc || stored.link !== undefined) return;
+    let disposed = false;
+    void (async () => {
+      const timeline = linkable(doc) ? await snapshot().catch(() => null) : null;
+      if (disposed || storedRef.current.transcript !== doc) return;
+      const found = timeline ? findVoiceLink(timeline, sourceFile(doc)) : null;
+      persist({
+        ...storedRef.current,
+        transcript: found ? { ...doc, offset: 0, words: sourceTimes(doc) } : doc,
+        link: found,
+      });
+      if (found) setOffset("0");
+    })();
+    return () => {
+      disposed = true;
+    };
+  }, [active, doc, stored.link]);
+
+  // A linked transcript re-reads its clips while the playhead rests, so edits made
+  // anywhere in Premiere move the words with the audio.
+  const resting = useRef({ playhead, still: 0 });
+  useEffect(() => {
+    if (!active || !link || busy) return;
+    let disposed = false;
+    let reading = false;
+    const timer = setInterval(() => {
+      const rest = resting.current;
+      if (reading || rest.still < 2) return;
+      reading = true;
+      void snapshot()
+        .then((timeline) => {
+          const saved = storedRef.current;
+          if (disposed || !timeline || !saved.link) return;
+          const fresh = refreshVoiceLink(timeline, saved.link);
+          if (!fresh) {
+            setNotice(
+              `"${saved.link.mediaName}" is no longer on A${saved.link.trackIndex + 1}. Relink it from the menu.`,
+            );
+            return;
+          }
+          setNotice(null);
+          if (JSON.stringify(fresh.segments) !== JSON.stringify(saved.link.segments)) {
+            persist({ ...saved, link: fresh });
+            setSelection(null);
+            setConfirmCut(false);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          reading = false;
+        });
+    }, 1000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, [active, link?.mediaName, link?.trackIndex, busy, context.sequenceId]);
+  useEffect(() => {
+    const rest = resting.current;
+    if (rest.playhead !== playhead) resting.current = { playhead, still: 0 };
+  }, [playhead]);
+  useEffect(() => {
+    const timer = setInterval(() => resting.current.still++, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -143,11 +409,10 @@ export function TranscriptView({
           return;
         }
         const transcript = importWhisperHandoff(handoff.content, context, job);
-        persist({ transcript, undo: stored.undo, uncertain: false });
+        persist({ transcript, undo: storedRef.current.undo, uncertain: false, link: null });
         setOffset("0");
         setSelection(null);
-        setPage(0);
-        setFollowing(false);
+        setFollowing(true);
         setConfirmCut(false);
         setWhisperState("loaded");
         setJob(null);
@@ -174,6 +439,7 @@ export function TranscriptView({
     if (!onTranscribe || starting.current || job || operation.current || transcriptionDisabled)
       return;
     starting.current = true;
+    setMenuOpen(false);
     const attempt = ++generation.current;
     setWhisperState("transcribing");
     setError(null);
@@ -192,35 +458,52 @@ export function TranscriptView({
     }
   }
 
+  // Keeps the spoken word in the upper part of the view without jumping on every word.
   useEffect(() => {
-    if (following && current >= 0 && wordArea.current?.offsetParent)
-      wordArea.current.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
-  }, [current, following]);
+    const area = wordArea.current;
+    if (!following || anchorWord < 0 || !area?.offsetParent) return;
+    const element = area.querySelector<HTMLElement>(`[data-index="${anchorWord}"]`);
+    if (!element) return;
+    const box = area.getBoundingClientRect();
+    const target = element.getBoundingClientRect();
+    const top = target.top - box.top;
+    if (top >= box.height * 0.12 && top + target.height <= box.height * 0.7) return;
+    const distance = top - box.height * 0.3;
+    area.scrollTo({
+      top: area.scrollTop + distance,
+      behavior: Math.abs(distance) > box.height * 1.5 ? "auto" : "smooth",
+    });
+  }, [anchorWord, following, words]);
 
-  function persist(next: StoredTranscript, destination = key) {
-    setStored(next);
-    try {
-      localStorage.setItem(destination, JSON.stringify(next));
-    } catch {
-      setError(
-        "Browser storage is full or unavailable. Keep this panel open; the transcript and undo could not be saved.",
-      );
-    }
-  }
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [menuOpen]);
 
   async function importFile(file: File) {
     if (operation.current) return;
     operation.current = true;
     setBusy(true);
     setError(null);
+    setMenuOpen(false);
     try {
       if (file.size > 10000000) throw new Error("Choose a transcript smaller than 10 MB.");
       const transcript = parseTranscript(await file.text(), file.name);
-      persist({ transcript, undo: stored.undo, uncertain: false });
+      const timeline = await snapshot().catch(() => null);
+      const found = timeline ? findVoiceLink(timeline, file.name) : null;
+      persist({ transcript, undo: storedRef.current.undo, uncertain: false, link: found });
+      setNotice(
+        found
+          ? null
+          : "No clip on the timeline matches this file name. Times start at sequence zero; pick the voice-over clip in the menu to sync it.",
+      );
       setOffset("0");
       setSelection(null);
-      setPage(0);
-      setFollowing(false);
+      setFollowing(true);
       setConfirmCut(false);
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Could not read this transcript.");
@@ -228,6 +511,41 @@ export function TranscriptView({
       operation.current = false;
       setBusy(false);
     }
+  }
+
+  async function openMenu() {
+    const opening = !menuOpen;
+    setMenuOpen(opening);
+    if (opening && doc && linkable(doc)) {
+      const timeline = await snapshot().catch(() => null);
+      if (mounted.current) setCandidates(timeline ? voiceCandidates(timeline) : []);
+    }
+  }
+
+  async function chooseLink(value: string) {
+    if (!doc) return;
+    setError(null);
+    if (value === "sequence") {
+      persist({ ...stored, transcript: { ...doc, offset: 0, words: sourceTimes(doc) }, link: null });
+      setOffset("0");
+      setNotice(null);
+      return;
+    }
+    const choice = candidates?.[Number(value)];
+    const timeline = choice ? await snapshot().catch(() => null) : null;
+    const fresh = timeline && choice ? refreshVoiceLink(timeline, choice) : null;
+    if (!fresh) {
+      setError("That clip is no longer on the timeline. Reopen the menu to refresh the list.");
+      return;
+    }
+    persist({
+      ...storedRef.current,
+      transcript: { ...doc, offset: 0, words: sourceTimes(doc) },
+      link: fresh,
+    });
+    setOffset("0");
+    setNotice(null);
+    setSelection(null);
   }
 
   async function cut() {
@@ -247,8 +565,11 @@ export function TranscriptView({
         start: range.start,
         end: range.end,
       });
+      // Linked words follow the cut through the refreshed clip positions instead.
+      const timeline = link ? await snapshot().catch(() => null) : null;
+      const fresh = timeline && link ? refreshVoiceLink(timeline, link) : null;
       persist({
-        transcript: result.cutError ? doc : rippleTranscript(doc, range.start, range.end),
+        transcript: result.cutError || link ? doc : rippleTranscript(doc, range.start, range.end),
         undo: {
           before: doc,
           checkpointId: result.checkpointId,
@@ -256,6 +577,7 @@ export function TranscriptView({
           expectedSignature: result.expectedSignature,
         },
         uncertain: result.cutError !== null,
+        link: fresh ?? link,
       });
       await pruneCheckpoints(context.sequenceId, result.checkpointId).catch(() => {});
       setSelection(null);
@@ -263,7 +585,7 @@ export function TranscriptView({
       if (result.cutError) setError(`${result.cutError} The checkpoint is available below.`);
     } catch (problem) {
       // A timeout can mean the host changed the sequence without returning the checkpoint ID.
-      persist({ ...stored, uncertain: true });
+      persist({ ...storedRef.current, uncertain: true });
       setError(
         `${problem instanceof Error ? problem.message : "Cut failed."} Inspect the timeline and Axis checkpoints before reimporting or retrying.`,
       );
@@ -282,10 +604,10 @@ export function TranscriptView({
     onBusy(true);
     setError(null);
     try {
-      const live = await requestTimelineSnapshot(false, context.sequenceId);
+      const reply = await requestTimelineSnapshot(false, context.sequenceId);
       if (
-        live.signature !== saved.expectedSignature ||
-        !live.checkpointIds.includes(saved.checkpointId)
+        reply.signature !== saved.expectedSignature ||
+        !reply.checkpointIds.includes(saved.checkpointId)
       )
         throw new Error(
           "The timeline changed or its checkpoint was pruned. Open the preserved Axis checkpoint manually to recover the earlier version.",
@@ -301,7 +623,7 @@ export function TranscriptView({
         throw new Error(
           "Premiere restored the checkpoint but did not return its sequence ID. Reimport the transcript in the restored sequence.",
         );
-      const next = { transcript: saved.before, undo: null, uncertain: false };
+      const next = { transcript: saved.before, undo: null, uncertain: false, link };
       persist(next, transcriptStorageKey(context, restoredId));
       // Restore opens the clone; the preserved after sequence keeps its own transcript.
       localStorage.setItem(key, JSON.stringify({ ...stored, undo: null }));
@@ -316,167 +638,296 @@ export function TranscriptView({
     }
   }
 
+  function goToMatch(step: number) {
+    if (!matches.length) return;
+    const next = (cursor + step + matches.length) % matches.length;
+    const start = matches[next]!;
+    setMatchCursor(next);
+    setFollowing(false);
+    setSelection({ anchor: start, focus: start + tokens.length - 1 });
+    setConfirmCut(false);
+    seekPremiere(seekTime(words[start]!.start, fps), context.sequenceId);
+    requestAnimationFrame(() =>
+      wordArea.current
+        ?.querySelector(`[data-index="${start}"]`)
+        ?.scrollIntoView({ block: "center" }),
+    );
+  }
+
+  function wordIndex(target: EventTarget | null) {
+    const element = (target as HTMLElement | null)?.closest?.("[data-index]");
+    return element ? Number(element.getAttribute("data-index")) : -1;
+  }
+
+  function onSearchKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      goToMatch(event.shiftKey ? -1 : 1);
+    } else if (event.key === "Escape") {
+      setQuery("");
+      search.current?.blur();
+    }
+  }
+
+  const transcribing = whisperState === "transcribing";
+  const whisperButton = (
+    <button
+      type="button"
+      data-primary={doc ? undefined : ""}
+      disabled={!onTranscribe || transcriptionDisabled || busy}
+      onClick={() => void transcribe()}
+    >
+      Transcribe with WhisperX
+    </button>
+  );
+  const scriptToggle = (
+    <label data-transcript-check="">
+      <input
+        type="checkbox"
+        checked={fixScript}
+        disabled={transcribing}
+        onChange={(event) => setFixScript(event.target.checked)}
+      />
+      Fix with script
+    </label>
+  );
+  const fileInput = (
+    <input
+      ref={input}
+      type="file"
+      accept=".json,.srt,.vtt"
+      aria-label="Import transcript file"
+      hidden
+      disabled={busy}
+      onChange={(event) => {
+        const file = event.target.files?.[0];
+        if (file) void importFile(file);
+        event.target.value = "";
+      }}
+    />
+  );
+  const linkValue = link
+    ? String(
+        candidates?.findIndex(
+          (candidate) =>
+            candidate.trackIndex === link.trackIndex && candidate.mediaName === link.mediaName,
+        ) ?? -1,
+      )
+    : "sequence";
+
   return (
     <section data-sequence-transcript="" aria-label="Sequence transcript" aria-busy={busy}>
-      <div data-transcript-tools="">
-        <div>
-          <strong>{context.sequenceName}</strong>
-          <small>{doc?.source ?? "Import a voice-over or dialogue transcript"}</small>
-        </div>
-        <button type="button" disabled={busy} onClick={() => input.current?.click()}>
-          {doc ? "Replace transcript" : "Import transcript"}
-        </button>
-        <input
-          ref={input}
-          type="file"
-          accept=".json,.srt,.vtt"
-          aria-label="Import transcript file"
-          hidden
-          disabled={busy}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) void importFile(file);
-            event.target.value = "";
-          }}
-        />
-      </div>
-      <div data-whisper-controls="">
-        <button
-          type="button"
-          disabled={!onTranscribe || transcriptionDisabled || busy}
-          onClick={() => void transcribe()}
-        >
-          Transcribe with WhisperX
-        </button>
-        <label>
-          <input
-            type="checkbox"
-            checked={fixScript}
-            disabled={whisperState === "transcribing"}
-            onChange={(event) => setFixScript(event.target.checked)}
-          />{" "}
-          Fix with script
-        </label>
-        {whisperState === "transcribing" ? (
-          <button
-            type="button"
-            onClick={() => {
-              generation.current++;
-              setJob(null);
-              setWhisperState("idle");
-            }}
-          >
-            Stop waiting
-          </button>
-        ) : null}
-      </div>
-      <p role="status" data-transcript-hint="">
-        {whisperState === "transcribing"
-          ? `Transcribing · ${agentStatus}. Agent details and questions are in Conversation. Stop waiting does not stop the agent.`
-          : whisperState === "loaded"
-            ? "WhisperX transcript loaded and saved."
-            : whisperState === "failed"
-              ? "WhisperX transcription failed. See the reason below."
-              : "Transcription uses a separate conversation that can write transcript files. It does not edit the timeline."}
-      </p>
+      {fileInput}
       {doc ? (
-        <>
-          <form
-            data-transcript-mapping=""
-            onSubmit={(event) => {
-              event.preventDefault();
-              setError(null);
-              try {
-                if (!offset.trim()) throw new Error("Enter a sequence offset in seconds.");
-                const delta = Number(offset) - doc.offset;
-                persist({
-                  ...stored,
-                  transcript: {
-                    ...doc,
-                    offset: Number(offset),
-                    words: mapTranscript(doc.words, delta),
-                  },
-                });
-                setSelection(null);
-                setConfirmCut(false);
-              } catch (problem) {
-                setError(problem instanceof Error ? problem.message : "Invalid offset.");
-              }
-            }}
-          >
-            <label>
-              Sequence offset (seconds)
-              <input
-                type="number"
-                step="any"
-                value={offset}
-                disabled={busy}
-                onChange={(event) => setOffset(event.target.value)}
-              />
-            </label>
-            <button type="submit" disabled={busy}>
-              Apply offset
-            </button>
-            <button
-              type="button"
-              aria-pressed={following}
-              onClick={() => {
-                setPage(currentPage);
-                setFollowing(!following);
+        <header data-transcript-bar="">
+          <div data-transcript-search="">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="7" cy="7" r="4.5" />
+              <path d="M10.5 10.5 14 14" />
+            </svg>
+            <input
+              ref={search}
+              type="search"
+              placeholder="Search transcript"
+              aria-label="Search transcript"
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setMatchCursor(0);
               }}
-            >
-              Follow playhead
-            </button>
-          </form>
-          <p data-transcript-hint="">
-            Click to seek. Drag or Shift-click to select words.{" "}
-            {doc.timing === "estimated"
-              ? "Subtitle word times are estimated within each cue. Check the range before cutting."
-              : "Word timestamps from your imported file."}{" "}
-            Reimport after edits made outside this view.
-          </p>
-          <div data-transcript-actions="" aria-label="Transcript selection actions">
-            <span>
-              {range
-                ? `${transcriptTime(range.start)} - ${transcriptTime(range.end)}`
-                : `${words.length.toLocaleString()} words`}
-            </span>
-            <button
-              type="button"
-              disabled={!range || busy}
-              onClick={() => {
-                if (range) onAsk(transcriptContext(doc, range, context.sequenceName));
-              }}
-            >
-              Ask Axis
-            </button>
-            <button
-              type="button"
-              disabled={!range || busy || disabled || stored.uncertain}
-              onClick={() => void cut()}
-            >
-              {confirmCut ? "Confirm ripple cut" : "Cut from timeline"}
-            </button>
-            {confirmCut ? (
-              <button type="button" disabled={busy} onClick={() => setConfirmCut(false)}>
-                Cancel cut
-              </button>
+              onKeyDown={onSearchKey}
+            />
+            {tokens.length ? (
+              <>
+                <span data-transcript-count="" aria-live="polite">
+                  {matches.length
+                    ? `${cursor + 1} / ${matches.length.toLocaleString()}`
+                    : "No matches"}
+                </span>
+                <button
+                  type="button"
+                  data-icon=""
+                  aria-label="Previous match"
+                  disabled={!matches.length}
+                  onClick={() => goToMatch(-1)}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  data-icon=""
+                  aria-label="Next match"
+                  disabled={!matches.length}
+                  onClick={() => goToMatch(1)}
+                >
+                  ↓
+                </button>
+              </>
             ) : null}
           </div>
-          {confirmCut ? (
-            <p data-transcript-hint="">
-              Removes this range from every unlocked audio/video track and closes the gap. Locked
-              tracks, captions and sequence markers stay in place. A sequence checkpoint protects
-              the cut.
-            </p>
-          ) : null}
-        </>
+          <button
+            type="button"
+            data-transcript-follow=""
+            aria-label="Follow playhead"
+            aria-pressed={following}
+            onClick={() => setFollowing(!following)}
+          >
+            <span aria-hidden="true" />
+            Follow
+          </button>
+          <div data-transcript-menu="" ref={menu}>
+            <button
+              type="button"
+              data-icon=""
+              aria-label="Transcript options"
+              aria-expanded={menuOpen}
+              onClick={() => void openMenu()}
+            >
+              ⋯
+            </button>
+            {menuOpen ? (
+              <div data-transcript-popover="" role="dialog" aria-label="Transcript options">
+                <section>
+                  <h3>Source</h3>
+                  <p>{doc.source}</p>
+                  <div data-row="">
+                    <button type="button" disabled={busy} onClick={() => input.current?.click()}>
+                      Replace transcript
+                    </button>
+                  </div>
+                </section>
+                <section>
+                  <h3>WhisperX</h3>
+                  <div data-row="">
+                    {whisperButton}
+                    {scriptToggle}
+                  </div>
+                  <p>Runs in its own conversation. It writes a transcript file only.</p>
+                </section>
+                {linkable(doc) ? (
+                  <section>
+                    <h3>Sync</h3>
+                    <select
+                      aria-label="Sync transcript to"
+                      value={linkValue}
+                      disabled={busy || candidates === null}
+                      onChange={(event) => void chooseLink(event.target.value)}
+                    >
+                      {link && linkValue === "-1" ? (
+                        <option value="-1">
+                          A{link.trackIndex + 1} · {link.mediaName}
+                        </option>
+                      ) : null}
+                      {(candidates ?? []).map((candidate, index) => (
+                        <option key={`${candidate.trackIndex}:${candidate.mediaName}`} value={index}>
+                          A{candidate.trackIndex + 1} · {candidate.mediaName}
+                        </option>
+                      ))}
+                      <option value="sequence">Sequence time (manual offset)</option>
+                    </select>
+                    {link ? (
+                      <p>Words follow this clip, including trims and cuts made in Premiere.</p>
+                    ) : (
+                      <form
+                        data-row=""
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          setError(null);
+                          try {
+                            if (!offset.trim()) throw new Error("Enter a sequence offset in seconds.");
+                            const delta = Number(offset) - doc.offset;
+                            persist({
+                              ...stored,
+                              transcript: {
+                                ...doc,
+                                offset: Number(offset),
+                                words: mapTranscript(doc.words, delta),
+                              },
+                            });
+                            setSelection(null);
+                            setConfirmCut(false);
+                          } catch (problem) {
+                            setError(problem instanceof Error ? problem.message : "Invalid offset.");
+                          }
+                        }}
+                      >
+                        <label>
+                          Sequence offset (seconds)
+                          <input
+                            type="number"
+                            step="any"
+                            value={offset}
+                            disabled={busy}
+                            onChange={(event) => setOffset(event.target.value)}
+                          />
+                        </label>
+                        <button type="submit" disabled={busy}>
+                          Apply offset
+                        </button>
+                      </form>
+                    )}
+                  </section>
+                ) : null}
+                {doc.timing === "estimated" ? (
+                  <p data-transcript-warn="">
+                    Subtitle files only time whole cues, so word times are estimated. Check a range
+                    before cutting it.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </header>
+      ) : null}
+      {doc ? (
+        <p data-transcript-meta="">
+          <span data-synced={link ? "" : undefined} aria-hidden="true" />
+          {link
+            ? `Synced to A${link.trackIndex + 1} · ${link.mediaName}`
+            : linkable(doc)
+              ? `Sequence time${doc.offset ? ` + ${doc.offset} s` : ""} · ${sourceFile(doc)}`
+              : doc.source}
+          <span> · {words.length.toLocaleString()} words</span>
+        </p>
+      ) : null}
+      {transcribing || whisperState === "loaded" || whisperState === "failed" ? (
+        <div data-transcript-banner={whisperState}>
+          <p role="status">
+            {transcribing
+              ? `Transcribing · ${agentStatus}. Agent details and questions are in Conversation. Stop waiting does not stop the agent.`
+              : whisperState === "loaded"
+                ? "WhisperX transcript loaded and saved."
+                : "WhisperX transcription failed. See the reason below."}
+          </p>
+          {transcribing ? (
+            <button
+              type="button"
+              onClick={() => {
+                generation.current++;
+                setJob(null);
+                setWhisperState("idle");
+              }}
+            >
+              Stop waiting
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-icon=""
+              aria-label="Dismiss"
+              onClick={() => setWhisperState("idle")}
+            >
+              ×
+            </button>
+          )}
+        </div>
       ) : null}
       {error ? (
         <p role="alert" data-error="">
           {error}
         </p>
       ) : null}
+      {notice ? <p data-notice="">{notice}</p> : null}
       {stored.uncertain ? (
         <p data-notice="">
           Transcript timing needs review. Undo the cut or reimport after checking the timeline.
@@ -484,116 +935,163 @@ export function TranscriptView({
       ) : null}
       {stored.undo ? (
         <div data-transcript-undo="">
-          <span>Last transcript cut protected by a sequence checkpoint.</span>
+          <span>Last transcript cut is protected by a checkpoint.</span>
           <button type="button" disabled={disabled || busy} onClick={() => void undo()}>
             Undo transcript cut
           </button>
         </div>
       ) : null}
-      <div
-        ref={wordArea}
-        data-transcript-words=""
-        data-shot-scroll=""
-        onPointerLeave={() => {
-          gesture.current = null;
-        }}
-      >
-        {!doc ? (
-          <div data-transcript-empty="">
-            <h1>Edit the story in words.</h1>
-            <p>
-              Import WhisperX JSON for precise word timing, or SRT / VTT for estimated word timing.
-            </p>
-            <p>
-              File times start at sequence zero. Apply an offset to align a voice-over placed later
-              in the sequence.
-            </p>
+      {!doc ? (
+        <div data-transcript-empty="">
+          <h1>Edit the story in words</h1>
+          <p>
+            Transcribe this sequence's voice-over, or import a WhisperX JSON, SRT or VTT file.
+            Imported files sync to their clip on the timeline automatically.
+          </p>
+          <div data-row="">
+            {whisperButton}
+            <button type="button" disabled={busy} onClick={() => input.current?.click()}>
+              Import transcript
+            </button>
           </div>
-        ) : null}
-        {doc && !words.length ? (
-          <p>The imported words have all been cut. Undo to restore them.</p>
-        ) : null}
-        {Array.from(
-          { length: Math.ceil(Math.min(PAGE_SIZE, words.length - first) / 24) },
-          (_, row) => (
-            <div data-transcript-paragraph="" key={first + row * 24}>
-              <span data-transcript-time="">{transcriptTime(words[first + row * 24]!.start)}</span>
-              <p>
-                {words
-                  .slice(first + row * 24, Math.min(first + (row + 1) * 24, first + PAGE_SIZE))
-                  .map((word, n) => {
-                    const index = first + row * 24 + n;
-                    return (
-                      <button
-                        type="button"
-                        data-transcript-word=""
-                        key={index}
-                        aria-label={`${word.text} at ${transcriptTime(word.start)}`}
-                        aria-pressed={!!range && index >= range.first && index <= range.last}
-                        aria-current={current === index ? "true" : undefined}
-                        disabled={busy}
-                        onPointerDown={(event) => {
-                          if (event.button !== 0) return;
-                          gesture.current = {
-                            anchor: event.shiftKey && selection ? selection.anchor : index,
-                            dragged: false,
-                          };
-                        }}
-                        onPointerEnter={(event) => {
-                          if (gesture.current && event.buttons === 1) {
-                            gesture.current.dragged = true;
-                            setSelection({ anchor: gesture.current.anchor, focus: index });
-                            setConfirmCut(false);
-                            setFollowing(false);
-                          }
-                        }}
-                        onClick={(event) => {
-                          if (!gesture.current?.dragged) {
-                            setSelection({
-                              anchor: event.shiftKey && selection ? selection.anchor : index,
-                              focus: index,
-                            });
-                            setConfirmCut(false);
-                            if (!event.shiftKey) seekPremiere(word.start, context.sequenceId);
-                          }
-                          gesture.current = null;
-                        }}
-                      >
-                        {word.text}
-                      </button>
-                    );
-                  })}
+          {scriptToggle}
+        </div>
+      ) : (
+        <div data-transcript-body="">
+          <div
+            ref={wordArea}
+            data-transcript-words=""
+            data-shot-scroll=""
+            tabIndex={-1}
+            onWheel={() => setFollowing(false)}
+            onTouchMove={() => setFollowing(false)}
+            onPointerDown={(event) => {
+              if (event.target === event.currentTarget) setFollowing(false);
+              const index = wordIndex(event.target);
+              if (event.button !== 0 || index < 0) return;
+              gesture.current = {
+                anchor: event.shiftKey && selection ? selection.anchor : index,
+                dragged: false,
+              };
+            }}
+            onPointerOver={(event) => {
+              const index = wordIndex(event.target);
+              if (!gesture.current || event.buttons !== 1 || index < 0) return;
+              if (index === gesture.current.anchor && !gesture.current.dragged) return;
+              gesture.current.dragged = true;
+              setSelection({ anchor: gesture.current.anchor, focus: index });
+              setConfirmCut(false);
+              setFollowing(false);
+            }}
+            onPointerLeave={() => {
+              gesture.current = null;
+            }}
+            onClick={(event) => {
+              const seek = (event.target as HTMLElement).closest?.("[data-seek]");
+              if (seek) {
+                const index = Number(seek.getAttribute("data-seek"));
+                seekPremiere(seekTime(words[index]!.start, fps), context.sequenceId);
+                setFollowing(true);
+                return;
+              }
+              const index = wordIndex(event.target);
+              if (index < 0) return;
+              if (!gesture.current?.dragged) {
+                setSelection({
+                  anchor: event.shiftKey && selection ? selection.anchor : index,
+                  focus: index,
+                });
+                setConfirmCut(false);
+                if (!event.shiftKey) {
+                  seekPremiere(seekTime(words[index]!.start, fps), context.sequenceId);
+                  setFollowing(true);
+                }
+              }
+              gesture.current = null;
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setSelection(null);
+                setConfirmCut(false);
+              }
+            }}
+          >
+            {!words.length ? (
+              <p data-transcript-none="">
+                {doc.words.length
+                  ? "None of these words are on the timeline. Check the sync clip in the menu."
+                  : "The imported words have all been cut. Undo to restore them."}
               </p>
-            </div>
-          ),
-        )}
-      </div>
-      {words.length > PAGE_SIZE ? (
-        <nav data-transcript-pages="" aria-label="Transcript pages">
-          <button
-            type="button"
-            disabled={currentPage === 0}
-            onClick={() => {
-              setPage(currentPage - 1);
-              setFollowing(false);
-            }}
-          >
-            Previous words
-          </button>
-          <span>
-            {first + 1}-{Math.min(first + PAGE_SIZE, words.length)} of {words.length}
-          </span>
-          <button
-            type="button"
-            disabled={first + PAGE_SIZE >= words.length}
-            onClick={() => {
-              setPage(currentPage + 1);
-              setFollowing(false);
-            }}
-          >
-            Next words
-          </button>
-        </nav>
+            ) : null}
+            {blocks.map(([from, to]) => (
+              <Paragraph
+                key={from}
+                words={words}
+                from={from}
+                to={to}
+                active={current >= from && current < to ? current : -1}
+                selFirst={range && range.last >= from && range.first < to ? range.first : -1}
+                selLast={range && range.last >= from && range.first < to ? range.last : -2}
+                marks={marks}
+                current={anchorWord >= from && anchorWord < to}
+                busy={busy}
+              />
+            ))}
+          </div>
+          {!following && words.length ? (
+            <button type="button" data-transcript-jump="" onClick={() => setFollowing(true)}>
+              Jump to playhead
+            </button>
+          ) : null}
+        </div>
+      )}
+      {range ? (
+        <div data-transcript-actions="" role="group" aria-label="Transcript selection actions">
+          {confirmCut ? (
+            <>
+              <span>
+                Ripple-cut {(range.end - range.start).toFixed(2)} s from every unlocked track?
+                Locked tracks, captions and markers stay put.
+              </span>
+              <button type="button" data-danger="" disabled={busy} onClick={() => void cut()}>
+                Confirm ripple cut
+              </button>
+              <button type="button" disabled={busy} onClick={() => setConfirmCut(false)}>
+                Cancel cut
+              </button>
+            </>
+          ) : (
+            <>
+              <span>
+                {range.last - range.first + 1} word{range.last === range.first ? "" : "s"} ·{" "}
+                {transcriptTime(range.start)} - {transcriptTime(range.end)}
+              </span>
+              <button
+                type="button"
+                data-primary=""
+                disabled={busy}
+                onClick={() => onAsk(transcriptContext(doc!, range, context.sequenceName))}
+              >
+                Ask Axis
+              </button>
+              <button
+                type="button"
+                disabled={busy || disabled || stored.uncertain}
+                onClick={() => void cut()}
+              >
+                Cut from timeline
+              </button>
+              <button
+                type="button"
+                data-icon=""
+                aria-label="Clear selection"
+                onClick={() => setSelection(null)}
+              >
+                ×
+              </button>
+            </>
+          )}
+        </div>
       ) : null}
     </section>
   );

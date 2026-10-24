@@ -712,6 +712,7 @@ export function PremiereApp() {
           <TranscriptView
             key={transcriptStorageKey(host.context)}
             context={host.context}
+            active={transcriptVisible}
             disabled={
               !canOperate ||
               !host.connected ||
