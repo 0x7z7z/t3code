@@ -164,6 +164,28 @@ test("coalesces context reads without dropping simultaneous send requests", asyn
   assert.equal(fixture.messages[0].packet.context.sequenceId, "sequence-a");
 });
 
+test("orders both playhead feeds by evalScript issue order, including coalesced requests", async () => {
+  const f = await panelFixture();
+  const contextRead = f.evaluations[0];
+  f.send({ type: "premiere.context.request", requestId: "first" });
+  f.send({ type: "premiere.transcript.active", enabled: true });
+  const playheadRead = f.evaluations.at(-1);
+  f.send({ type: "premiere.context.request", requestId: "second" });
+  playheadRead.callback("project-a|sequence-a|2");
+  contextRead.callback("premiere:Project|D%3A%2Fcut.prproj|project-a|Sequence|sequence-a|29.97|1");
+  const packets = f.messages.map(({ packet }) => packet);
+  assert.equal(packets[0].readId, 2);
+  assert.deepEqual(
+    packets.slice(1).map((packet) => packet.playheadReadId),
+    [1, 1],
+  );
+  f.send({ type: "premiere.context.request", requestId: "third" });
+  f.evaluations
+    .at(-1)
+    .callback("premiere:Project|D%3A%2Fcut.prproj|project-a|Sequence|sequence-a|29.97|3");
+  assert.equal(f.messages.at(-1).packet.playheadReadId, 3);
+});
+
 test("clears host context when Premiere has no active sequence", async () => {
   const fixture = await panelFixture();
   fixture.listeners.get("message")({
@@ -193,6 +215,7 @@ test("moves the playhead to a whole frame only in the sequence the chat refers t
   const run = (sequenceID) => {
     const positions = [];
     const result = vm.runInNewContext(fixture.evaluations.at(-1).script, {
+      JSON: undefined,
       app: {
         project: {
           activeSequence: {
@@ -205,9 +228,13 @@ test("moves the playhead to a whole frame only in the sequence the chat refers t
     });
     return { result, positions };
   };
-  // 1.01 s at 29.97 fps rounds to frame 30.
-  assert.deepEqual(run('sequence-"a'), { result: "premiere:ok", positions: ["254270016000"] });
+  // 1.01 s lies after frame 30, so the first boundary at or after it is frame 31.
+  assert.deepEqual(run('sequence-"a'), { result: "premiere:ok", positions: ["262745683200"] });
   assert.deepEqual(run("sequence-b"), { result: "premiere:mismatch", positions: [] });
+  for (const seconds of [(30 * 1001) / 30000, (30 * 1001) / 30000 + 0.0000005]) {
+    seek({ seconds, sequenceId: 'sequence-"a' });
+    assert.deepEqual(run('sequence-"a').positions, ["254270016000"]);
+  }
 });
 
 test("reads selected video/audio clips, bounded strings, and sequence in/out without JSON", async () => {

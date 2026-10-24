@@ -11,6 +11,7 @@
   var timer = null;
   var playheadTimer = null;
   var readingPlayhead = false;
+  var nextPlayheadReadId = 0;
   var nodeRequire =
     typeof require === "function" ? require : window.cep_node && window.cep_node.require;
   var runtime;
@@ -143,6 +144,7 @@
     if (readingContext) return;
     readingContext = true;
     var script = "(" + timelineContext.toString() + ")()";
+    var readId = ++nextPlayheadReadId;
     window.__adobe_cep__.evalScript(script, function (raw) {
       var next = null;
       try {
@@ -196,16 +198,22 @@
       var callbacks = contextCallbacks;
       contextCallbacks = [];
       callbacks.forEach(function (notify) {
-        notify(next);
+        notify(next, readId);
       });
     });
   }
 
   function publishContext(requestId) {
-    readContext(function (context) {
+    readContext(function (context, readId) {
       if (backendOrigin && frame.contentWindow)
         frame.contentWindow.postMessage(
-          { type: "premiere.context", protocol: 1, requestId: requestId || null, context: context },
+          {
+            type: "premiere.context",
+            protocol: 1,
+            requestId: requestId || null,
+            context: context,
+            playheadReadId: readId,
+          },
           backendOrigin,
         );
     });
@@ -230,6 +238,7 @@
     if (readingPlayhead || !playheadTimer || !window.__adobe_cep__) return;
     readingPlayhead = true;
     try {
+      var readId = ++nextPlayheadReadId;
       window.__adobe_cep__.evalScript("(" + playheadContext.toString() + ")()", function (raw) {
         readingPlayhead = false;
         if (!playheadTimer || !backendOrigin || !frame.contentWindow) return;
@@ -249,6 +258,7 @@
               projectId: decodeURIComponent(fields[0]),
               sequenceId: decodeURIComponent(fields[1]),
               seconds: Number(fields[2]),
+              readId: readId,
             },
             backendOrigin,
           );
@@ -759,9 +769,9 @@
       var seek =
         "(function(){var s=app.project&&app.project.activeSequence;if(!s||String(s.sequenceID)!==" +
         JSON.stringify(event.data.sequenceId) +
-        ')return "premiere:mismatch";var tb=parseFloat(s.timebase);s.setPlayerPosition(String(Math.round(' +
+        ')return "premiere:mismatch";var tb=parseFloat(s.timebase);s.setPlayerPosition(String(Math.max(0,Math.ceil((' +
         Number(event.data.seconds) +
-        '*254016000000/tb)*tb));return "premiere:ok";}())';
+        '-0.000001)*254016000000/tb))*tb));return "premiere:ok";}())';
       window.__adobe_cep__.evalScript(seek, function () {
         publishContext(null);
       });
