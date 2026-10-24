@@ -8,11 +8,17 @@ import type { TranscriptBlock } from "./transcript";
 import type { PremiereHostState } from "./host";
 import type { TurnChangeRecord } from "./turnChanges";
 
-const state = vi.hoisted(() => ({ snapshot: vi.fn(), restore: vi.fn(), seek: vi.fn() }));
+const state = vi.hoisted(() => ({
+  snapshot: vi.fn(),
+  restore: vi.fn(),
+  prune: vi.fn(),
+  seek: vi.fn(),
+}));
 vi.mock("./timelineHost", async (original) => ({
   ...(await original()),
   requestTimelineSnapshot: state.snapshot,
   restoreTimeline: state.restore,
+  pruneCheckpoints: state.prune,
 }));
 vi.mock("./host", async (original) => ({ ...(await original()), seekPremiere: state.seek }));
 
@@ -60,6 +66,7 @@ function setup() {
     .mockReset()
     .mockResolvedValue({ snapshot, signature: "after", checkpointIds: ["checkpoint"] });
   state.restore.mockReset().mockResolvedValue(undefined);
+  state.prune.mockReset().mockResolvedValue(undefined);
   state.seek.mockReset().mockReturnValue(true);
   return { record, host, onRestored: vi.fn() };
 }
@@ -238,6 +245,8 @@ it("captures before dispatch and after settlement, associates the reply, and res
   await expect.element(screen.getByText("Turn capture-turn: 1 changes")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(2);
   expect(state.snapshot).toHaveBeenLastCalledWith(false, "sequence");
+  // The changed turn's checkpoint is the only one undo can still use.
+  expect(state.prune).toHaveBeenCalledWith("sequence", "checkpoint");
   await screen.rerender(<CaptureTurn key="reloaded" status="completed" />);
   await expect.element(screen.getByText("Turn capture-turn: 1 changes")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(2);

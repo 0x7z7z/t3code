@@ -114,6 +114,27 @@ test("creates and verifies a clone with new clip IDs, bins it and reactivates th
   assert.equal(f.moves[0].value.name, "Axis checkpoints");
 });
 
+test("prunes this sequence's other checkpoints and leaves the kept one and unrelated sequences", () => {
+  const f = fixture();
+  const deleted = [];
+  const add = (sequenceID, name) => {
+    f.project.sequences[f.project.sequences.numSequences++] = { sequenceID, name };
+  };
+  add("old", "[Axis checkpoint sequence-a] Main Edit 1");
+  add("keep", "[Axis checkpoint sequence-a] Main Edit 2");
+  add("other", "[Axis checkpoint sequence-b] Other 1");
+  add("user", "Main Edit (after turn 1)");
+  f.project.deleteSequence = (seq) => {
+    deleted.push(seq.sequenceID);
+    return true;
+  };
+  assert.deepEqual(f.run("prune", false, "sequence-a", "keep"), { ok: true, removed: 1 });
+  assert.deepEqual(deleted, ["old"]);
+  deleted.length = 0;
+  assert.deepEqual(f.run("prune", false, "sequence-a", ""), { ok: true, removed: 2 });
+  assert.deepEqual(deleted.sort(), ["keep", "old"]);
+});
+
 test("opens the checkpoint on restore and preserves the after version without deleting anything", () => {
   const f = fixture();
   const checkpoint = f.run("snapshot", true);

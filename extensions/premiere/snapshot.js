@@ -137,6 +137,21 @@
       var originalId = String(original.sequenceID);
       if (sequenceId && originalId !== sequenceId)
         fail("The active sequence changed. Open the original sequence first.");
+      if (action === "prune") {
+        // Only the latest changed turn can be undone, so other checkpoints of
+        // this sequence are deleted instead of piling up in the project.
+        var removed = 0;
+        for (var p = app.project.sequences.numSequences - 1; p >= 0; p--) {
+          var old = app.project.sequences[p];
+          if (
+            String(old.name).indexOf(prefix(originalId)) === 0 &&
+            String(old.sequenceID) !== checkpointId &&
+            app.project.deleteSequence(old) !== false
+          )
+            removed++;
+        }
+        return "axis:" + json({ ok: true, removed: removed });
+      }
       var before = snapshot(original, true);
       if (action === "restore") {
         if (before.truncated || json(before) !== expected)
@@ -232,15 +247,23 @@
   /* eslint-enable no-unused-vars */
 
   function handle(data, cep, reply) {
-    if (data.type !== "premiere.snapshot.request" && data.type !== "premiere.restore.request")
+    if (
+      data.type !== "premiere.snapshot.request" &&
+      data.type !== "premiere.restore.request" &&
+      data.type !== "premiere.prune.request"
+    )
       return false;
     function valid(value, max) {
       return typeof value === "string" && value.length > 0 && value.length <= max;
     }
     if (!valid(data.requestId, 128)) return true;
     var restore = data.type === "premiere.restore.request";
+    var prune = data.type === "premiere.prune.request";
     if (
-      (!restore && typeof data.checkpoint !== "boolean") ||
+      (prune &&
+        (!valid(data.sequenceId, 512) ||
+          (data.keepId !== undefined && !valid(data.keepId, 512)))) ||
+      (!restore && !prune && typeof data.checkpoint !== "boolean") ||
       (data.sequenceId !== undefined && !valid(data.sequenceId, 512)) ||
       (restore &&
         (!valid(data.sequenceId, 512) ||
@@ -258,10 +281,10 @@
       return true;
     }
     var args = [
-      restore ? "restore" : "snapshot",
+      restore ? "restore" : prune ? "prune" : "snapshot",
       restore ? data.checkpointSignature : data.checkpoint === true,
       data.sequenceId || "",
-      data.checkpointId || "",
+      (prune ? data.keepId : data.checkpointId) || "",
       data.expectedSignature || "",
       data.turnNumber || 1,
     ];
@@ -289,6 +312,7 @@
               (!result.ok && typeof result.error !== "string") ||
               (result.ok &&
                 !restore &&
+                !prune &&
                 (!result.snapshot ||
                   typeof result.signature !== "string" ||
                   !Array.isArray(result.checkpointIds)))

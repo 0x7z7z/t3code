@@ -98,7 +98,7 @@ export interface SnapshotReply {
 }
 
 async function request(
-  type: "snapshot" | "restore",
+  type: "snapshot" | "restore" | "prune",
   fields: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   if (!isPremierePanel()) throw new Error("Premiere is not connected.");
@@ -167,6 +167,11 @@ export async function requestTimelineSnapshot(
     checkpointError: packet.checkpointError,
     checkpointIds: packet.checkpointIds,
   } as SnapshotReply;
+}
+
+/** Deletes the sequence's checkpoints other than `keepId`, which undo may still need. */
+export async function pruneCheckpoints(sequenceId: string, keepId: string | null): Promise<void> {
+  await request("prune", { sequenceId, ...(keepId ? { keepId } : {}) });
 }
 
 export async function restoreTimeline(fields: {

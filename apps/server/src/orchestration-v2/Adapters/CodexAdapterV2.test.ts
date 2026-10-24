@@ -203,6 +203,23 @@ describe("CodexAdapterV2 runtime policy", () => {
       assert.isDefined(withT3.additionalContext?.["t3_code_runtime"]);
     }),
   );
+
+  it.effect("returns a thread left in plan mode to default mode", () =>
+    Effect.gen(function* () {
+      const params = (previousCollaborationMode?: string) =>
+        CodexAdapterV2.buildCodexTurnStartParams({
+          nativeThreadId: "native-plan-then-edit",
+          codexInput: [{ type: "text", text: "Apply the plan." }],
+          runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: null },
+          modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+          previousCollaborationMode,
+        });
+      assert.equal((yield* params("plan")).collaborationMode?.mode, "default");
+      assert.isUndefined((yield* params("default")).collaborationMode);
+      assert.equal((yield* params("unknown")).collaborationMode?.mode, "default");
+      assert.isUndefined((yield* params()).collaborationMode);
+    }),
+  );
 });
 
 describe("CodexAdapterV2 native protocol logging", () => {

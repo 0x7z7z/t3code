@@ -6,7 +6,7 @@ import {
   writeTurnChanges,
   type TurnChangeRecord,
 } from "./turnChanges";
-import { requestTimelineSnapshot } from "./timelineHost";
+import { pruneCheckpoints, requestTimelineSnapshot } from "./timelineHost";
 import type { TranscriptBlock } from "./transcript";
 
 const settled = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
@@ -68,11 +68,23 @@ export function useTurnChanges(
         .then((after) => {
           if (after.snapshot.projectId !== record.before.projectId)
             throw new Error("The active Premiere project changed.");
-          update({
-            after: after.snapshot,
-            signature: after.signature,
-            changes: diffTimeline(record.before, after.snapshot),
-          });
+          const changes = diffTimeline(record.before, after.snapshot);
+          update({ after: after.snapshot, signature: after.signature, changes });
+          // Undo only uses the latest changed turn's checkpoint, so the rest are deleted.
+          const earlier = records
+            .filter(
+              (value) =>
+                value.messageId !== record.messageId &&
+                value.changes.length &&
+                !value.restored &&
+                value.before.sequenceId === record.before.sequenceId,
+            )
+            .reduce<TurnChangeRecord | null>(
+              (last, value) => (!last || value.createdAt > last.createdAt ? value : last),
+              null,
+            );
+          const keep = changes.length ? record.checkpointId : (earlier?.checkpointId ?? null);
+          void pruneCheckpoints(record.before.sequenceId, keep).catch(() => {});
         })
         .catch((error: unknown) =>
           update({

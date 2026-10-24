@@ -741,6 +741,8 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
     /** ChatGPT token sharing does not accept service tiers. */
     readonly omitServiceTier?: boolean;
     readonly appContext?: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"];
+    /** The thread's collaboration mode as Codex last reported or received it. */
+    readonly previousCollaborationMode?: string | undefined;
   }) {
     const runtimeModeDefaults = codexRuntimeModeTurnDefaults(input.runtimePolicy.runtimeMode);
     const approvalPolicy =
@@ -787,8 +789,13 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
       t3Context === undefined && Object.keys(appContext).length === 0
         ? undefined
         : { ...t3Context, ...appContext };
+    // Codex keeps a thread's collaboration mode between turns, so leaving it out
+    // after a plan turn would keep the thread in plan mode.
     const collaborationMode: CodexSchema.ClientRequest__CollaborationMode | undefined =
-      input.runtimePolicy.interactionMode !== "plan" && developerInstructions === undefined
+      input.runtimePolicy.interactionMode !== "plan" &&
+      developerInstructions === undefined &&
+      (input.previousCollaborationMode === undefined ||
+        input.previousCollaborationMode === "default")
         ? undefined
         : {
             mode: input.runtimePolicy.interactionMode === "plan" ? "plan" : "default",
@@ -1394,7 +1401,10 @@ export function codexThreadRuntimeParams(input: {
 }
 
 const decodeCodexResumeMetadata = Schema.decodeUnknownEffect(
-  Schema.Struct({ thread: Schema.Struct({ id: Schema.String, updatedAt: Schema.Number }) }),
+  Schema.Struct({
+    thread: Schema.Struct({ id: Schema.String, updatedAt: Schema.Number }),
+    collaborationMode: Schema.optional(Schema.NullOr(Schema.Struct({ mode: Schema.String }))),
+  }),
 );
 
 const CodexChildSelection = Schema.Struct({
@@ -1887,6 +1897,13 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             context.nativeTurnId,
           ).hasSubagents = true;
         };
+        // Native thread id to the collaboration mode Codex holds for it.
+        const collaborationModes = yield* Ref.make(new Map<string, string>());
+        const rememberCollaborationMode = (threadId: string, mode: string | undefined) =>
+          Ref.update(collaborationModes, (current) => {
+            if (mode === undefined || current.get(threadId) === mode) return current;
+            return new Map(current).set(threadId, mode);
+          });
         const pendingRootTurns = yield* Ref.make(
           new Map<string, ProviderAdapter.ProviderAdapterV2TurnInput>(),
         );
@@ -4474,11 +4491,18 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         );
 
         yield* client.handleServerNotification("thread/settings/updated", (payload) =>
-          updateSubagentSelection(
+          rememberCollaborationMode(
             payload.threadId,
-            payload.threadSettings.model,
-            payload.threadSettings.effort,
-            payload.threadSettings.serviceTier,
+            payload.threadSettings.collaborationMode?.mode,
+          ).pipe(
+            Effect.andThen(
+              updateSubagentSelection(
+                payload.threadId,
+                payload.threadSettings.model,
+                payload.threadSettings.effort,
+                payload.threadSettings.serviceTier,
+              ),
+            ),
           ),
         );
         yield* client.handleServerNotification("model/rerouted", (payload) =>
@@ -6417,7 +6441,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               deviceToolsAvailable: mcpSession?.capabilities?.has("device") ?? false,
               omitServiceTier: adapterOptions.resolveRuntime !== undefined,
               ...(turnInput.appContext === undefined ? {} : { appContext: turnInput.appContext }),
+              previousCollaborationMode: (yield* Ref.get(collaborationModes)).get(threadId),
             });
+            yield* rememberCollaborationMode(threadId, turnStartParams.collaborationMode?.mode);
             yield* Ref.update(pendingRootTurns, (current) => {
               const updated = new Map(current);
               updated.set(threadId, turnInput);
@@ -6761,6 +6787,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                   ),
                 ),
                 Effect.flatMap(decodeCodexResumeMetadata),
+              );
+              // A resumed thread whose mode Codex does not report gets an explicit mode next turn.
+              yield* rememberCollaborationMode(
+                response.thread.id,
+                response.collaborationMode?.mode ?? "unknown",
               );
               return {
                 ...threadInput.providerThread,
