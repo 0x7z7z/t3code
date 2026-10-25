@@ -223,6 +223,52 @@ function CaptureTurn({
   );
 }
 
+function DispatchTurn({ onDispatch }: { onDispatch: () => void }) {
+  const changes = useTurnChanges("dispatch-thread", [], [], []);
+  const [error, setError] = useState("");
+  return (
+    <>
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await changes.begin("dispatch-thread", "dispatch-message", true, "sequence", "project");
+            onDispatch();
+          } catch (cause) {
+            setError(cause instanceof Error ? cause.message : "Capture failed");
+          }
+        }}
+      >
+        Dispatch edit
+      </button>
+      {error ? <p role="alert">{error}</p> : null}
+    </>
+  );
+}
+
+it.each(["unavailable", "missing", "truncated"])(
+  "blocks editing dispatch when the checkpoint is %s",
+  async (failure) => {
+    const props = setup();
+    localStorage.removeItem("axis-turn-changes-v1");
+    if (failure === "unavailable") state.snapshot.mockRejectedValue(new Error("CEP offline"));
+    else
+      state.snapshot.mockResolvedValue({
+        snapshot: { ...props.record.before, truncated: failure === "truncated" },
+        checkpointId: failure === "missing" ? null : "checkpoint",
+        checkpointSignature: failure === "missing" ? null : "before",
+        checkpointError: failure === "missing" ? "Clone refused" : null,
+      });
+    const onDispatch = vi.fn();
+    // Dispatch depends on the docked panel's checkpoint, with no router navigation.
+    await using screen = await render(<DispatchTurn onDispatch={onDispatch} />, { router: false });
+    await screen.getByRole("button", { name: "Dispatch edit" }).click();
+    await expect.element(screen.getByRole("alert")).toBeVisible();
+    expect(onDispatch).not.toHaveBeenCalled();
+    expect(localStorage.getItem("axis-turn-changes-v1")).not.toContain("dispatch-message");
+  },
+);
+
 it("captures before dispatch and after settlement, associates the reply, and restores cards after remount", async () => {
   const props = setup();
   localStorage.removeItem("axis-turn-changes-v1");
@@ -285,8 +331,8 @@ it("unblocks capture when a reloaded draft was never accepted by the backend", a
   state.snapshot.mockResolvedValue({
     snapshot: props.record.before,
     signature: "before",
-    checkpointId: null,
-    checkpointSignature: null,
+    checkpointId: "checkpoint",
+    checkpointSignature: "before",
     checkpointError: null,
   });
   // This harness exercises the docked panel's turn lifecycle without router navigation.

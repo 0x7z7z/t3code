@@ -134,9 +134,22 @@ export function useTurnChanges(
       projectId?: string,
     ) {
       if (!sequenceId) return;
-      // A failed snapshot only loses this turn's change card; the message still goes out.
-      const before = await requestTimelineSnapshot(checkpoint, sequenceId).catch(() => null);
+      // Editing must have a complete, verified checkpoint before dispatch.
+      const before = await requestTimelineSnapshot(checkpoint, sequenceId).catch(
+        (error: unknown) => {
+          if (checkpoint) throw error;
+          return null;
+        },
+      );
       if (!before) return;
+      if (
+        checkpoint &&
+        (before.snapshot.truncated || !before.checkpointId || !before.checkpointSignature)
+      )
+        throw new Error(
+          before.checkpointError ||
+            "A complete timeline checkpoint is required before editing. No turn was sent.",
+        );
       if (projectId && before.snapshot.projectId !== projectId)
         throw new Error(
           "The active Premiere project changed. Check the timeline, then send again.",
