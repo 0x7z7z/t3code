@@ -11,7 +11,12 @@
     turnNumber,
     range,
     cutRange,
+    rawResult,
+    checkpointKind
   ) {
+    function result(value) {
+      return rawResult ? value : "axis:" + json(value);
+    }
     function quote(value) {
       return (
         '"' +
@@ -79,7 +84,7 @@
               end: seconds(clip.end),
               inPoint: seconds(clip.inPoint),
               outPoint: seconds(clip.outPoint),
-              enabled: enabled,
+              enabled: enabled
             });
           }
           if (items.length < clips.numItems) truncated = true;
@@ -103,7 +108,7 @@
           start: seconds(marker.start),
           end: seconds(marker.end),
           comments: text(marker.comments),
-          color: color,
+          color: color
         });
         marker = seq.markers.getNextMarker(marker);
       }
@@ -119,7 +124,7 @@
         markers: markers,
         inPoint: point(seq, "getInPointAsTime"),
         outPoint: point(seq, "getOutPointAsTime"),
-        truncated: truncated,
+        truncated: truncated
       };
     }
     function find(id) {
@@ -152,7 +157,13 @@
       return null;
     }
     function prefix(id) {
-      return "[Axis checkpoint " + id + "] ";
+      // Caption-only edits are invisible to turn diffs. Keep their clones out
+      // of automatic turn-checkpoint pruning so caption undo remains available.
+      return (
+        (checkpointKind === "captions" ? "[Axis caption checkpoint " : "[Axis checkpoint ") +
+        id +
+        "] "
+      );
     }
     try {
       if (!app.project || !app.project.activeSequence) fail("Open a sequence in Premiere first.");
@@ -173,7 +184,7 @@
           )
             removed++;
         }
-        return "axis:" + json({ ok: true, removed: removed });
+        return result({ ok: true, removed: removed });
       }
       var before = snapshot(original, true);
       if (action === "restore") {
@@ -208,7 +219,7 @@
           } catch (rollbackError) {}
           throw restoreError;
         }
-        return "axis:" + json({ ok: true, sequenceId: String(saved.sequenceID) });
+        return result({ ok: true, sequenceId: String(saved.sequenceID) });
       }
       var cutting = action === "cut";
       if (cutting) {
@@ -232,7 +243,7 @@
             if (!ids["s" + candidate.sequenceID]) {
               if (clone)
                 fail(
-                  "Premiere created multiple sequences; the checkpoint could not be identified.",
+                  "Premiere created multiple sequences; the checkpoint could not be identified."
                 );
               clone = candidate;
             }
@@ -270,21 +281,18 @@
         if (String(existing.name).indexOf(prefix(originalId)) === 0)
           available.push(String(existing.sequenceID));
       }
-      return (
-        "axis:" +
-        json({
-          ok: true,
-          snapshot: before,
-          signature: json(before),
-          checkpointId: savedId,
-          checkpointSignature: savedId ? content : null,
-          checkpointError: checkpointError,
-          checkpointIds: available,
-          cutError: cutError,
-        })
-      );
+      return result({
+        ok: true,
+        snapshot: before,
+        signature: json(before),
+        checkpointId: savedId,
+        checkpointSignature: savedId ? content : null,
+        checkpointError: checkpointError,
+        checkpointIds: available,
+        cutError: cutError
+      });
     } catch (error) {
-      return "axis:" + json({ ok: false, error: String(error).slice(0, 1000) });
+      return result({ ok: false, error: String(error).slice(0, 1000) });
     }
   }
   /* eslint-enable no-unused-vars */
@@ -343,7 +351,7 @@
       (prune ? data.keepId : data.checkpointId) || "",
       data.expectedSignature || "",
       data.turnNumber || 1,
-      cutting ? { start: data.start, end: data.end, projectId: data.projectId } : null,
+      cutting ? { start: data.start, end: data.end, projectId: data.projectId } : null
     ];
     try {
       cep.evalScript(
@@ -380,7 +388,7 @@
           } catch (error) {
             reply({ ok: false, error: error.message });
           }
-        },
+        }
       );
     } catch (error) {
       reply({ ok: false, error: error.message });
@@ -388,7 +396,7 @@
     return true;
   }
 
-  root.AxisTimeline = { handle: handle };
+  root.AxisTimeline = { handle: handle, operation: timelineOperation };
   if (typeof module !== "undefined")
     module.exports = { handle: handle, timelineOperation: timelineOperation };
 })(typeof window !== "undefined" ? window : globalThis);

@@ -76,6 +76,7 @@ async function panelFixture(settingsOverride = {}) {
     evaluations,
     messages,
     contentWindow,
+    timelineOperation: window.AxisTimeline.operation,
     runTimers: (delay) => {
       for (const [id, timer] of [...timers])
         if (timer.delay === delay) {
@@ -726,4 +727,362 @@ test("transcript host requests require the panel origin and read only the worksp
   assert.equal(f.messages.at(-1).packet.error, "Source offline");
   f.send({ ...request, jobId: "../escape" });
   assert.equal(f.messages.at(-1).packet.ok, false);
+});
+
+function captionRequest(overrides = {}) {
+  return {
+    type: "premiere.captions.request",
+    requestId: "captions",
+    action: "add",
+    confirmed: true,
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    srt: "1\n00:00:12,000 --> 00:00:13,000\nHello\n",
+    ...overrides,
+  };
+}
+
+function captionHost(overrides = {}) {
+  const writes = [];
+  const imports = [];
+  const placements = [];
+  const removed = [];
+  const bins = [];
+  const root = {
+    children: { numItems: 0 },
+    createBin(name) {
+      const bin = {
+        name,
+        nodeId: bins.length ? "bin-" + bins.length : "bin-a",
+        type: 2,
+        children: { numItems: 0 },
+        deleteBin() {
+          removed.push(this.nodeId);
+          root.children = { numItems: 0 };
+          return 0;
+        },
+      };
+      root.children[root.children.numItems++] = bin;
+      bins.push(bin);
+      return bin;
+    },
+  };
+  const sequence = {
+    sequenceID: "sequence-a",
+    name: "Main edit",
+    projectItem: { nodeId: "sequence-item", moveBin() {} },
+    videoTracks: { numTracks: 0 },
+    audioTracks: { numTracks: 0 },
+    markers: { getFirstMarker: () => null },
+    getInPointAsTime: () => ({ seconds: 0 }),
+    getOutPointAsTime: () => ({ seconds: 60 }),
+    captions: ["Existing caption"],
+    clone() {
+      const clone = {
+        ...this,
+        sequenceID: "checkpoint-a",
+        captions: [...this.captions],
+        projectItem: { nodeId: "checkpoint-item", moveBin() {} },
+      };
+      project.sequences[project.sequences.numSequences++] = clone;
+      return true;
+    },
+    createCaptionTrack(item, start, format) {
+      placements.push({ item, start, format });
+      this.captions.push("Hello");
+      return true;
+    },
+    ...overrides.sequence,
+  };
+  const project = {
+    documentID: "project-a",
+    rootItem: root,
+    activeSequence: sequence,
+    sequences: { 0: sequence, numSequences: 1 },
+    openSequence(id) {
+      this.activeSequence = Object.values(this.sequences).find((value) => value.sequenceID === id);
+    },
+    importFiles(paths, suppress, bin, numbered) {
+      imports.push({ paths, suppress, numbered, bin });
+      bin.children = { 0: { nodeId: "item-a", name: "captions.srt" }, numItems: 1 };
+      return true;
+    },
+    ...overrides.project,
+  };
+  function File(filename) {
+    const file = {
+      fsName: filename,
+      open: () => true,
+      write(content) {
+        writes.push({ filename, content, encoding: file.encoding });
+        return true;
+      },
+      close: () => true,
+      remove() {
+        removed.push(filename);
+        return true;
+      },
+    };
+    return file;
+  }
+  File.saveDialog = () =>
+    overrides.saveFile === null ? null : new File("D:/exports/captions.srt");
+  return {
+    context: {
+      app: { project },
+      File,
+      Folder: { temp: { fsName: "D:/temp" } },
+      JSON: undefined,
+      Sequence: { CAPTION_FORMAT_SUBTITLE: 42 },
+    },
+    writes,
+    imports,
+    placements,
+    removed,
+    bins,
+    project,
+  };
+}
+
+test("caption insertion writes UTF-8 SRT, imports it into its own bin and places at sequence zero without native JSON", async () => {
+  const panel = await panelFixture();
+  const host = captionHost();
+  panel.send(captionRequest());
+  const evaluation = panel.evaluations.at(-1);
+  const raw = vm.runInNewContext(evaluation.script, host.context);
+  assert.doesNotMatch(
+    evaluation.script,
+    /,\s*[)}]/,
+    "ExtendScript does not support trailing commas",
+  );
+  evaluation.callback(raw);
+  const result = panel.messages.at(-1).packet;
+  assert.equal(result.status, "added");
+  assert.equal(result.binId, "bin-a");
+  assert.equal(result.itemId, "item-a");
+  assert.equal(host.writes[0].content, captionRequest().srt);
+  assert.equal(host.writes[0].encoding, "UTF-8");
+  assert.equal(host.imports[0].suppress, true);
+  assert.equal(host.imports[0].numbered, false);
+  assert.equal(host.placements[0].start, 0);
+  assert.equal(host.placements[0].item.nodeId, "item-a");
+  assert.equal(host.placements[0].format, 42);
+  assert.equal(result.checkpointId, "checkpoint-a");
+  assert.match(host.project.sequences[1].name, /^\[Axis caption checkpoint /);
+  assert.equal(host.removed.length, 0);
+});
+
+test("captions reject cross-origin, unconfirmed and malformed requests before scripting", async () => {
+  const panel = await panelFixture();
+  const before = panel.evaluations.length;
+  panel.send(captionRequest(), { origin: "https://outside.test" });
+  panel.send(captionRequest({ confirmed: false }));
+  panel.send(captionRequest({ srt: "" }));
+  panel.send(captionRequest({ srt: "a".repeat(4000001) }));
+  panel.send(captionRequest({ action: "undo", binId: "", itemId: "" }));
+  assert.equal(panel.evaluations.length, before);
+  assert.equal(panel.messages.length, 4);
+  assert.ok(panel.messages.every(({ packet }) => packet.ok === false));
+});
+
+test("captions check both project and sequence immediately before mutation", async () => {
+  for (const request of [
+    captionRequest({ sequenceId: "different" }),
+    captionRequest({ projectId: "different" }),
+  ]) {
+    const panel = await panelFixture();
+    const host = captionHost();
+    panel.send(request);
+    const evaluation = panel.evaluations.at(-1);
+    evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+    assert.equal(panel.messages.at(-1).packet.ok, false);
+    assert.match(panel.messages.at(-1).packet.error, /changed/);
+    assert.equal(host.writes.length, 0);
+    assert.equal(host.imports.length, 0);
+  }
+});
+
+test("unsupported, false-returning and throwing caption APIs retain the SRT for manual placement", async () => {
+  for (const createCaptionTrack of [
+    undefined,
+    () => false,
+    () => {
+      throw new Error("Unsupported");
+    },
+  ]) {
+    const panel = await panelFixture();
+    const host = captionHost({ sequence: { createCaptionTrack } });
+    panel.send(captionRequest());
+    const evaluation = panel.evaluations.at(-1);
+    evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+    assert.equal(panel.messages.at(-1).packet.status, "imported");
+    assert.equal(panel.messages.at(-1).packet.binId, "bin-a");
+    assert.match(panel.messages.at(-1).packet.binName, /^Axis captions /);
+    assert.equal(host.removed.length, 0);
+  }
+});
+
+test("failed SRT import cleans up the created bin and temporary source", async () => {
+  const panel = await panelFixture();
+  const host = captionHost({ project: { importFiles: () => false } });
+  panel.send(captionRequest());
+  const evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  assert.equal(panel.messages.at(-1).packet.ok, false);
+  assert.match(panel.messages.at(-1).packet.error, /import/);
+  assert.equal(host.removed[0], "bin-a");
+  assert.match(host.removed[1], /\.srt$/);
+});
+
+test("captions undo opens the pre-caption checkpoint and preserves the captioned edit", async () => {
+  const panel = await panelFixture();
+  const host = captionHost();
+  panel.send(captionRequest());
+  let evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  const added = panel.messages.at(-1).packet;
+  assert.deepEqual(host.project.activeSequence.captions, ["Existing caption", "Hello"]);
+  panel.send(
+    captionRequest({
+      ...added,
+      sequenceId: "sequence-a",
+      action: "undo",
+      type: "premiere.captions.request",
+    }),
+  );
+  evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  assert.equal(panel.messages.at(-1).packet.status, "undone");
+  assert.equal(host.project.activeSequence.sequenceID, "checkpoint-a");
+  assert.deepEqual(host.project.activeSequence.captions, ["Existing caption"]);
+  assert.deepEqual(host.project.sequences[0].captions, ["Existing caption", "Hello"]);
+  assert.deepEqual(host.removed, []);
+});
+
+test("captions undo refuses bins with added or replaced project items", async () => {
+  const panel = await panelFixture();
+  const host = captionHost();
+  panel.send(captionRequest());
+  let evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  host.bins[0].children.numItems = 2;
+  panel.send(captionRequest({ action: "undo", binId: "bin-a", itemId: "item-a" }));
+  evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  assert.equal(panel.messages.at(-1).packet.ok, false);
+  assert.match(panel.messages.at(-1).packet.error, /bin changed/);
+  assert.equal(host.removed.length, 0);
+});
+
+test("captions import safely when a verified checkpoint cannot be created", async () => {
+  const panel = await panelFixture();
+  const host = captionHost({ sequence: { clone: () => false } });
+  panel.send(captionRequest());
+  const evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  assert.equal(panel.messages.at(-1).packet.status, "imported");
+  assert.equal(host.placements.length, 0);
+  assert.equal(host.imports.length, 1);
+});
+
+test("caption checkpoint undo refuses later timeline edits", async () => {
+  const panel = await panelFixture();
+  const host = captionHost();
+  panel.send(captionRequest());
+  let evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  const added = panel.messages.at(-1).packet;
+  host.project.activeSequence.getOutPointAsTime = () => ({ seconds: 61 });
+  panel.send(
+    captionRequest({
+      ...added,
+      sequenceId: "sequence-a",
+      action: "undo",
+      type: "premiere.captions.request",
+    }),
+  );
+  evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  assert.match(panel.messages.at(-1).packet.error, /timeline changed/);
+  assert.equal(host.project.activeSequence.sequenceID, "sequence-a");
+  assert.equal(host.removed.length, 0);
+});
+
+test("caption creation uses the default subtitle format when the enum is unavailable", async () => {
+  const panel = await panelFixture();
+  const host = captionHost();
+  delete host.context.Sequence;
+  panel.send(captionRequest());
+  const evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  assert.equal(panel.messages.at(-1).packet.status, "added");
+  assert.equal(host.placements[0].format, undefined);
+});
+
+test("turn checkpoint pruning preserves caption undo checkpoints", async () => {
+  const panel = await panelFixture();
+  const host = captionHost();
+  panel.send(captionRequest());
+  const evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  const { timelineOperation } = panel;
+  const result = vm.runInNewContext(
+    "(" + timelineOperation.toString() + ")('prune',false,'sequence-a','','',0,null,null,true)",
+    host.context,
+  );
+  assert.equal(result.removed, 0);
+  assert.equal(host.project.sequences.numSequences, 2);
+  assert.equal(host.project.sequences[1].sequenceID, "checkpoint-a");
+});
+
+test("import-only caption undo removes the unchanged imported bin", async () => {
+  const panel = await panelFixture();
+  const host = captionHost({ sequence: { createCaptionTrack: undefined } });
+  panel.send(captionRequest());
+  let evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  panel.send(captionRequest({ action: "undo", binId: "bin-a", itemId: "item-a" }));
+  evaluation = panel.evaluations.at(-1);
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  assert.equal(panel.messages.at(-1).packet.status, "undone");
+  assert.deepEqual(host.removed, ["bin-a"]);
+  assert.deepEqual(host.project.activeSequence.captions, ["Existing caption"]);
+});
+
+test("SRT save and cancel never import or mutate the sequence", async () => {
+  for (const saveFile of [null, true]) {
+    const panel = await panelFixture();
+    const host = captionHost({ saveFile });
+    panel.send(captionRequest({ action: "save" }));
+    const evaluation = panel.evaluations.at(-1);
+    evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+    assert.equal(panel.messages.at(-1).packet.status, saveFile ? "saved" : "cancelled");
+    assert.equal(host.writes.length, saveFile ? 1 : 0);
+    assert.equal(host.imports.length, 0);
+    assert.equal(host.placements.length, 0);
+  }
+});
+
+test("caption requests remain serialized while a native save dialog is open", async () => {
+  const panel = await panelFixture();
+  panel.send(captionRequest({ action: "save" }));
+  const before = panel.evaluations.length;
+  panel.send(captionRequest());
+  assert.equal(panel.evaluations.length, before);
+  assert.match(panel.messages.at(-1).packet.error, /already running/);
+});
+
+test("agent command bridge can call the same registered captions operation", async () => {
+  const panel = await panelFixture();
+  const host = captionHost();
+  const globals = {};
+  const context = vm.createContext({ ...host.context, $: { global: globals } });
+  vm.runInContext(panel.evaluations[0].script, context);
+  assert.equal(typeof globals.axisCaptionOperation, "function");
+  const raw = globals.axisCaptionOperation({ ...captionRequest(), id: "agent-123" });
+  assert.match(raw, /^axis:captions\|added\|/);
+  assert.equal(host.placements[0].start, 0);
+  const refused = globals.axisCaptionOperation({ ...captionRequest(), id: "../bad" });
+  assert.match(decodeURIComponent(refused), /Invalid captions request/);
+  assert.equal(host.placements.length, 1);
 });

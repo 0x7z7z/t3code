@@ -156,6 +156,11 @@ export default defineConfig({
     sortPackageJson: {},
     overrides: [
       {
+        // These files serialize functions into Premiere's ES3 ExtendScript VM.
+        files: ["extensions/premiere/host.js", "extensions/premiere/snapshot.js"],
+        options: { trailingComma: "none" },
+      },
+      {
         files: [".devcontainer/devcontainer.json"],
         options: {
           trailingComma: "none",

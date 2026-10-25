@@ -370,3 +370,62 @@ it("links an imported transcript to its voice-over clip and follows trims made i
   await screen.getByRole("button", { name: "matters. at 00:00:21.000" }).click();
   expect(host.seek).toHaveBeenLastCalledWith(21, "linked");
 });
+
+it("opens captions from the transcript menu and previews placed sequence times", async () => {
+  const f = setup("captions-entry");
+  const placed = {
+    ...f.transcript,
+    words: f.transcript.words.map((word) => ({
+      ...word,
+      start: word.start + 12,
+      end: word.end + 12,
+    })),
+  };
+  localStorage.setItem(
+    f.key,
+    JSON.stringify({ transcript: placed, link: null, undo: null, uncertain: false }),
+  );
+  await using screen = await render(<TranscriptView {...f.props} />);
+  screen.container.style.width = "440px";
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Captions", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "Captions", exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("combobox", { name: "Caption preset" }))
+    .toHaveValue("youtube");
+  expect(screen.container.querySelector("[data-captions-panel] time")?.textContent).toContain(
+    "00:00:12.000",
+  );
+  await screen.getByRole("button", { name: "Close captions" }).click();
+  await expect
+    .element(screen.getByRole("region", { name: "Captions", exact: true }))
+    .not.toBeInTheDocument();
+});
+
+it("keeps the transcript available in the sequence restored by caption undo", async () => {
+  const f = setup("captions-restore");
+  localStorage.removeItem(`axis-captions-undo:${JSON.stringify(["film", "captions-restore"])}`);
+  const restoredKey = transcriptStorageKey(f.props.context, "caption-checkpoint");
+  localStorage.removeItem(restoredKey);
+  host.load.mockResolvedValue({
+    status: "added",
+    binId: "bin",
+    itemId: "item",
+    checkpointId: "caption-checkpoint",
+    checkpointSignature: "before",
+    expectedSignature: "after",
+  });
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Captions", exact: true }).click();
+  await screen.getByRole("button", { name: "Add to sequence" }).click();
+  await expect.element(screen.getByRole("button", { name: "Undo captions" })).toBeEnabled();
+  host.load.mockResolvedValue({ status: "undone", sequenceId: "caption-checkpoint" });
+  await screen.getByRole("button", { name: "Undo captions" }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Undo captions" }))
+    .not.toBeInTheDocument();
+  const restored = JSON.parse(localStorage.getItem(restoredKey)!);
+  expect(restored.transcript).toEqual(f.transcript);
+  expect(restored.undo).toBeNull();
+});
