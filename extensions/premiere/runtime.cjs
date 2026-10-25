@@ -220,7 +220,12 @@ function pairBackend(config) {
           );
         var match = /Pairing URL:\s*(http:\/\/[^\s]+)/.exec(stdout);
         if (!match) return reject(new Error("The backend did not return a pairing address."));
-        var url = new URL(match[1]);
+        var url;
+        try {
+          url = new URL(match[1]);
+        } catch {
+          return reject(new Error("The backend returned an invalid pairing address."));
+        }
         if (url.origin !== new URL(config.backendUrl).origin || url.pathname !== "/pair") {
           return reject(new Error("The backend returned an unexpected pairing address."));
         }

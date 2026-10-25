@@ -15,6 +15,8 @@ const {
 } = require("./runtime.cjs");
 const { once } = require("node:events");
 const { readFile } = require("node:fs/promises");
+const vm = require("node:vm");
+const { readFileSync } = require("node:fs");
 
 function config(backendUrl, directory) {
   return {
@@ -27,6 +29,22 @@ function config(backendUrl, directory) {
     bridgePath: path.join(directory, "bridge"),
   };
 }
+
+test("malformed pairing output rejects without escaping the asynchronous CEP callback", async () => {
+  const runtimeModule = { exports: {} };
+  let finish;
+  vm.runInNewContext(readFileSync(path.join(__dirname, "runtime.cjs"), "utf8"), {
+    module: runtimeModule,
+    require: (name) => name === "child_process" ? {
+      execFile: (_command, _args, _options, callback) => { finish = callback; },
+    } : require(name),
+    URL,
+  });
+  const result = runtimeModule.exports.pairBackend(config("http://127.0.0.1:5749/", tmpdir()));
+  const rejection = assert.rejects(result, /pairing address/);
+  assert.doesNotThrow(() => finish(null, "Pairing URL: http://[invalid"));
+  await rejection;
+});
 
 test("only accepts a loopback origin without credentials or a URL path", () => {
   for (const url of [
