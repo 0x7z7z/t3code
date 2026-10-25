@@ -1737,3 +1737,169 @@ small[data-shot-text] {
   z-index: 20;
   white-space: nowrap;
 }
+/* Music stays within the CEP panel's 440px viewport. */
+[data-music-panel] {
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+  border-bottom: 1px solid var(--border, #353535);
+  font-size: 12px;
+  min-width: 0;
+}
+[data-music-panel] header,
+[data-music-row] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+[data-music-panel] header strong {
+  font-size: 14px;
+}
+[data-music-panel] > [data-music-row] {
+  flex-wrap: wrap;
+}
+[data-music-panel] header span {
+  flex: 1;
+  color: #999;
+}
+[data-music-panel] label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+[data-music-panel] input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+[data-music-panel] input:not([type="checkbox"]),
+[data-music-panel] select {
+  min-width: 0;
+  width: 100%;
+  background: #242424;
+  border: 1px solid #414141;
+  border-radius: 5px;
+  padding: 6px;
+  color: inherit;
+  box-sizing: border-box;
+}
+[data-music-panel] button {
+  border: 1px solid #414141;
+  border-radius: 5px;
+  padding: 5px 8px;
+  background: #2d2d2d;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+[data-music-panel] button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+[data-music-panel] button[data-primary] {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+[data-music-panel] small,
+[data-music-panel] li p {
+  color: #aaa;
+  font-size: 11px;
+  line-height: 1.5;
+}
+[data-music-panel] details {
+  padding: 8px;
+  border: 1px solid #383838;
+  border-radius: 6px;
+}
+[data-music-panel] summary {
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+[data-music-settings] {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+[data-music-row] > input:not([type="checkbox"]) {
+  flex: 1;
+}
+[data-music-row] > label {
+  flex: 1;
+}
+[data-music-row] strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+[data-music-cues] {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+[data-music-cues] li {
+  border: 1px solid #3e3e3e;
+  border-left: 3px solid var(--accent);
+  background: #232323;
+  border-radius: 6px;
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+[data-music-cues] li[data-enabled="false"] {
+  opacity: 0.5;
+}
+[data-music-cues] p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+[data-music-bands] {
+  display: flex;
+  gap: 2px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+[data-music-bands] button {
+  flex-basis: 0;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  padding: 5px 2px;
+  font-size: 10px;
+  background: #253b52;
+}
+[data-music-bands] [data-sponsor="true"] {
+  background: #343434;
+}
+[data-music-panel] [data-music-confirm] {
+  display: flex;
+  align-items: center;
+  line-height: 1.5;
+}
+[data-music-silence] {
+  padding: 8px;
+  margin: 0;
+  border-left: 2px solid #737373;
+  color: #aaa;
+}
+[data-music-preview] {
+  display: grid;
+  gap: 5px;
+}
+[data-music-preview] audio {
+  width: 100%;
+  height: 34px;
+}
+[data-music-panel] [role="alert"] {
+  color: #eaa389;
+  overflow-wrap: anywhere;
+}

@@ -315,6 +315,7 @@ export function formatPremierePrompt(text: string, context: PremiereContext | nu
     "To suggest markers, use an axis-markers JSON fence: [{time: seconds or HH:MM:SS:FF, name, comment?, color?, duration?}].",
     "For shot lists use an axis-shots JSON fence: [{shot, in, out, description, source?, notes?, status?: todo|done}]. The panel renders interactive cards; use quoted JSON keys and strings.",
     'For "clean up the VO", emit an axis-cleanup JSON fence with optional settings: {"pauseThreshold":0.6,"padding":0.12,"restartWindow":5,"fillers":["um","uh","erm","like","you know"]}. Its Review cleanup action runs deterministic detection on the current linked transcript, then the editor reviews and applies all accepted ripple cuts with one checkpoint. Transcribe first if needed. Do not independently delete guessed ranges.',
+    'For "score this video", use the axis-music-placement skill and emit an axis-music JSON fence {version:1,cues:[{id,chapter,start,end,track,sourceOffset,reason,fadeIn,fadeOut,baseDb,enabled:true,alternatives:[]}],silence:[{start,end,reason}]}. Track is an exact indexed local audio path; all times are sequence seconds except sourceOffset. Review music opens the compact transcript Music panel for audition, alternatives and checkpointed apply. Never infer mood or invent musical drops from energy alone; exclude sponsors and prioritize the voice-over.',
     "</premiere-host-context>",
   ].join("\n");
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Axis Music Placement"
+  short_description: "Review and place chapter music under voice-over"
+  default_prompt: "Use $axis-music-placement to score this video from the indexed local library, review the cues, and apply through Axis."

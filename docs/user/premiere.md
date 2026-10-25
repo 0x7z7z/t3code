@@ -91,6 +91,35 @@ clips linked to locked tracks and affected transitions must be resolved first.
 **Undo transcript cut** restores the whole cleanup from one checkpoint. Further
 timeline edits can invalidate that undo, so review the result before continuing.
 
+## Score with local music
+
+Import or transcribe the voice-over, then choose **Transcript > options > Music**.
+Python, `ffmpeg` and `ffprobe` must be available on the Premiere machine.
+
+1. Choose your library folder and **Index library**. The folder and level settings
+   are remembered per project. Large libraries index in resumable batches; use
+   **Resume index** until no tracks remain pending. Music files are never modified.
+2. Choose **Build music plan**, or ask the agent to "score this video" and open
+   **Review music** on its suggestion. The first pass covers the transcribed
+   narration; check any footage after the narration separately.
+3. Audition the source offsets, swap alternatives, disable cues or nudge their starts.
+   Set fades and ducking, and enter exact sponsor or silence ranges in seconds.
+   Rebuild after changing exclusions. Verify detected sponsor boundaries.
+4. Confirm the preview and apply. Axis uses an empty dedicated Music audio track,
+   imports sources into a Music bin and adds fades and voice-over ducking.
+   **Undo music** opens the pre-music sequence checkpoint; the scored version and
+   imported source files remain available. Review before making further edits.
+
+Energy analysis cannot establish mood. With an Antigravity Gemini model selected,
+**Describe library** sends up to three actual 30-second excerpts to the current
+agent, which saves descriptions in the local index. Refresh the index and repeat
+for more tracks. Other providers use folder categories, energy and saved tags;
+audition those recommendations. Always listen for voice-over masking before export.
+
+If Premiere cannot create an audio track or automate Volume / Level, undo the
+partial result. Add an empty track named Music manually and try again after
+checking compatibility with your Premiere version.
+
 ## Compatibility
 
 The CEP manifest targets Premiere 25.x and later, including 25.3. This development

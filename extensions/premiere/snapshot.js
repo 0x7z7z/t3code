@@ -171,10 +171,10 @@
       return null;
     }
     function prefix(id) {
-      // Caption-only edits are invisible to turn diffs. Keep their clones out
-      // of automatic turn-checkpoint pruning so caption undo remains available.
+      // Caption and music panels retain their own undo receipts. Keep these
+      // clones out of automatic turn-checkpoint pruning.
       return (
-        (checkpointKind === "captions" ? "[Axis caption checkpoint " : "[Axis checkpoint ") +
+        (checkpointKind === "captions" ? "[Axis caption checkpoint " : checkpointKind === "music" ? "[Axis music checkpoint " : "[Axis checkpoint ") +
         id +
         "] "
       );

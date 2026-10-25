@@ -630,6 +630,20 @@ it("opens captions from the transcript menu and previews placed sequence times",
     .not.toBeInTheDocument();
 });
 
+it("opens Music beside Captions and switches between reviews without stacking panels", async () => {
+  const f = setup("music-entry");
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Music", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "Music", exact: true })).toBeVisible();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Captions", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "Captions", exact: true })).toBeVisible();
+  await expect
+    .element(screen.getByRole("region", { name: "Music", exact: true }))
+    .not.toBeInTheDocument();
+});
+
 it("keeps the transcript available in the sequence restored by caption undo", async () => {
   const f = setup("captions-restore");
   localStorage.removeItem(`axis-captions-undo:${JSON.stringify(["film", "captions-restore"])}`);

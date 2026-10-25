@@ -122,6 +122,273 @@ test("scripts sent to Premiere for timeline actions parse as ES3", async () => {
     assert.doesNotThrow(() => parse(script, { ecmaVersion: 3 }));
 });
 
+function musicHost() {
+  const host = captionHost();
+  const sequence = host.project.activeSequence;
+  const writes = [];
+  const marks = [];
+  const emptyTrack = (id, name) => ({
+    id,
+    name,
+    isLocked: () => false,
+    clips: { numItems: 0 },
+    overwriteClip(item, start) {
+      const level = {
+        displayName: "Level",
+        areKeyframesSupported: () => true,
+        setTimeVarying: () => 0,
+        addKey: (t) => {
+          writes.push({ time: t.seconds });
+          return 0;
+        },
+        setValueAtKey: (t, value) => {
+          writes.at(-1).value = value;
+          return 0;
+        },
+        setInterpolationTypeAtKey: () => 0,
+      };
+      this.clips[this.clips.numItems++] = {
+        name: "Music",
+        nodeId: "music-clip",
+        projectItem: item,
+        start: { seconds: Number(start) },
+        end: { seconds: Number(start) + item.out - item.in },
+        inPoint: { seconds: item.in },
+        outPoint: { seconds: item.out },
+        components: {
+          0: { displayName: "Volume", properties: { 0: level, numItems: 1 } },
+          numItems: 1,
+        },
+      };
+    },
+  });
+  sequence.audioTracks = {
+    0: emptyTrack("voice", "Voice-over"),
+    1: emptyTrack("fx", "SFX"),
+    2: emptyTrack("music", "Audio 3"),
+    numTracks: 3,
+  };
+  sequence.audioTracks[0].clips = {
+    0: {
+      name: "VO",
+      nodeId: "vo",
+      projectItem: { name: "VO", nodeId: "vo-item" },
+      start: { seconds: 0 },
+      end: { seconds: 60 },
+      inPoint: { seconds: 0 },
+      outPoint: { seconds: 60 },
+    },
+    numItems: 1,
+  };
+  sequence.clone = function () {
+    const clone = {
+      ...this,
+      sequenceID: "checkpoint-a",
+      projectItem: { nodeId: "checkpoint-item", moveBin() {} },
+      audioTracks: { ...this.audioTracks },
+    };
+    for (let i = 0; i < this.audioTracks.numTracks; i++)
+      clone.audioTracks[i] = { ...this.audioTracks[i], clips: { ...this.audioTracks[i].clips } };
+    host.project.sequences[host.project.sequences.numSequences++] = clone;
+    return true;
+  };
+  host.project.importFiles = (paths, suppress, bin) => {
+    host.imports.push(paths[0]);
+    const item = {
+      nodeId: "music-item-" + host.imports.length,
+      name: "track.wav",
+      in: 0,
+      out: 120,
+      getMediaPath: () => paths[0],
+      getInPoint() {
+        return { seconds: this.in };
+      },
+      getOutPoint() {
+        return { seconds: this.out };
+      },
+      setInPoint(n) {
+        this.in = n;
+        marks.push(n);
+      },
+      setOutPoint(n) {
+        this.out = n;
+        marks.push(n);
+      },
+    };
+    bin.children[bin.children.numItems++] = item;
+    return true;
+  };
+  host.context.Time = function () {
+    this.seconds = 0;
+  };
+  host.context.File = function () {
+    return { exists: true };
+  };
+  host.context.app.enableQE = () => {};
+  host.context.qe = {
+    project: {
+      getActiveSequence: () => ({
+        addTracks() {
+          const tracks = sequence.audioTracks;
+          for (let i = tracks.numTracks; i > 0; i--) tracks[i] = tracks[i - 1];
+          tracks[0] = emptyTrack("new", "Audio 1");
+          tracks.numTracks++;
+        },
+      }),
+    },
+  };
+  return { ...host, writes, marks, sequence };
+}
+function musicRequest(signature, extra = {}) {
+  return {
+    type: "premiere.music.request",
+    requestId: "music-test",
+    action: "apply",
+    confirmed: true,
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    expectedSignature: signature,
+    cues: [
+      {
+        track: "D:/Music/test.wav",
+        start: 10,
+        end: 30,
+        sourceOffset: 12,
+        keys: [
+          { time: 0, value: 0 },
+          { time: 1, value: 0.1 },
+          { time: 20, value: 0 },
+        ],
+      },
+    ],
+    ...extra,
+  };
+}
+function musicSignature(panel, host) {
+  return vm.runInNewContext(
+    "(" +
+      panel.timelineOperation.toString() +
+      ")('snapshot',false,'sequence-a','','',0,null,null,true,'music')",
+    host.context,
+  ).signature;
+}
+function runMusic(panel, host, request) {
+  panel.send(request);
+  const evaluation = panel.evaluations.at(-1);
+  assert.doesNotThrow(() => parse(evaluation.script, { ecmaVersion: 3 }));
+  evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
+  return panel.messages.at(-1).packet;
+}
+test("music apply is ES3, uses source offsets and normalized Level keys, preserves VO/SFX and undoes with one checkpoint", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const before = musicSignature(panel, host);
+  const result = runMusic(panel, host, musicRequest(before));
+  assert.equal(result.status, "applied");
+  assert.equal(host.sequence.audioTracks[0].clips.numItems, 1);
+  assert.equal(host.sequence.audioTracks[1].name, "SFX");
+  assert.equal(host.sequence.audioTracks[2].name, "Music");
+  assert.equal(host.sequence.audioTracks[2].clips[0].inPoint.seconds, 12);
+  assert.equal(host.writes[1].time, 13);
+  assert.ok(Math.abs(host.writes[1].value - 0.1 * Math.pow(10, -15 / 20)) < 1e-10);
+  assert.deepEqual(host.marks, [12, 32, 0, 120]);
+  const undone = runMusic(
+    panel,
+    host,
+    musicRequest(before, {
+      ...result,
+      type: "premiere.music.request",
+      action: "undo",
+      sequenceId: "sequence-a",
+    }),
+  );
+  assert.equal(undone.status, "undone");
+  assert.equal(host.project.activeSequence.audioTracks[2].clips.numItems, 0);
+  assert.equal(host.project.sequences[0].audioTracks[2].clips.numItems, 1);
+});
+test("music identifies a QE-created track by ID even when Premiere prepends it", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  host.sequence.audioTracks.numTracks = 2;
+  const result = runMusic(panel, host, musicRequest(musicSignature(panel, host)));
+  assert.equal(result.status, "applied");
+  assert.equal(host.sequence.audioTracks[0].id, "new");
+  assert.equal(host.sequence.audioTracks[1].id, "voice");
+  assert.equal(host.sequence.audioTracks[2].id, "fx");
+});
+test("music refuses stale previews, unconfirmed requests and malformed keyframes before mutations", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  for (const patch of [
+    { expectedSignature: "stale" },
+    { confirmed: false },
+    {
+      cues: [
+        {
+          track: "D:/x.wav",
+          start: 0,
+          end: 1,
+          sourceOffset: 0,
+          keys: [
+            { time: 0, value: NaN },
+            { time: 1, value: 1 },
+          ],
+        },
+      ],
+    },
+  ]) {
+    const result = runMusic(panel, host, musicRequest(musicSignature(panel, host), patch));
+    assert.equal(result.ok, false);
+    assert.equal(host.imports.length, 0);
+  }
+});
+test("music partial failure retains a usable undo receipt and checkpoints survive turn pruning", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  host.sequence.audioTracks[2].overwriteClip = () => {
+    throw new Error("Disk offline");
+  };
+  const result = runMusic(panel, host, musicRequest(musicSignature(panel, host)));
+  assert.equal(result.status, "partial");
+  assert.ok(result.checkpointId);
+  assert.match(result.message, /Disk offline/);
+  const prune = vm.runInNewContext(
+    "(" +
+      panel.timelineOperation.toString() +
+      ")('prune',false,'sequence-a','','',0,null,null,true)",
+    host.context,
+  );
+  assert.equal(prune.removed, 0);
+  const undone = runMusic(
+    panel,
+    host,
+    musicRequest("", {
+      ...result,
+      type: "premiere.music.request",
+      action: "undo",
+      sequenceId: "sequence-a",
+    }),
+  );
+  assert.equal(undone.status, "undone");
+});
+
+test("music enforces silence ranges before importing and recovers from malformed host responses", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const result = runMusic(
+    panel,
+    host,
+    musicRequest(musicSignature(panel, host), { silence: [{ start: 15, end: 25 }] }),
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error, /silence/);
+  assert.equal(host.imports.length, 0);
+  panel.send(musicRequest("preview"));
+  assert.doesNotThrow(() => panel.evaluations.at(-1).callback("axis:music|%broken"));
+  assert.equal(panel.messages.at(-1).packet.ok, false);
+  assert.equal(runMusic(panel, host, musicRequest(musicSignature(panel, host))).status, "applied");
+});
+
 test("reads the actual host scope, including reserved characters and a zero playhead", async () => {
   const fixture = await panelFixture();
   const scope = vm.runInNewContext(fixture.evaluations[0].script, {

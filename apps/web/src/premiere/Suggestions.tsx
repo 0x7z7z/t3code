@@ -124,6 +124,41 @@ export function Suggestions({
       {timecodeLabel(seconds, actions.fps)}
     </button>
   );
+  if (parsed.kind === "music")
+    return (
+      <section data-timeline-suggestions="music" aria-label="Suggested music">
+        <table>
+          <thead>
+            <tr>
+              <th>Start</th>
+              <th>Chapter / track</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            {parsed.plan.cues.map((c) => (
+              <tr key={c.id}>
+                <td>{seekTime(c.start)}</td>
+                <td>
+                  {c.chapter}
+                  <br />
+                  {c.track.split(/[\\/]/).at(-1)}
+                </td>
+                <td>{c.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <button
+          type="button"
+          disabled={!actions.reviewMusic || sequenceId !== actions.sequenceId}
+          onClick={() => actions.reviewMusic?.(parsed.plan)}
+        >
+          Review music
+        </button>
+        <small>Audition, swap and apply from Transcript Music with one undo checkpoint.</small>
+      </section>
+    );
   if (parsed.kind === "cleanup")
     return (
       <section data-timeline-suggestions="cleanup" aria-label="Suggested voice-over cleanup">
