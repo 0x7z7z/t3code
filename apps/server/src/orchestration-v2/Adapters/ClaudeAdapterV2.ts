@@ -1,5 +1,9 @@
 import { makeProviderTextDeltaCoalescer } from "./ProviderTextDeltaCoalescer.ts";
-import { premiereMcpServer } from "../../premiere/McpConfig.ts";
+import {
+  premiereEnvironmentInstructions,
+  premiereMcpServer,
+  readPremiereEnvironmentInstructions,
+} from "../../premiere/McpConfig.ts";
 import { claudeTaskOutputRoot, tailClaudeTaskOutput } from "./ClaudeTaskOutputTail.ts";
 import {
   dynamicToolTitle,
@@ -1315,8 +1319,11 @@ export function makeClaudeQueryOptions(input: {
   readonly supportedDialogKinds?: ClaudeQueryOptions["supportedDialogKinds"];
   readonly allowDangerouslySkipPermissions?: boolean;
   readonly appendSystemPromptFileText?: string;
+  readonly axisInstructions?: string | undefined;
 }): ClaudeAgentSdkQueryOptions {
   const compiledSelection = compileClaudeModelSelection(input.modelSelection);
+  const axisInstructions =
+    input.axisInstructions ?? premiereEnvironmentInstructions(input.environment ?? {}, input.cwd);
   const {
     "permission-mode": launchArgPermissionMode,
     "dangerously-skip-permissions": launchArgSkipPermissions,
@@ -1403,6 +1410,7 @@ export function makeClaudeQueryOptions(input: {
       : {}),
     ...(input.environment === undefined ? {} : { env: input.environment }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
+    ...(axisInstructions === undefined ? {} : { strictMcpConfig: true }),
     systemPrompt: {
       type: "preset" as const,
       preset: "claude_code" as const,
@@ -1410,6 +1418,7 @@ export function makeClaudeQueryOptions(input: {
         buildRuntimeInstructions({ harness: "Claude Code" }) +
           (input.mcpServers === undefined ? "" : T3_CODE_ORCHESTRATION_INSTRUCTIONS),
         ...launchAppendSystemPrompt,
+        ...(axisInstructions === undefined ? [] : [axisInstructions]),
       ].join("\n\n"),
     },
     ...(Object.keys(extraArgs).length === 0 ? {} : { extraArgs }),
@@ -9310,6 +9319,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const shouldResume =
             resumeSessionAt !== undefined || openedWithResume || hasPersistedProviderTurn;
           const queryOptions = makeClaudeQueryOptions({
+            axisInstructions: yield* readPremiereEnvironmentInstructions(
+              adapterOptions.environment,
+              turnInput.runtimePolicy.cwd,
+            ).pipe(
+              Effect.provideService(FileSystem.FileSystem, fileSystem),
+              Effect.provideService(Path.Path, path),
+            ),
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
             resume: shouldResume,

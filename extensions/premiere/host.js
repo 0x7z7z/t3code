@@ -190,6 +190,20 @@
       } catch {
         next = null;
       }
+      if (nodeRequire && config && config.bridgePath) {
+        try {
+          var contextFs = nodeRequire("fs");
+          var contextFile = nodeRequire("path").join(config.bridgePath, "axis-context.json");
+          var contextTemp = contextFile + ".tmp";
+          contextFs.writeFileSync(
+            contextTemp,
+            JSON.stringify({ capturedAt: Date.now(), context: next }),
+          );
+          contextFs.renameSync(contextTemp, contextFile);
+        } catch {
+          /* The agent can re-read the host if the snapshot is unavailable. */
+        }
+      }
       document.getElementById("project").textContent = next ? next.projectName : "Axis";
       document.getElementById("sequence").textContent = next
         ? next.sequenceName + " · " + Math.round(next.fps * 100) / 100 + " fps"
