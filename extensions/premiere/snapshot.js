@@ -187,7 +187,8 @@
         var name = String(original.name);
         var savedName = String(saved.name);
         var destination = bin();
-        var home = parentBin(original.projectItem);
+        var home = parentBin(original.projectItem) || app.project.rootItem;
+        var savedHome = parentBin(saved.projectItem) || destination;
         try {
           app.project.openSequence(String(saved.sequenceID));
           if (
@@ -196,16 +197,34 @@
           )
             fail("Premiere could not open the checkpoint.");
           original.name = name.slice(0, 210) + " (after turn " + turnNumber + ")";
-          original.projectItem.moveBin(destination);
+          if (original.projectItem.moveBin(destination) === false)
+            fail("Premiere refused to move the current sequence to the checkpoint bin.");
           saved.name = name;
           // The restored version takes the original's place in the project panel.
-          if (home) saved.projectItem.moveBin(home);
+          if (saved.projectItem.moveBin(home) === false)
+            fail("Premiere refused to move the restored sequence to its original bin.");
         } catch (restoreError) {
-          try {
-            original.name = name;
-            saved.name = savedName;
-            app.project.openSequence(originalId);
-          } catch (rollbackError) {}
+          var recovery = [
+            function () { original.name = name; },
+            function () { saved.name = savedName; },
+            function () {
+              if (original.projectItem.moveBin(home) === false) fail("Current sequence bin move failed.");
+            },
+            function () {
+              if (saved.projectItem.moveBin(savedHome) === false) fail("Checkpoint bin move failed.");
+            },
+            function () {
+              app.project.openSequence(originalId);
+              if (!app.project.activeSequence || String(app.project.activeSequence.sequenceID) !== originalId)
+                fail("Could not reopen the current sequence.");
+            },
+          ];
+          var recoveryErrors = [];
+          for (var r = 0; r < recovery.length; r++) {
+            try { recovery[r](); } catch (rollbackError) { recoveryErrors.push(String(rollbackError)); }
+          }
+          if (recoveryErrors.length)
+            fail(String(restoreError) + " Restore recovery was incomplete. Inspect both sequences: " + recoveryErrors.join("; "));
           throw restoreError;
         }
         return "axis:" + json({ ok: true, sequenceId: String(saved.sequenceID) });

@@ -199,7 +199,8 @@ test("opens the checkpoint on restore and preserves the after version without de
   assert.equal(f.project.activeSequence.name, "Main Edit");
   assert.equal(f.original.name, "Main Edit (after turn 3)");
   assert.equal(f.project.sequences.numSequences, 2);
-  assert.equal(f.moves.at(-1).id, "sequence-a");
+  assert.equal(f.moves.at(-1).id, "checkpoint-a");
+  assert.equal(f.moves.at(-1).value, f.project.rootItem);
 });
 
 test("puts the restored version in the bin the original sequence was in", () => {
@@ -299,6 +300,44 @@ test("restoration failure returns an error and reopens the after version", () =>
   );
   assert.equal(f.project.activeSequence, f.original);
   assert.equal(f.original.name, "Main Edit");
+});
+
+test("failed restore rolls back both bin moves and names before reopening the original", () => {
+  const f = fixture();
+  const checkpoint = f.run("snapshot", true);
+  const saved = f.project.sequences[1];
+  const savedName = saved.name;
+  const home = { name: "Edits", type: 2, children: { numItems: 1, 0: f.original.projectItem } };
+  const checkpoints = { name: "Axis checkpoints", type: 2, children: { numItems: 1, 0: saved.projectItem } };
+  f.original.projectItem.nodeId = "original-item";
+  saved.projectItem.nodeId = "saved-item";
+  f.project.rootItem.children = { numItems: 2, 0: home, 1: checkpoints };
+  let originalBin = home;
+  let savedBin = checkpoints;
+  f.original.projectItem.moveBin = (value) => { originalBin = value; };
+  saved.projectItem.moveBin = (value) => {
+    savedBin = value;
+    if (value === home) throw new Error("checkpoint bin move failed");
+  };
+  const after = f.run();
+  const result = f.run("restore", checkpoint.checkpointSignature, "sequence-a", "checkpoint-a", after.signature);
+  assert.match(result.error, /checkpoint bin move failed/);
+  assert.equal(originalBin, home);
+  assert.equal(savedBin, checkpoints);
+  assert.equal(f.original.name, "Main Edit");
+  assert.equal(saved.name, savedName);
+  assert.equal(f.project.activeSequence, f.original);
+});
+
+test("a silently refused bin move cannot report a successful restore", () => {
+  const f = fixture();
+  const checkpoint = f.run("snapshot", true);
+  const after = f.run();
+  f.original.projectItem.moveBin = () => false;
+  const result = f.run("restore", checkpoint.checkpointSignature, "sequence-a", "checkpoint-a", after.signature);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /move/);
+  assert.equal(f.project.activeSequence, f.original);
 });
 
 test("validates message arguments and parses malformed ExtendScript replies defensively", () => {
