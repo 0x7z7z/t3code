@@ -64,6 +64,16 @@
           for (var c = 0; c < clips.numItems && count < 2000; c++, count++) {
             var clip = clips[c];
             var enabled = null;
+            var speed = null;
+            var reversed = null;
+            try {
+              var rate = clip.getSpeed();
+              if (typeof rate === "number" && isFinite(rate)) speed = rate;
+            } catch (ignoredSpeed) {}
+            try {
+              var direction = clip.isSpeedReversed();
+              if (typeof direction === "boolean") reversed = direction;
+            } catch (ignoredDirection) {}
             try {
               enabled = !clip.isDisabled();
             } catch (ignored) {
@@ -75,6 +85,9 @@
               name: text(clip.name),
               nodeId: identities ? text(clip.nodeId) : "",
               projectItemName: clip.projectItem ? text(clip.projectItem.name) : "",
+              projectItemId: clip.projectItem ? text(clip.projectItem.nodeId) : "",
+              speed: speed,
+              reversed: reversed,
               start: seconds(clip.start),
               end: seconds(clip.end),
               inPoint: seconds(clip.inPoint),

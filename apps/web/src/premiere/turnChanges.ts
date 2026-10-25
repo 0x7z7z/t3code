@@ -4,6 +4,9 @@ export interface TimelineClip {
   name: string;
   nodeId: string;
   projectItemName: string;
+  projectItemId?: string;
+  speed?: number | null;
+  reversed?: boolean | null;
   start: number;
   end: number;
   inPoint: number;
@@ -134,7 +137,10 @@ export function diffTimeline(before: TimelineSnapshot, after: TimelineSnapshot):
     if (
       clip.enabled !== next.enabled ||
       clip.name !== next.name ||
-      clip.projectItemName !== next.projectItemName
+      clip.projectItemName !== next.projectItemName ||
+      clip.projectItemId !== next.projectItemId ||
+      clip.speed !== next.speed ||
+      clip.reversed !== next.reversed
     )
       add(
         "clipEdit",

@@ -59,6 +59,9 @@ export function parseTimelineSnapshot(value: unknown): TimelineSnapshot | null {
           !text(clip.name) ||
           !text(clip.nodeId) ||
           !text(clip.projectItemName) ||
+          (clip.projectItemId !== undefined && !text(clip.projectItemId)) ||
+          (clip.speed !== undefined && clip.speed !== null && !finite(clip.speed)) ||
+          (clip.reversed !== undefined && clip.reversed !== null && typeof clip.reversed !== "boolean") ||
           !finite(clip.start) ||
           !finite(clip.end) ||
           !finite(clip.inPoint) ||

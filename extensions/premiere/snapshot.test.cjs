@@ -261,6 +261,26 @@ test("rejects edited checkpoints and reports refusal to clone while preserving r
   assert.match(refused.checkpointError, /refused/);
 });
 
+for (const change of ["source", "speed", "reverse"]) {
+  test(`refuses undo after a ${change} change with unchanged timing`, () => {
+    const f = fixture();
+    let speed = 1;
+    let reverse = false;
+    f.clip.projectItem.nodeId = "source-a";
+    f.clip.getSpeed = () => speed;
+    f.clip.isSpeedReversed = () => reverse;
+    const checkpoint = f.run("snapshot", true);
+    const after = f.run();
+    if (change === "source") f.clip.projectItem = { name: "Source", nodeId: "source-b" };
+    if (change === "speed") speed = 2;
+    if (change === "reverse") reverse = true;
+    const restored = f.run("restore", checkpoint.checkpointSignature, "sequence-a", "checkpoint-a", after.signature);
+    assert.equal(restored.ok, false, change);
+    assert.match(restored.error, /timeline changed/, change);
+    assert.equal(f.project.activeSequence, f.original);
+  });
+}
+
 test("caps clips and markers and never checkpoints a partial snapshot", () => {
   const f = fixture();
   f.original.videoTracks[0].clips = { numItems: 2001 };

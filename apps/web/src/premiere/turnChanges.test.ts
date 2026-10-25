@@ -114,6 +114,17 @@ describe("timeline diff", () => {
     after.videoTracks[0]!.clips[0]!.name = "New name";
     expect(diffTimeline(before, after)[0]?.kind).toBe("clipEdit");
   });
+
+  it.each([
+    { projectItemId: "other-source" },
+    { speed: 2 },
+    { reversed: true },
+  ])("reports source and playback edits even when duration and source name stay the same: %j", (change) => {
+    const { before, after } = pair();
+    Object.assign(before.videoTracks[0]!.clips[0]!, { projectItemId: "source", speed: 1, reversed: false });
+    Object.assign(after.videoTracks[0]!.clips[0]!, { projectItemId: "source", speed: 1, reversed: false }, change);
+    expect(diffTimeline(before, after).map((entry) => entry.kind)).toEqual(["clipEdit"]);
+  });
   it("reports marker additions and removals", () => {
     const { before, after } = pair();
     after.markers[0]!.id = "new-marker";
