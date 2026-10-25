@@ -5,6 +5,7 @@ export interface TimelineClip {
   nodeId: string;
   projectItemName: string;
   projectItemId?: string;
+  mediaPath?: string;
   speed?: number | null;
   reversed?: boolean | null;
   start: number;
@@ -27,8 +28,8 @@ export interface TimelineSnapshot {
   name: string;
   videoTrackCount: number;
   audioTrackCount: number;
-  videoTracks: { index: number; clips: TimelineClip[] }[];
-  audioTracks: { index: number; clips: TimelineClip[] }[];
+  videoTracks: { index: number; name?: string; locked?: boolean; clips: TimelineClip[] }[];
+  audioTracks: { index: number; name?: string; locked?: boolean; clips: TimelineClip[] }[];
   markers: TimelineMarker[];
   inPoint: number | null;
   outPoint: number | null;

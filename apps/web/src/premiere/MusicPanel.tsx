@@ -1,17 +1,24 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { seekPremiere, type PremiereContext } from "./host";
+import { newMessageId } from "../lib/utils";
+import type { PremiereContext } from "./host";
 import { requestTimelineAction } from "./interactiveHost";
 import { requestTimelineSnapshot } from "./timelineHost";
 import { transcriptTime, type TranscriptWord } from "./sequenceTranscript";
 import {
+  chooseMusicTrack,
   defaultMusicMix,
   defaultMusicRoot,
-  musicChapters,
+  fillMusicGaps,
+  matchingMusic,
+  mergeShortMusicSections,
   musicKeyframes,
-  planMusic,
+  musicLevel,
+  musicPathKey,
+  musicScope,
+  subtractMusicRanges,
+  validateMusicCoverage,
   validateMusicPlan,
   type MusicCue,
-  type MusicMix,
   type MusicPlan,
   type MusicRange,
   type MusicTrack,
@@ -29,6 +36,13 @@ interface MusicUndo {
   checkpointSignature: string;
   expectedSignature: string;
 }
+interface MusicResult {
+  plan: MusicPlan;
+  undo: MusicUndo;
+  trackIndex: number;
+  partial: boolean;
+  summary?: string;
+}
 function stored<T>(key: string, fallback: T): T {
   try {
     return (JSON.parse(localStorage.getItem(key) ?? "null") as T) ?? fallback;
@@ -36,51 +50,7 @@ function stored<T>(key: string, fallback: T): T {
     return fallback;
   }
 }
-function readSettings(key: string, root: string) {
-  const fallback = { root, mix: defaultMusicMix };
-  const value = stored<unknown>(key, null);
-  if (
-    !value ||
-    typeof value !== "object" ||
-    !("root" in value) ||
-    typeof value.root !== "string" ||
-    value.root.length > 32768 ||
-    !("mix" in value) ||
-    !value.mix ||
-    typeof value.mix !== "object"
-  )
-    return fallback;
-  const mix = value.mix as MusicMix;
-  if (
-    Object.keys(defaultMusicMix).some(
-      (key) =>
-        typeof mix[key as keyof MusicMix] !== "number" ||
-        !Number.isFinite(mix[key as keyof MusicMix]),
-    )
-  )
-    return fallback;
-  if (
-    mix.baseDb < -60 ||
-    mix.baseDb > 0 ||
-    mix.duckDb < -60 ||
-    mix.duckDb > 0 ||
-    [mix.attack, mix.release, mix.mergeGap].some((n) => n < 0 || n > 10)
-  )
-    return fallback;
-  return { root: value.root, mix };
-}
-function readUndo(key: string): MusicUndo | null {
-  const value = stored<unknown>(key, null);
-  if (!value || typeof value !== "object") return null;
-  const undo = value as MusicUndo;
-  return [undo.checkpointId, undo.checkpointSignature, undo.expectedSignature].every(
-    (v) => typeof v === "string" && v.length > 0 && v.length <= 4000000,
-  )
-    ? undo
-    : null;
-}
 const name = (path: string) => path.split(/[\\/]/).at(-1) ?? path;
-const pathKey = (path: string) => path.replaceAll("\\", "/").toLowerCase();
 
 export function MusicPanel({
   context,
@@ -88,594 +58,458 @@ export function MusicPanel({
   disabled,
   onBusy,
   onClose,
-  onAsk,
+  onPlace,
   onRestored,
   initialPlan,
-  onDescribe,
+  selection,
+  active = true,
+  agentFinished = false,
 }: {
   context: PremiereContext;
   words: readonly TranscriptWord[];
   disabled: boolean;
   onBusy: (busy: boolean) => void;
   onClose: () => void;
-  onAsk: (prompt: string) => void;
+  onPlace?: ((prompt: string) => Promise<void>) | undefined;
   onRestored?: (sequenceId: string) => void;
   initialPlan?: MusicPlan | undefined;
-  onDescribe?: ((prompt: string, audio: MusicAudioAttachment[]) => Promise<void>) | undefined;
+  selection?: MusicRange | null;
+  active?: boolean;
+  agentFinished?: boolean;
 }) {
   const projectId = context.projectDocumentId || context.projectPath;
   const key = `axis-music:${JSON.stringify(projectId)}`;
-  const undoKey = `${key}:${context.sequenceId}:undo`;
-  const [settings, setSettings] = useState(() =>
-    readSettings(
-      key,
-      context.projectName.toLowerCase().includes("animeaddicts") ||
-        /animeaddicts/i.test(context.projectPath)
-        ? defaultMusicRoot
-        : "",
-    ),
+  const resultKey = `${key}:${context.sequenceId}:result`;
+  const [root, setRoot] = useState(
+    () => stored<{ root?: string }>(key, {}).root ?? defaultMusicRoot,
   );
-  const [undo, setUndo] = useState<MusicUndo | null>(() => readUndo(undoKey));
+  const [libraryOpen, setLibraryOpen] = useState(!root);
   const [tracks, setTracks] = useState<MusicTrack[]>([]);
-  const libraryByPath = new Map(tracks.map((track) => [pathKey(track.path), track]));
-  const [pending, setPending] = useState(0);
-  const [failures, setFailures] = useState(0);
-  const [tool, setTool] = useState("");
-  const [plan, setPlan] = useState<MusicPlan | null>(initialPlan ?? null);
-  const [signature, setSignature] = useState("");
-  const [exclusions, setExclusions] = useState("");
+  const [indexing, setIndexing] = useState(false);
+  const [libraryStatus, setLibraryStatus] = useState("");
+  const [duck, setDuck] = useState(false);
+  const [result, setResult] = useState<MusicResult | null>(() => stored(resultKey, null));
+  const [waiting, setWaiting] = useState<{
+    id: string;
+    signature: string;
+    scope: MusicRange;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState<{ url: string; label: string } | null>(null);
-  const [confirmed, setConfirmed] = useState(false);
+  const [message, setMessage] = useState("");
   const lock = useRef(false);
-  const chapters = musicChapters(words);
-  let validation = "";
-  try {
-    if (plan) {
-      validateMusicPlan(plan);
-      for (const cue of plan.cues.filter((c) => c.enabled)) {
-        const track = libraryByPath.get(pathKey(cue.track));
-        if (track && cue.sourceOffset + cue.end - cue.start > track.duration + 0.001)
-          throw new Error("The cue extends beyond the indexed source. Adjust its offset or start.");
-      }
+  const libraryGeneration = useRef(0);
+  const indexedRoot = useRef("");
+  const configure = (value: string) => {
+    if (value === root) return;
+    libraryGeneration.current++;
+    indexedRoot.current = "";
+    setRoot(value);
+    setTracks([]);
+    setIndexing(false);
+    setError("");
+    setLibraryStatus("");
+    try {
+      localStorage.setItem(key, JSON.stringify({ root: value }));
+    } catch {
+      setError("The library folder could not be remembered.");
     }
-  } catch (problem) {
-    validation = String(problem instanceof Error ? problem.message : problem);
+  };
+  function saveResult(value: MusicResult | null) {
+    setResult(value);
+    try {
+      if (value) localStorage.setItem(resultKey, JSON.stringify(value));
+      else localStorage.removeItem(resultKey);
+    } catch {
+      setError("Keep Music open to retain Undo. The checkpoint is also in Axis checkpoints.");
+    }
   }
-  const receivePlan = useEffectEvent((value: MusicPlan) => {
-    setPlan(value);
-    setSignature("");
-    setConfirmed(false);
+  async function request(action: string, fields: object = {}) {
+    return (await requestTimelineAction("premiere.music.request", {
+      action,
+      root,
+      projectId,
+      sequenceId: context.sequenceId,
+      ...fields,
+    })) as Record<string, unknown>;
+  }
+  const indexLibrary = useEffectEvent(() => {
+    const generation = ++libraryGeneration.current;
+    indexedRoot.current = root;
+    setIndexing(true);
+    void (async () => {
+      let pending: number;
+      do {
+        const packet = await request("index");
+        if (libraryGeneration.current !== generation) return;
+        if (!Array.isArray(packet.tracks)) throw new Error("Invalid music library response.");
+        const indexed = packet.tracks as MusicTrack[];
+        pending = Number(packet.pending) || 0;
+        setTracks(indexed);
+        setLibraryStatus(
+          `${indexed.length} ${indexed.length === 1 ? "song" : "songs"}${pending ? `, indexing ${pending} more` : " ready"}${Array.isArray(packet.failures) && packet.failures.length ? `, ${packet.failures.length} unavailable` : ""}`,
+        );
+      } while (pending > 0);
+    })()
+      .catch((problem: unknown) => {
+        if (libraryGeneration.current === generation)
+          setError(problem instanceof Error ? problem.message : "Library indexing failed.");
+      })
+      .finally(() => {
+        if (libraryGeneration.current === generation) setIndexing(false);
+      });
   });
   useEffect(() => {
-    // oxlint-disable-next-line react/set-state-in-effect -- Agent suggestion delivery resets this editable review draft.
-    if (initialPlan) receivePlan(initialPlan);
-  }, [initialPlan]);
-  function configure(root: string, mix = settings.mix) {
-    setSettings({ root, mix });
-    setConfirmed(false);
-    if (root !== settings.root) {
-      setTracks([]);
-      setSignature("");
-    }
-    try {
-      localStorage.setItem(key, JSON.stringify({ root, mix }));
-    } catch {
-      setError("Project settings could not be remembered.");
-    }
+    if (!active || !root.trim() || indexedRoot.current === root) return;
+    const timer = setTimeout(() => indexLibrary(), 400);
+    return () => clearTimeout(timer);
+  }, [root, active]);
+  useEffect(
+    () => () => {
+      libraryGeneration.current++;
+    },
+    [],
+  );
+  function keepReceipt(packet: Record<string, unknown>, plan: MusicPlan, trackIndex: number) {
+    if (
+      !packet.checkpointId ||
+      typeof packet.checkpointId !== "string" ||
+      typeof packet.checkpointSignature !== "string" ||
+      typeof packet.expectedSignature !== "string"
+    )
+      throw new Error("Missing undo receipt. Inspect Axis checkpoints before retrying.");
+    const summary =
+      packet.status === "partial"
+        ? `Music stopped: ${String(packet.message)} Use Undo all before retrying.`
+        : `Placed ${plan.cues.length} ${plan.cues.length === 1 ? "section" : "sections"}. ${String(packet.message || "Volume keyframe fades used.")}`;
+    saveResult({
+      plan,
+      undo: {
+        checkpointId: packet.checkpointId,
+        checkpointSignature: packet.checkpointSignature,
+        expectedSignature: packet.expectedSignature,
+      },
+      trackIndex,
+      partial: packet.status === "partial",
+      summary,
+    });
+    setMessage("");
   }
-  function saveUndo(value: MusicUndo | null) {
-    setUndo(value);
-    try {
-      if (value) localStorage.setItem(undoKey, JSON.stringify(value));
-      else localStorage.removeItem(undoKey);
-    } catch {
-      setError(
-        "Keep Music open to retain Undo. Its sequence checkpoint is also in Axis checkpoints.",
-      );
-    }
+  function prepared(cue: MusicCue) {
+    const source = tracks.find((t) => musicPathKey(t.path) === musicPathKey(cue.track));
+    if (
+      !source ||
+      cue.end - cue.start > source.duration + 0.001 ||
+      /00\. duplicate copies - review/i.test(source.path)
+    )
+      throw new Error("Every section must fit a song from the indexed library.");
+    const normalized = { ...cue, sourceOffset: 0, baseDb: musicLevel(source) };
+    return {
+      ...normalized,
+      keys: musicKeyframes(normalized, words, { ...defaultMusicMix, duckDb: duck ? -8 : 0 }),
+    };
   }
-  async function run(action: string, fields: object = {}) {
-    if (lock.current || disabled) return;
+  async function apply(value: MusicPlan, expected?: string, scope?: MusicRange) {
+    if (lock.current) return;
     lock.current = true;
     setBusy(true);
     onBusy(true);
+    setError("");
+    try {
+      const snapshot = await requestTimelineSnapshot(false, context.sequenceId);
+      if (
+        snapshot.snapshot.projectId !== projectId ||
+        snapshot.snapshot.sequenceId !== context.sequenceId
+      )
+        throw new Error("The active project or sequence changed.");
+      if (expected && expected !== snapshot.signature)
+        throw new Error("The timeline changed while music was being planned. Place music again.");
+      const target = chooseMusicTrack(snapshot.snapshot, tracks);
+      const span = scope ?? musicScope(snapshot.snapshot, words, selection);
+      const plan = fillMusicGaps(
+        validateMusicPlan(mergeShortMusicSections(value)),
+        span,
+        target.clips,
+        context.fps,
+      );
+      validateMusicCoverage(plan, span, target.clips, context.fps);
+      for (const cue of plan.cues) {
+        if (!cue.mood || cue.energy === undefined)
+          throw new Error("Every section needs a mood and energy.");
+        if (
+          target.clips.some(
+            (c) =>
+              c.mediaPath &&
+              musicPathKey(c.mediaPath) === musicPathKey(cue.track) &&
+              (Math.abs(c.end - cue.start) < 0.05 || Math.abs(c.start - cue.end) < 0.05),
+          )
+        )
+          throw new Error(
+            "A section repeats the neighbouring song. Place music again to choose another.",
+          );
+      }
+      if (!plan.cues.length) {
+        setMessage("This range already has music.");
+        return;
+      }
+      const cues = plan.cues.map(prepared);
+      const packet = await request("apply", {
+        confirmed: true,
+        expectedSignature: snapshot.signature,
+        targetTrackIndex: target.index,
+        libraryPaths: tracks.map((t) => t.path),
+        crossfade: 1.5,
+        silence: plan.silence,
+        ducking: duck,
+        cues,
+      });
+      keepReceipt(packet, { ...plan, cues }, target.index);
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : "Music placement failed.");
+    } finally {
+      setWaiting(null);
+      lock.current = false;
+      setBusy(false);
+      onBusy(false);
+    }
+  }
+  const receivePlan = useEffectEvent(() => {
+    if (!waiting || disabled || busy || indexing) return;
+    if (initialPlan?.requestId === waiting.id)
+      void apply(initialPlan, waiting.signature, waiting.scope);
+    else if (agentFinished) {
+      setWaiting(null);
+      setError("The agent finished without a matching music plan. Place music to try again.");
+    }
+  });
+  useEffect(() => {
+    if (
+      !waiting ||
+      disabled ||
+      busy ||
+      indexing ||
+      (initialPlan?.requestId !== waiting.id && !agentFinished)
+    )
+      return;
+    void Promise.resolve().then(() => receivePlan());
+  }, [initialPlan, disabled, busy, indexing, waiting, agentFinished]);
+  async function place() {
+    if (lock.current || disabled || waiting || indexing) return;
+    lock.current = true;
     setError("");
     setMessage("");
     try {
-      const packet = (await requestTimelineAction("premiere.music.request", {
-        action,
-        root: settings.root,
-        projectId,
-        sequenceId: context.sequenceId,
-        ...fields,
-      })) as Record<string, unknown>;
-      if (action === "pick" && typeof packet.root === "string" && packet.root)
-        configure(packet.root);
-      if (action === "index") {
-        if (!Array.isArray(packet.tracks)) throw new Error("Invalid library response.");
-        setTracks(packet.tracks as MusicTrack[]);
-        setPending(Number(packet.pending) || 0);
-        setFailures(Array.isArray(packet.failures) ? packet.failures.length : 0);
-        setTool(String(packet.tool || ""));
-        if (Array.isArray(packet.failures) && packet.failures.length) {
-          const failure = packet.failures[0] as { error?: unknown };
-          setError(
-            `Library analysis: ${String(failure.error ?? "An audio file could not be decoded.").slice(0, 600)}`,
-          );
-        }
-        setMessage(
-          `${packet.tracks.length} tracks indexed. ${Number(packet.pending) || 0} pending. ${Array.isArray(packet.failures) ? packet.failures.length : 0} failed. Failed files retry when their size or modification time changes.`,
-        );
-        setSignature("");
-        setConfirmed(false);
+      if (!onPlace) throw new Error("Connect an editing agent to place music.");
+      if (!tracks.length) throw new Error("Choose a library containing indexed songs.");
+      const snapshot = await requestTimelineSnapshot(false, context.sequenceId);
+      if (
+        snapshot.snapshot.projectId !== projectId ||
+        snapshot.snapshot.sequenceId !== context.sequenceId
+      )
+        throw new Error("The active project or sequence changed.");
+      const target = chooseMusicTrack(snapshot.snapshot, tracks);
+      const scope = musicScope(snapshot.snapshot, words, selection);
+      if (!words.length) throw new Error("Transcribe the voice-over before placing music.");
+      if (!subtractMusicRanges(scope, target.clips).length) {
+        setMessage("This range already has music.");
+        return;
       }
-      if (action === "audition" && typeof packet.dataUrl === "string")
-        setPreview({
-          url: packet.dataUrl,
-          label: name(String(fields && "path" in fields ? fields.path : "Music")),
-        });
-      if (action === "apply") {
-        if (
-          typeof packet.checkpointId !== "string" ||
-          !packet.checkpointId ||
-          typeof packet.checkpointSignature !== "string" ||
-          typeof packet.expectedSignature !== "string"
-        )
-          throw new Error("Missing music undo receipt. Inspect Axis checkpoints before retrying.");
-        saveUndo(packet as unknown as MusicUndo);
-        setConfirmed(false);
-        setSignature("");
-        setMessage(
-          packet.status === "partial"
-            ? `Music stopped: ${String(packet.message)} Use Undo music before retrying.`
-            : "Music applied. Listen through transitions and check voice-over masking.",
-        );
-      }
-      if (action === "undo") {
-        if (
-          packet.status !== "undone" ||
-          typeof packet.sequenceId !== "string" ||
-          !packet.sequenceId
-        )
-          throw new Error("Missing restored sequence ID.");
-        onRestored?.(packet.sequenceId);
-        saveUndo(null);
-        setSignature("");
-        setConfirmed(false);
-        setMessage("Opened the pre-music sequence checkpoint.");
-      }
+      const id = newMessageId();
+      setWaiting({ id, signature: snapshot.signature, scope });
+      await onPlace(
+        `Use $axis-music-placement. Return a plan only; the panel will checkpoint and apply automatically. Do not call timeline-writing tools. Split the timed VO by subject, character or object and emotional changes, usually 30-90 seconds, never by elapsed time alone. Merge neighbouring subjects shorter than 28 seconds only when they share a theme and mood (for example three short fusion characters become one Fusions section); use an optional shared theme field when returning separate short subjects. One song per section, back to back, covering the entire scope except sponsors and occupied intervals. Infer each section's mood and energy from its meaning. Primary mood source: calm music for explanations; dark cinematic music for tension, danger, reveals, ominous lore and showdowns; hype music for intros, fights and phonk; sad music for genuine loss and reflection. Never use duplicate-review copies. Unsorted-review tracks are last resort. Catalogue duration, BPM, energy and brightness are secondary hints. Songs may recur, never in neighbouring sections including existing clips. Always start at source zero; never loop or overrun sources. The panel sets Volume Level from measured peak to target -33 dBFS; no ducking. Return one axis-music JSON fence: {version:1,requestId:${JSON.stringify(id)},cues:[{id,chapter,theme?,mood,energy:0.0,start,end,track,sourceOffset,reason,fadeIn:0.75,fadeOut:0.75,baseDb:0,enabled:true,alternatives:[]}],silence:[]}. Mood and energy are required. Shorten fades for tiny sections. Use exact indexed paths. The checkpoint plus Undo all is the authorized single-click confirmation. Scope: ${JSON.stringify(scope)}. Target track: ${JSON.stringify(target)}. Timed VO: ${JSON.stringify(words.filter((w) => w.end > scope.start && w.start < scope.end))}. Indexed library: ${JSON.stringify(tracks.map(({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags }) => ({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags })))}`,
+      );
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Music operation failed.");
+      setWaiting(null);
+      setError(problem instanceof Error ? problem.message : "Could not ask the music agent.");
     } finally {
       lock.current = false;
-      setBusy(false);
-      onBusy(false);
     }
   }
-  function excludedRanges(): MusicRange[] {
-    return exclusions.trim()
-      ? exclusions.split(",").map((part) => {
-          const [start, end] = part.split("-").map(Number);
-          if (start === undefined || end === undefined)
-            throw new Error("Use start-end seconds, separated by commas.");
-          return { start, end };
-        })
-      : [];
-  }
-  async function review(generate: boolean) {
-    if (lock.current || disabled) return;
+  async function swap(cue: MusicCue) {
+    if (!result || lock.current || disabled) return;
     lock.current = true;
     setBusy(true);
     onBusy(true);
     setError("");
     try {
-      const value = generate
-        ? planMusic(words, tracks, settings.mix.baseDb, excludedRanges())
-        : validateMusicPlan(
-            plan
-              ? {
-                  ...plan,
-                  silence: [
-                    ...plan.silence,
-                    ...excludedRanges()
-                      .filter(
-                        (r) => !plan.silence.some((s) => s.start === r.start && s.end === r.end),
-                      )
-                      .map((r) => ({ ...r, reason: "Editor excluded / sponsor" })),
-                  ],
-                }
-              : null,
-          );
-      for (const c of value.cues.filter((c) => c.enabled)) {
-        const track = libraryByPath.get(pathKey(c.track));
-        if (!track || c.sourceOffset + c.end - c.start > track.duration + 0.001)
-          throw new Error("Index this library first. Every cue must fit an indexed source track.");
-      }
       const snapshot = await requestTimelineSnapshot(false, context.sequenceId);
-      if (snapshot.snapshot.projectId !== projectId) throw new Error("The active project changed.");
-      setPlan(value);
-      setSignature(snapshot.signature);
-      setConfirmed(false);
+      if (snapshot.signature !== result.undo.expectedSignature)
+        throw new Error("The timeline changed. Inspect it before swapping.");
+      const target = snapshot.snapshot.audioTracks.find((t) => t.index === result.trackIndex);
+      const clip = target?.clips.find(
+        (c) =>
+          c.mediaPath &&
+          musicPathKey(c.mediaPath) === musicPathKey(cue.track) &&
+          Math.abs(c.start - cue.start) < 0.02 &&
+          Math.abs(c.end - cue.end) < 0.05,
+      );
+      if (!clip) throw new Error("The placed song could not be identified safely.");
+      const neighbours = target!.clips.filter(
+        (c) =>
+          c.nodeId !== clip.nodeId &&
+          (Math.abs(c.end - cue.start) < 0.05 || Math.abs(c.start - cue.end) < 0.05),
+      );
+      const chosen = matchingMusic(
+        cue.mood ?? "calm",
+        cue.energy ?? 0.3,
+        cue.end - cue.start,
+        tracks,
+        [cue.track, ...neighbours.map((c) => c.mediaPath ?? "")],
+      )[0];
+      if (!chosen) throw new Error("No different matching song is long enough for this section.");
+      const replacement = prepared({ ...cue, track: chosen.path, sourceOffset: 0 });
+      const packet = await request("swap", {
+        ...result.undo,
+        confirmed: true,
+        targetTrackIndex: result.trackIndex,
+        replace: { nodeId: clip.nodeId, track: cue.track, start: cue.start, end: cue.end },
+        libraryPaths: tracks.map((t) => t.path),
+        crossfade: 1.5,
+        ducking: duck,
+        cues: [replacement],
+      });
+      keepReceipt(
+        packet,
+        { ...result.plan, cues: result.plan.cues.map((c) => (c.id === cue.id ? replacement : c)) },
+        result.trackIndex,
+      );
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Could not review music.");
+      setError(problem instanceof Error ? problem.message : "Swap failed.");
     } finally {
       lock.current = false;
       setBusy(false);
       onBusy(false);
     }
   }
-  function updateCue(id: string, patch: Partial<MusicCue>) {
-    if (!plan) return;
-    setPlan({ ...plan, cues: plan.cues.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
-    setConfirmed(false);
-  }
-  async function describeLibrary() {
-    if (!onDescribe || lock.current || disabled) return;
+  async function undoAll() {
+    if (!result || lock.current || disabled) return;
     lock.current = true;
     setBusy(true);
+    onBusy(true);
     setError("");
     try {
-      const batch = tracks.filter((t) => !t.description).slice(0, 3);
-      const audio: MusicAudioAttachment[] = [];
-      for (const track of batch) {
-        const offset = track.loudWindows[0]?.start ?? 0;
-        const packet = (await requestTimelineAction("premiere.music.request", {
-          action: "audition",
-          root: settings.root,
-          path: track.path,
-          offset,
-        })) as Record<string, unknown>;
-        if (typeof packet.dataUrl !== "string" || typeof packet.sizeBytes !== "number")
-          throw new Error("Could not prepare audio sample.");
-        audio.push({
-          type: "file",
-          name: `${audio.length + 1}-${track.filename.slice(0, 200)}.wav`,
-          mimeType: "audio/wav",
-          sizeBytes: packet.sizeBytes,
-          dataUrl: packet.dataUrl,
-        });
-      }
-      await onDescribe(
-        `Describe library: listen to each of the ${audio.length} attached 30-second music excerpts. Describe only audible mood, genre and instrumentation, state excerpt coverage, and save each short description using the Axis helper (shell tool, no Premiere writes): python ${JSON.stringify(tool)} describe --path <exact path> --fingerprint <fingerprint> --description <description> --tags <JSON string array>. Never infer mood from the filename or invent listening. Samples in order: ${JSON.stringify(batch.map((t) => ({ path: t.path, fingerprint: t.fingerprint, offset: t.loudWindows[0]?.start ?? 0 })))}. Then tell me to refresh the library index. Do not change the timeline.`,
-        audio,
-      );
-      setMessage(
-        "Library description sent. Follow the reply in Conversation, then refresh the index.",
-      );
+      const packet = await request("undo", result.undo);
+      if (packet.status !== "undone" || typeof packet.sequenceId !== "string")
+        throw new Error("Missing restored sequence ID.");
+      onRestored?.(packet.sequenceId);
+      saveResult(null);
+      setMessage("Opened the sequence from before music placement.");
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Library description failed.");
+      setError(problem instanceof Error ? problem.message : "Undo failed.");
     } finally {
       lock.current = false;
       setBusy(false);
+      onBusy(false);
     }
   }
-  const active = plan?.cues.filter((c) => c.enabled) ?? [];
-  const blocked = busy || disabled;
+  const blocked = disabled || busy || !!waiting;
   return (
     <section data-music-panel="" role="region" aria-label="Music">
       <header>
         <strong>Music</strong>
-        <span>Voice-over first</span>
+        <span>One song for each section</span>
         <button type="button" aria-label="Close Music" disabled={busy} onClick={onClose}>
           ×
         </button>
       </header>
-      <label>
-        Library folder
-        <div data-music-row="">
-          <input
-            aria-label="Music library folder"
-            value={settings.root}
-            disabled={blocked}
-            onChange={(e) => configure(e.target.value)}
-          />
-          <button type="button" disabled={blocked} onClick={() => void run("pick")}>
-            Browse
-          </button>
-        </div>
-      </label>
-      <div data-music-row="">
-        <button
-          type="button"
-          disabled={blocked || !settings.root}
-          onClick={() => void run("index")}
-        >
-          {pending ? `Resume index (${pending})` : "Index library"}
-        </button>
-        <small>{tracks.length} tracks</small>
-        {failures ? (
-          <button
-            type="button"
-            disabled={blocked}
-            onClick={() => void run("index", { retryFailures: true })}
-          >
-            Retry {failures} failed
-          </button>
-        ) : null}
-        <button
-          type="button"
-          disabled={blocked || !onDescribe || !tracks.some((t) => !t.description)}
-          onClick={() => void describeLibrary()}
-        >
-          Describe library
-        </button>
-      </div>
-      <details>
-        <summary aria-label="Music levels and exclusions">Levels, fades and exclusions</summary>
-        <div data-music-settings="">
-          {(
-            [
-              ["baseDb", "Base level (dB)", -60, 0, 1],
-              ["duckDb", "Duck depth (dB)", -60, 0, 1],
-              ["attack", "Attack (s)", 0, 10, 0.05],
-              ["release", "Release (s)", 0, 10, 0.05],
-              ["mergeGap", "Merge speech gaps (s)", 0, 10, 0.05],
-            ] as const
-          ).map(([field, label, min, max, step]) => (
-            <label key={field}>
-              {label}
-              <input
-                type="number"
-                aria-label={label}
-                min={min}
-                max={max}
-                step={step}
-                disabled={blocked}
-                value={settings.mix[field]}
-                onChange={(e) => {
-                  const mix: MusicMix = { ...settings.mix, [field]: Number(e.target.value) };
-                  configure(settings.root, mix);
-                  if (field === "baseDb" && plan)
-                    setPlan({
-                      ...plan,
-                      cues: plan.cues.map((c) => ({ ...c, baseDb: mix.baseDb })),
-                    });
-                }}
-              />
-            </label>
-          ))}
-        </div>
+      <details
+        data-music-library=""
+        open={libraryOpen}
+        onToggle={(event) => setLibraryOpen(event.currentTarget.open)}
+      >
+        <summary>Library{root ? ` · ${name(root)}` : " folder"}</summary>
         <label>
-          Sponsor / silence ranges (seconds)
-          <input
-            aria-label="Sponsor and silence ranges"
-            placeholder="60-90, 240-250"
-            value={exclusions}
-            disabled={blocked}
-            onChange={(e) => {
-              setExclusions(e.target.value);
-              setSignature("");
-              setConfirmed(false);
-            }}
-          />
+          Library folder
+          <div data-music-row="">
+            <input
+              aria-label="Music library folder"
+              value={root}
+              disabled={blocked}
+              onChange={(e) => configure(e.target.value)}
+            />
+            <button
+              type="button"
+              disabled={blocked || indexing}
+              onClick={() => {
+                void request("pick")
+                  .then((packet) => {
+                    if (typeof packet.root === "string" && packet.root) configure(packet.root);
+                  })
+                  .catch((problem: unknown) => setError(String(problem)));
+              }}
+            >
+              Browse
+            </button>
+          </div>
         </label>
-        <small>
-          Build again after changing exclusions. Sponsor detection is conservative; verify the
-          boundaries.
-        </small>
       </details>
-      <div data-music-row="">
-        <button
-          type="button"
-          disabled={blocked || !tracks.length || !words.length || !!undo}
-          onClick={() => void review(true)}
-        >
-          Build music plan
-        </button>
-        <button
-          type="button"
-          disabled={blocked || !tracks.length}
-          onClick={() =>
-            onAsk(
-              `Score this video using Axis Music. Read the axis-music-placement skill, plan coherent chapter beds with exact indexed files and measured offsets, voice-over first, no repeats, deliberate silence, exclude sponsors. Emit a version 1 axis-music JSON plan for review, do not apply yet. Transcript chapters: ${JSON.stringify(chapters)}. Library: ${JSON.stringify(tracks.slice(0, 200).map(({ energy: _energy, ...t }) => t))}`,
-            )
-          }
-        >
-          Ask agent
-        </button>
-      </div>
-      {plan ? (
+      <p data-music-empty="">
+        Music follows your script, matching the mood of each character or subject.
+      </p>
+      <button
+        type="button"
+        data-primary=""
+        disabled={blocked || indexing || !tracks.length || !root || !!result}
+        onClick={() => void place()}
+      >
+        {busy ? "Placing music..." : waiting ? "Matching music..." : "Place music"}
+      </button>
+      {!result ? (
+        <label data-music-duck="">
+          <input
+            type="checkbox"
+            checked={duck}
+            disabled={blocked}
+            onChange={(e) => setDuck(e.target.checked)}
+          />
+          Lower music during speech
+        </label>
+      ) : null}
+      {libraryStatus ? <small>{libraryStatus}</small> : null}
+      {result ? (
         <>
-          <div data-music-bands="" aria-label="Music chapter timeline">
-            {chapters.map((c) => (
-              <button
-                type="button"
-                key={c.start}
-                aria-label={c.title}
-                style={{ flexGrow: c.end - c.start }}
-                data-sponsor={c.sponsor || undefined}
-                onClick={() => seekPremiere(c.start, context.sequenceId)}
-              >
-                {transcriptTime(c.start)}
-              </button>
-            ))}
+          <div data-music-row="">
+            <strong>{result.partial ? "Placement stopped" : "Music placed"}</strong>
+            <button
+              type="button"
+              disabled={disabled || busy || !result.undo.expectedSignature}
+              onClick={() => void undoAll()}
+            >
+              Undo all
+            </button>
           </div>
           <ol data-music-cues="">
-            {plan.cues.map((c) => (
-              <li key={c.id} data-enabled={c.enabled}>
+            {result.plan.cues.map((cue) => (
+              <li key={cue.id}>
                 <div data-music-row="">
-                  <input
-                    type="checkbox"
-                    aria-label={`Include ${c.chapter}`}
-                    checked={c.enabled}
-                    disabled={blocked || !!undo}
-                    onChange={(e) => updateCue(c.id, { enabled: e.target.checked })}
-                  />
+                  <strong>{cue.chapter}</strong>
                   <button
                     type="button"
-                    data-timestamp=""
-                    onClick={() => seekPremiere(c.start, context.sequenceId)}
+                    aria-label={`Swap ${cue.chapter}`}
+                    disabled={disabled || busy || result.partial}
+                    onClick={() => void swap(cue)}
                   >
-                    {transcriptTime(c.start)}
-                  </button>
-                  <strong>{c.chapter}</strong>
-                </div>
-                <select
-                  aria-label={`Track for ${c.chapter}`}
-                  disabled={blocked || !!undo}
-                  value={c.track}
-                  onChange={(e) => {
-                    const alt = c.alternatives.find((a) => a.track === e.target.value);
-                    if (alt)
-                      updateCue(c.id, {
-                        ...alt,
-                        alternatives: [
-                          { track: c.track, sourceOffset: c.sourceOffset, reason: c.reason },
-                          ...c.alternatives.filter((a) => a.track !== alt.track),
-                        ].slice(0, 3),
-                      });
-                  }}
-                >
-                  <option value={c.track}>{name(c.track)}</option>
-                  {c.alternatives.map((a) => (
-                    <option key={a.track} value={a.track}>
-                      {name(a.track)}
-                    </option>
-                  ))}
-                </select>
-                <p>{c.reason}</p>
-                <div data-music-row="">
-                  <label>
-                    Start
-                    <input
-                      type="number"
-                      aria-label={`Start for ${c.chapter}`}
-                      step={1 / context.fps}
-                      value={c.start}
-                      disabled={blocked || !!undo}
-                      onChange={(e) => updateCue(c.id, { start: Number(e.target.value) })}
-                    />
-                  </label>
-                  <label>
-                    Source
-                    <input
-                      type="number"
-                      aria-label={`Source offset for ${c.chapter}`}
-                      min={0}
-                      step="0.1"
-                      value={c.sourceOffset}
-                      disabled={blocked || !!undo}
-                      onChange={(e) => updateCue(c.id, { sourceOffset: Number(e.target.value) })}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={blocked}
-                    onClick={() => {
-                      seekPremiere(c.start, context.sequenceId);
-                      void run("audition", { path: c.track, offset: c.sourceOffset });
-                    }}
-                  >
-                    Audition
+                    Swap
                   </button>
                 </div>
-                <div data-music-row="">
-                  {(["fadeIn", "fadeOut"] as const).map((field) => (
-                    <label key={field}>
-                      {field === "fadeIn" ? "Fade in" : "Fade out"}
-                      <input
-                        aria-label={`${field} for ${c.chapter}`}
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={c[field]}
-                        disabled={blocked || !!undo}
-                        onChange={(e) => updateCue(c.id, { [field]: Number(e.target.value) })}
-                      />
-                    </label>
-                  ))}
-                  <small>
-                    to {transcriptTime(c.end)} · {c.baseDb} dB
-                  </small>
-                </div>
+                <small>
+                  {transcriptTime(cue.start)} - {transcriptTime(cue.end)} · {cue.mood}
+                </small>
+                <p>{name(cue.track)}</p>
               </li>
             ))}
           </ol>
-          {plan.silence.map((s) => (
-            <p data-music-silence="" key={`${s.start}:${s.end}:${s.reason}`}>
-              {transcriptTime(s.start)}-{transcriptTime(s.end)} · {s.reason}
-            </p>
-          ))}
-          {!signature && !undo ? (
-            <button
-              type="button"
-              disabled={blocked || !tracks.length || !!validation}
-              onClick={() => void review(false)}
-            >
-              Validate plan against timeline
-            </button>
-          ) : null}
-          <label data-music-confirm="">
-            <input
-              type="checkbox"
-              checked={confirmed}
-              disabled={blocked || !signature || !!validation || !!undo}
-              onChange={(e) => setConfirmed(e.target.checked)}
-            />
-            I reviewed cues, sponsor boundaries and voice-over levels.
-          </label>
-          <button
-            type="button"
-            data-primary=""
-            disabled={
-              blocked || !confirmed || !signature || !active.length || !!validation || !!undo
-            }
-            onClick={() => {
-              try {
-                const cues = validateMusicPlan(plan)
-                  .cues.filter((c) => c.enabled)
-                  .sort((a, b) => a.start - b.start)
-                  .map((c) => ({ ...c, keys: musicKeyframes(c, words, settings.mix) }));
-                void run("apply", {
-                  cues,
-                  silence: plan.silence,
-                  confirmed: true,
-                  expectedSignature: signature,
-                });
-              } catch (problem) {
-                setError(String(problem));
-              }
-            }}
-          >
-            Apply {active.length} cues
-          </button>
         </>
-      ) : (
-        <p data-music-empty="">
-          Build a chapter score from your local library, then audition and review before applying.
+      ) : null}
+      {message || waiting || result?.summary ? (
+        <p role="status">
+          {waiting
+            ? "Reading the script and choosing music for each section..."
+            : message || result?.summary}
         </p>
-      )}
-      {undo ? (
-        <button
-          type="button"
-          disabled={blocked || !undo.expectedSignature}
-          onClick={() => void run("undo", undo)}
-        >
-          Undo music
-        </button>
       ) : null}
-      {preview ? (
-        <div data-music-preview="">
-          <small>{preview.label} · 30 second source preview</small>
-          <audio
-            key={preview.url}
-            controls
-            autoPlay
-            src={preview.url}
-            aria-label="Music source preview"
-          />
-        </div>
-      ) : null}
-      {message ? <p role="status">{message}</p> : null}
-      {error || validation ? <p role="alert">{error || validation}</p> : null}
-      <small>
-        Categories and measured energy guide the first pass. Mood is unverified until listened to or
-        described by an audio-capable agent.
-        {!onDescribe ? " Select Antigravity with a Gemini model to describe audio excerpts." : ""}
-      </small>
+      {error ? <p role="alert">{error}</p> : null}
     </section>
   );
 }

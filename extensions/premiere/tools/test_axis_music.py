@@ -83,3 +83,46 @@ def test_compact_response_keeps_envelopes_in_cache(tmp_path):
     wav(root / "one.wav")
     assert index_library(root, cache, compact=True)["tracks"][0]["energy"] == []
     assert len(index_library(root, cache)["tracks"][0]["energy"]) == 12
+from axis_music import catalogue_hints, peak_dbfs
+
+
+def test_full_channel_peak_survives_antiphase_downmix(tmp_path):
+    path = tmp_path / "stereo.wav"
+    with wave.open(str(path), "wb") as out:
+        out.setparams((2, 2, 48000, 0, "NONE", "not compressed"))
+        out.writeframes(b"".join(struct.pack("<hh", value, -value) for value in [16384, -16384] * 4800))
+    assert peak_dbfs(path) == pytest.approx(-6.0206, abs=0.01)
+
+
+def test_catalogue_is_secondary_read_only_and_duplicates_are_not_decoded(tmp_path):
+    root = tmp_path / "music"
+    wav(root / "hype music" / "track.wav")
+    duplicate = root / "00. duplicate copies - review" / "broken.mp3"
+    duplicate.parent.mkdir()
+    duplicate.write_bytes(b"not audio")
+    references = root / "AGENTS.md"
+    references.mkdir()
+    (references / "MUSIC_LIBRARY_CATALOGUE_AND_ANALYSIS.md").write_text(
+        "### Hype `hype music`\n| 1 | `track.wav` | 0:12 | 120 | electronic; energy 80%; brightness 60% |", encoding="utf-8")
+    (references / "audio_mood_analysis.json").write_text(
+        '{"results":[{"name":"track.wav","low_level":{"bpm":122},"audio_summary":{"energy":0.82,"brightness":0.61}}]}', encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+    result = index_library(root, tmp_path / "cache.sqlite")
+    assert len(result["tracks"]) == 1
+    assert result["failures"] == []
+    track = result["tracks"][0]
+    assert track["category"] == "hype music"
+    assert track["tempo"] == 120
+    assert track["catalogueEnergy"] == 0.82
+    assert track["brightness"] == 0.61
+    assert -10 < track["peakDbfs"] < -8
+    assert all(p.read_bytes() == content for p, content in before.items())
+
+
+def test_silent_sources_cannot_be_peak_normalized(tmp_path):
+    path = tmp_path / "silent.wav"
+    with wave.open(str(path), "wb") as out:
+        out.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
+        out.writeframes(b"\0" * 16000)
+    with pytest.raises(ValueError, match="finite source peak"):
+        peak_dbfs(path)

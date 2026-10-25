@@ -1854,13 +1854,27 @@ small[data-shot-text] {
 }
 [data-music-panel] summary {
   cursor: pointer;
+  overflow-wrap: anywhere;
+}
+[data-music-library] {
+  color: #aaa;
+  font-size: 11px;
+}
+[data-music-library][open] summary {
   margin-bottom: 8px;
 }
-[data-music-settings] {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-bottom: 8px;
+[data-music-panel] [data-music-duck] {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #aaa;
+}
+[data-music-panel] > button[data-primary] {
+  padding: 10px;
+}
+[data-music-panel] > p {
+  margin: 0;
+  line-height: 1.6;
 }
 [data-music-row] > input:not([type="checkbox"]) {
   flex: 1;
@@ -1869,6 +1883,7 @@ small[data-shot-text] {
   flex: 1;
 }
 [data-music-row] strong {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1891,49 +1906,9 @@ small[data-shot-text] {
   display: grid;
   gap: 8px;
 }
-[data-music-cues] li[data-enabled="false"] {
-  opacity: 0.5;
-}
 [data-music-cues] p {
   margin: 0;
   overflow-wrap: anywhere;
-}
-[data-music-bands] {
-  display: flex;
-  gap: 2px;
-  overflow: hidden;
-  border-radius: 4px;
-}
-[data-music-bands] button {
-  flex-basis: 0;
-  min-width: 0;
-  flex-shrink: 1;
-  overflow: hidden;
-  padding: 5px 2px;
-  font-size: 10px;
-  background: #253b52;
-}
-[data-music-bands] [data-sponsor="true"] {
-  background: #343434;
-}
-[data-music-panel] [data-music-confirm] {
-  display: flex;
-  align-items: center;
-  line-height: 1.5;
-}
-[data-music-silence] {
-  padding: 8px;
-  margin: 0;
-  border-left: 2px solid #737373;
-  color: #aaa;
-}
-[data-music-preview] {
-  display: grid;
-  gap: 5px;
-}
-[data-music-preview] audio {
-  width: 100%;
-  height: 34px;
 }
 [data-music-panel] [role="alert"] {
   color: #eaa389;
