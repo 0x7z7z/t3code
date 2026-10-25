@@ -11,6 +11,7 @@
   --accent: #378ef0;
   --accent-hover: #4b9cf5;
   --danger: #f2776a;
+  --warning: #e5b567;
   --ok: #4bc98a;
   font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text);
@@ -533,7 +534,8 @@ a {
   width: 100%;
   resize: none;
   min-height: 38px;
-  max-height: 25vh;
+  max-height: min(40vh, 224px);
+  overflow-y: auto;
   background: transparent;
   border: 0;
   padding: 2px 4px 6px;
@@ -588,7 +590,6 @@ a {
 [data-send-button] {
   display: grid;
   place-items: center;
-  margin-left: auto;
   width: 28px;
   height: 28px;
   padding: 0;
@@ -611,22 +612,81 @@ a {
 [data-model-options] {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 4px;
-  margin-bottom: 6px;
+  gap: 6px;
+  padding: 5px 2px;
+  margin-bottom: 4px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
 [data-model-options] label {
-  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 140px;
   min-width: 90px;
 }
 [data-model-options] select {
+  flex: 1;
   font-size: 11px;
   padding: 4px;
 }
 [data-model-options] input {
   width: auto;
+}
+[data-model-options] label > span {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--muted);
+}
+[data-composer-usage] {
+  position: relative;
+  color: var(--accent);
+}
+[data-composer-primary] {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 4px;
+  margin-left: auto;
+}
+[data-composer-usage] > button {
+  color: inherit;
+}
+[data-composer-usage][data-usage-level="amber"] {
+  color: var(--warning);
+}
+[data-composer-usage][data-usage-level="red"] {
+  color: var(--danger);
+}
+[data-composer-usage][data-usage-level="unknown"] {
+  color: var(--muted);
+}
+[data-composer-usage] text {
+  fill: currentColor;
+  font-size: 9px;
+}
+[data-composer-usage] [data-usage-popover] {
+  left: auto;
+  right: 0;
+  width: 280px;
+  min-width: min(260px, calc(100vw - 24px));
+  padding: 10px;
+  color: var(--text);
+  font-size: 11px;
+}
+[data-usage-popover] output {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+[data-usage-popover] > strong:not(:first-child) {
+  margin-top: 10px;
+}
+[data-usage-popover] [data-usage-window] {
+  margin-top: 7px;
+}
+[data-usage-popover] small {
+  color: var(--muted);
+  font-size: 10px;
 }
 
 /* Clickable timestamps in replies move the playhead. */
