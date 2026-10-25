@@ -342,6 +342,9 @@ export function MusicPanel({
         `Describe library: listen to each of the ${audio.length} attached 30-second music excerpts. Describe only audible mood, genre and instrumentation, state excerpt coverage, and save each short description using the Axis helper (shell tool, no Premiere writes): python ${JSON.stringify(tool)} describe --path <exact path> --fingerprint <fingerprint> --description <description> --tags <JSON string array>. Never infer mood from the filename or invent listening. Samples in order: ${JSON.stringify(batch.map((t) => ({ path: t.path, fingerprint: t.fingerprint, offset: t.loudWindows[0]?.start ?? 0 })))}. Then tell me to refresh the library index. Do not change the timeline.`,
         audio,
       );
+      setMessage(
+        "Library description sent. Follow the reply in Conversation, then refresh the index.",
+      );
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Library description failed.");
     } finally {

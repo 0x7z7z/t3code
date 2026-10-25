@@ -86,6 +86,16 @@ export function PremiereApp() {
   const { environments } = useEnvironments();
   const providerMap = useEnvironmentProviders();
   const host = useSyncExternalStore(subscribePremiereHost, getPremiereHostState);
+  // A failed CEP context read publishes null. Keep the sequence's drafts and jobs
+  // mounted through that gap; a real sequence change still gets its own key.
+  const [retainedTranscriptContext, setRetainedTranscriptContext] = useState(host.context);
+  if (
+    host.context &&
+    (!retainedTranscriptContext ||
+      transcriptStorageKey(host.context) !== transcriptStorageKey(retainedTranscriptContext))
+  )
+    setRetainedTranscriptContext(host.context);
+  const transcriptContext = host.context ?? retainedTranscriptContext;
   const clips = useTimelineClips(host.context);
   const [workspaceKey, setWorkspaceKey] = useState<string | null>(null);
   const project = selectEditingWorkspace(projects, workspaceKey);
@@ -147,7 +157,7 @@ export function PremiereApp() {
     threadId: ThreadId;
     messageId: ReturnType<typeof newMessageId>;
   } | null>(null);
-  const transcriptVisible = panelView === "transcript" && host.connected;
+  const transcriptVisible = panelView === "transcript" && host.connected && host.context !== null;
   useEffect(() => {
     setPremiereTranscriptActive(transcriptVisible);
     return () => setPremiereTranscriptActive(false);
@@ -853,70 +863,78 @@ export function PremiereApp() {
         ) : null}
       </div>
       <div data-transcript-slot="" hidden={panelView !== "transcript"}>
-        {host.context ? (
-          <TranscriptView
-            key={transcriptStorageKey(host.context)}
-            context={host.context}
-            musicRequest={
-              musicRequest?.scope === transcriptStorageKey(host.context) ? musicRequest : null
-            }
-            onDescribeMusic={
-              provider?.driver === "antigravity" && /gemini/i.test(model?.slug ?? "")
-                ? async (prompt, audio) => {
-                    await send(undefined, prompt, audio);
-                    setPanelView("conversation");
-                  }
-                : undefined
-            }
-            cleanupRequest={
-              cleanupRequest?.scope === transcriptStorageKey(host.context) ? cleanupRequest : null
-            }
-            active={transcriptVisible}
-            disabled={
-              !canOperate ||
-              !host.connected ||
-              busy ||
-              running ||
-              otherActive ||
-              timelineChanges.pending ||
-              timelineChanges.undoing
-            }
-            onBusy={setTranscriptBusy}
-            onTranscribe={(prompt) => send(undefined, prompt)}
-            transcriptionDisabled={
-              !project ||
-              !provider ||
-              !model ||
-              !ready ||
-              !canOperate ||
-              !host.connected ||
-              busy ||
-              running ||
-              otherActive ||
-              capturingFrame ||
-              transcriptBusy ||
-              timelineChanges.pending ||
-              timelineChanges.undoing
-            }
-            agentStatus={
-              busy ? "Sending to agent" : (transcriptionThread?.runtime?.status ?? "idle")
-            }
-            agentOutcome={
-              transcriptionFinished
-                ? transcriptionReply && "text" in transcriptionReply
-                  ? transcriptionReply.text.slice(0, 1024)
-                  : transcriptionRun.status
-                : null
-            }
-            onAsk={(context) => {
-              writeDraft(`${draft.trimEnd()}${draft.trim() ? "\n\n" : ""}${context}\n\n`);
-              setPanelView("conversation");
-              textarea.current?.focus();
-            }}
-          />
-        ) : (
+        {!host.context ? (
           <p data-notice="">Open a sequence in Premiere to load its transcript.</p>
-        )}
+        ) : null}
+        {transcriptContext ? (
+          <div data-transcript-sequence="" hidden={!host.context}>
+            <TranscriptView
+              key={transcriptStorageKey(transcriptContext)}
+              context={transcriptContext}
+              musicRequest={
+                musicRequest?.scope === transcriptStorageKey(transcriptContext)
+                  ? musicRequest
+                  : null
+              }
+              onDescribeMusic={
+                provider?.driver === "antigravity" && /gemini/i.test(model?.slug ?? "")
+                  ? async (prompt, audio) => {
+                      await send(undefined, prompt, audio);
+                    }
+                  : undefined
+              }
+              cleanupRequest={
+                cleanupRequest?.scope === transcriptStorageKey(transcriptContext)
+                  ? cleanupRequest
+                  : null
+              }
+              active={transcriptVisible}
+              disabled={
+                !canOperate ||
+                !host.connected ||
+                !host.context ||
+                busy ||
+                running ||
+                otherActive ||
+                timelineChanges.pending ||
+                timelineChanges.undoing
+              }
+              onBusy={setTranscriptBusy}
+              onTranscribe={(prompt) => send(undefined, prompt)}
+              transcriptionDisabled={
+                !project ||
+                !provider ||
+                !model ||
+                !ready ||
+                !canOperate ||
+                !host.connected ||
+                !host.context ||
+                busy ||
+                running ||
+                otherActive ||
+                capturingFrame ||
+                transcriptBusy ||
+                timelineChanges.pending ||
+                timelineChanges.undoing
+              }
+              agentStatus={
+                busy ? "Sending to agent" : (transcriptionThread?.runtime?.status ?? "idle")
+              }
+              agentOutcome={
+                transcriptionFinished
+                  ? transcriptionReply && "text" in transcriptionReply
+                    ? transcriptionReply.text.slice(0, 1024)
+                    : transcriptionRun.status
+                  : null
+              }
+              onAsk={(context) => {
+                writeDraft(`${draft.trimEnd()}${draft.trim() ? "\n\n" : ""}${context}\n\n`);
+                setPanelView("conversation");
+                textarea.current?.focus();
+              }}
+            />
+          </div>
+        ) : null}
       </div>
       {pending.approvals.map((request) => (
         <section key={request.requestId} data-request="">
