@@ -1792,3 +1792,188 @@ test("music rejects off-frame boundaries and failed source-point readback withou
     }
   }
 });
+
+test("music applies the learned QE effect presets only to the newly placed clip and reports readback", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const initial = runMusic(
+    panel,
+    host,
+    musicRequest(musicSignature(panel, host), {
+      cues: [{ ...musicRequest("").cues[0], start: 0, end: 20 }],
+    }),
+  );
+  const untouched = host.sequence.audioTracks[2].clips[0];
+  const writes = [];
+  host.context.qe.project.getAudioEffectByName = (name) => ({ name });
+  host.context.qe.project.getActiveSequence = () => ({
+    getAudioTrackAt: () => ({
+      numItems: 3,
+      getItemAt: (index) =>
+        index === 0
+          ? { type: "Empty" }
+          : {
+              type: "Clip",
+              start: { secs: index === 1 ? 0 : 20 },
+              addAudioEffect(effect) {
+                assert.equal(index, 2);
+                const clip = host.sequence.audioTracks[2].clips[1];
+                const names =
+                  effect.name === "Lowpass"
+                    ? ["Cutoff"]
+                    : [
+                        "Maximum Amplitude",
+                        "Input Boost",
+                        "Look-Ahead Time",
+                        "Release Time",
+                        "Link Channels",
+                        "Decay to Ceiling",
+                        "Limit True Peak",
+                      ];
+                const properties = { numItems: names.length };
+                names.forEach((displayName, i) => {
+                  let value = 0;
+                  properties[i] = {
+                    displayName,
+                    setValue(next) {
+                      value = next;
+                      writes.push([effect.name, displayName, next]);
+                      return 0;
+                    },
+                    getValue: () => value,
+                  };
+                });
+                clip.components[clip.components.numItems++] = {
+                  displayName: effect.name,
+                  properties,
+                };
+                return true;
+              },
+            },
+    }),
+  });
+  const result = runMusic(
+    panel,
+    host,
+    musicRequest(initial.expectedSignature, {
+      libraryPaths: ["D:/Music/test.wav", "D:/Music/other.wav"],
+      cues: [
+        {
+          ...musicRequest("").cues[0],
+          id: "new|song\n",
+          track: "D:/Music/other.wav",
+          start: 20,
+          end: 40,
+          effects: ["Hard Limiter", "Lowpass"],
+        },
+      ],
+    }),
+  );
+  assert.equal(result.status, "applied");
+  assert.equal(untouched.components.numItems, 1);
+  assert.deepEqual(Array.from(result.effectReports[0].results), ["Hard Limiter", "Lowpass"]);
+  assert.equal(result.effectReports[0].id, "new|song\n");
+  assert.deepEqual(
+    writes.map((row) => row[2]),
+    [0.72, 0.6667, 0.1333, 0.375, 1, 1, 0, 0.25],
+  );
+});
+
+test("music continues when QE effects fail insertion, configuration or readback", async () => {
+  for (const mode of [
+    "absent",
+    "throws",
+    "rejected",
+    "parameter",
+    "write",
+    "readback",
+    "nonfinite",
+  ]) {
+    const panel = await panelFixture();
+    const host = musicHost();
+    if (mode === "absent") delete host.context.qe;
+    else {
+      host.context.qe.project.getAudioEffectByName = () => ({});
+      host.context.qe.project.getActiveSequence = () => ({
+        getAudioTrackAt: () => ({
+          numItems: 1,
+          getItemAt: () => ({
+            type: "Clip",
+            start: { secs: 10 },
+            addAudioEffect() {
+              if (mode === "throws") throw new Error("QE failed");
+              if (mode === "rejected") return false;
+              const clip = host.sequence.audioTracks[2].clips[0];
+              clip.components[clip.components.numItems++] = {
+                displayName: "Lowpass",
+                properties: {
+                  numItems: 1,
+                  0: {
+                    displayName: mode === "parameter" ? "Other" : "Cutoff",
+                    setValue: () => (mode === "write" ? 1 : 0),
+                    getValue: () => (mode === "readback" ? 1 : mode === "nonfinite" ? NaN : 0.25),
+                  },
+                },
+              };
+              return true;
+            },
+          }),
+        }),
+      });
+    }
+    const result = runMusic(
+      panel,
+      host,
+      musicRequest(musicSignature(panel, host), {
+        cues: [{ ...musicRequest("").cues[0], id: "one", effects: ["Lowpass"] }],
+      }),
+    );
+    assert.equal(result.status, "applied", mode);
+    assert.match(result.effectReports[0].results[0], /Lowpass failed/);
+    assert.ok(host.writes.length > 0);
+    assert.ok(result.checkpointId);
+  }
+});
+
+test("QE joins preserve the unfaded swell envelope and cap the default three-second join", async () => {
+  for (const seconds of [20, 2]) {
+    const panel = await panelFixture();
+    const host = musicHost();
+    host.sequence.timebase = 254016000000 / 30;
+    const joins = [];
+    host.context.qe.project.getAudioTransitionByName = () => ({});
+    host.context.qe.project.getActiveSequence = () => ({
+      getAudioTrackAt: () => ({
+        numItems: 2,
+        getItemAt: (i) => ({
+          type: "Clip",
+          start: { secs: i * seconds },
+          addTransition(...args) {
+            joins.push(args[2]);
+            return true;
+          },
+        }),
+      }),
+    });
+    const cues = [0, 1].map((i) => ({
+      id: String(i),
+      track: `D:/Music/${i}.wav`,
+      start: i * seconds,
+      end: (i + 1) * seconds,
+      sourceOffset: 0,
+      baseDb: -29,
+      fadeIn: 0.25,
+      fadeOut: 0.25,
+      keys: [
+        { time: 0, value: 0, envelopeValue: 0.14 },
+        { time: seconds / 2, value: 0.08, envelopeValue: 0.08 },
+        { time: seconds, value: 0, envelopeValue: 0.035 },
+      ],
+    }));
+    const result = runMusic(panel, host, musicRequest(musicSignature(panel, host), { cues }));
+    assert.equal(result.status, "applied");
+    assert.equal(joins[0], seconds === 20 ? "0:00:03:00" : "0:00:01:00");
+    assert.equal(host.writes[3].value, 0.14 * Math.pow(10, -15 / 20));
+    assert.equal(host.writes.at(-1).value, 0);
+  }
+});

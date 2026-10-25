@@ -19,7 +19,38 @@ import subprocess
 import sys
 
 AUDIO = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aif", ".aiff", ".wma"}
-VERSION = 2
+VERSION = 3
+CURVE_STEP = 0.5
+AUDIBLE_DBFS = -50
+
+
+def integrated_lufs(path, ffmpeg="ffmpeg"):
+    """EBU R128 integrated loudness, all channels at the source sample rate."""
+    result = subprocess.run([ffmpeg, "-hide_banner", "-nostats", "-i", str(path), "-vn",
+        "-af", "ebur128=peak=none", "-f", "null", "-"],
+        check=True, capture_output=True, text=True, timeout=600)
+    values = re.findall(r"I:\s*([-+]?\d+(?:\.\d+)?)\s+LUFS", result.stderr)
+    if not values or not math.isfinite(float(values[-1])) or float(values[-1]) <= -70:
+        raise ValueError("Cannot measure integrated LUFS (silent or unreadable audio)")
+    return float(values[-1])
+
+
+def structure(curve, first_audible):
+    audible = sorted(v for v in curve if v >= AUDIBLE_DBFS)
+    if not audible:
+        raise ValueError("No audible music above -50 dBFS RMS")
+    body = audible[int((len(audible) - 1) * 0.8)]
+    # Require a sustained body-level arrival, rather than a single transient.
+    loud = next((i * CURVE_STEP for i in range(len(curve))
+                 if i * CURVE_STEP >= first_audible and
+                 len(curve[i:i+4]) == 4 and min(curve[i:i+4]) >= body - 6), first_audible)
+    jumps = [(sum(curve[i:i+4])/4 - sum(curve[i-4:i])/4, i)
+             for i in range(4, len(curve)-3)
+             if min(curve[i-4:i+4]) >= AUDIBLE_DBFS]
+    jump, at = max(jumps, default=(0, 0))
+    return {"firstAudible": round(first_audible, 3), "loudPartStart": round(loud, 3),
+            "biggestDrop": round(at * CURVE_STEP, 3) if jump >= 6 else None,
+            "loudnessSpread": round(audible[int((len(audible)-1)*0.9)] - audible[int((len(audible)-1)*0.1)], 1)}
 
 
 def peak_dbfs(path, ffmpeg="ffmpeg"):
@@ -59,6 +90,10 @@ def catalogue_hints(root):
                         value["analysisBpm"] = row.get("low_level", {}).get("bpm")
                         value["catalogueEnergy"] = row.get("audio_summary", {}).get("energy", value["catalogueEnergy"])
                         value["brightness"] = row.get("audio_summary", {}).get("brightness", value["brightness"])
+                        if isinstance(row.get("vocals"), bool):
+                            value["vocals"] = row["vocals"]
+                        if isinstance(row.get("tags"), list):
+                            value["tags"] = [tag for tag in row["tags"] if isinstance(tag, str)]
         except (ValueError, TypeError, AttributeError):
             pass
     return hints
@@ -115,12 +150,14 @@ def estimate_tempo(envelope):
 
 def analyze(path, root, ffmpeg="ffmpeg", ffprobe="ffprobe"):
     peak = peak_dbfs(path, ffmpeg)
+    lufs = integrated_lufs(path, ffmpeg)
     duration = float(subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], check=True, capture_output=True, text=True, timeout=30).stdout.strip())
     if not math.isfinite(duration) or duration <= 0 or duration > 14400:
         raise ValueError("Require audio between zero and four hours")
-    # Stream one second at a time, so long tracks never materialize as full PCM.
-    process = subprocess.Popen([ffmpeg, "-v", "error", "-i", str(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "pipe:1"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    energy, squares, count, envelope = [], 0.0, 0, []
+    # Channel RMS powers are combined without phase cancellation. Stream 0.5s.
+    process = subprocess.Popen([ffmpeg, "-v", "error", "-i", str(path), "-vn", "-ac", "2", "-ar", "8000", "-f", "s16le", "pipe:1"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    energy, squares, count, envelope, curve = [], 0.0, 0, [], []
+    first_audible = None
     try:
         while True:
             raw = process.stdout.read(16000)
@@ -131,20 +168,25 @@ def analyze(path, root, ffmpeg="ffmpeg", ffprobe="ffprobe"):
             if sys.byteorder != "little":
                 samples.byteswap()
             total = sum(float(x) * x for x in samples)
-            if len(envelope) < 1800:
-                for at in range(0, len(samples), 400):
-                    frame = samples[at:at+400]
-                    envelope.append(math.sqrt(sum(float(x)*x for x in frame)/max(1, len(frame))))
+            for at in range(0, len(samples), 800):
+                frame = samples[at:at+800]
+                rms = math.sqrt(sum(float(x)*x for x in frame)/max(1, len(frame)))
+                if first_audible is None and 20 * math.log10(max(rms/32768, 1e-6)) >= AUDIBLE_DBFS:
+                    onset = next(i // 2 for i, value in enumerate(frame) if abs(value) >= 32768 * 10**(AUDIBLE_DBFS/20))
+                    first_audible = len(curve)*CURVE_STEP + at/16000 + onset/8000
+                if len(envelope) < 1800:
+                    envelope.append(rms)
             squares += total
             count += len(samples)
-            energy.append(10 * math.log10(max(total / max(1, len(samples)) / 32768**2, 1e-12)))
-        if process.wait(timeout=30) != 0 or not energy:
+            curve.append(round(10 * math.log10(max(total / max(1, len(samples)) / 32768**2, 1e-12)), 1))
+        if process.wait(timeout=30) != 0 or not curve or first_audible is None:
             raise ValueError("Audio decoding failed")
     finally:
         process.stdout.close()
         if process.poll() is None:
             process.kill()
             process.wait()
+    energy = [sum(curve[i:i+2])/len(curve[i:i+2]) for i in range(0, len(curve), 2)]
     smooth = [sum(energy[max(0, i-4):i+5]) / len(energy[max(0, i-4):i+5]) for i in range(len(energy))]
     maximum = max(smooth)
     rises = [smooth[i+6] - smooth[i] for i in range(max(0, len(smooth)-6))]
@@ -153,13 +195,15 @@ def analyze(path, root, ffmpeg="ffmpeg", ffprobe="ffprobe"):
     changes = [abs(smooth[i] - smooth[max(0, i-3)]) for i in range(len(smooth))]
     boundaries = [i for i in separated(changes, count=24, spacing=8) if changes[i] >= 3]
     return {"path": str(path.resolve()), "filename": path.name, "category": str(path.parent.relative_to(root)),
-            "duration": round(duration, 3), "peakDbfs": round(peak, 4), "loudnessDbfs": round(10 * math.log10(max(squares/max(1, count)/32768**2, 1e-12)), 2),
+            "duration": round(duration, 3), "peakDbfs": round(peak, 4), "integratedLufs": lufs,
+            "loudnessCurve": curve, "curveStep": CURVE_STEP, **structure(curve, first_audible),
+            "loudnessDbfs": round(10 * math.log10(max(squares/max(1, count)/32768**2, 1e-12)), 2),
             "energy": [round(x, 2) for x in smooth],
             "rises": [{"start": i, "end": i+6, "db": round(rises[i], 2)} for i in separated(rises, 3, 15) if rises[i] >= 3],
             "loudWindows": [{"start": max(0, i-4), "end": min(duration, i+5)} for i in separated(smooth)],
             "quietRanges": [{"start": a, "end": min(duration, b)} for a, b in quiet if b-a >= 3],
             "phraseBoundaries": boundaries, "tempo": estimate_tempo(envelope), "description": "", "tags": [],
-            "analysisNote": "RMS dBFS, not LUFS. Energy phrase candidates require audition. Tempo is a rough onset-autocorrelation estimate from up to 90s, null when evidence is weak."}
+            "analysisNote": "EBU R128 integrated LUFS; 0.5s channel-power RMS curve in dBFS. Drop and phrase candidates require audition. Tempo is approximate."}
 
 
 def index_library(root, cache=None, limit=100, ffmpeg="ffmpeg", ffprobe="ffprobe", compact=False, retry_failures=False):
@@ -191,6 +235,15 @@ def index_library(root, cache=None, limit=100, ffmpeg="ffmpeg", ffprobe="ffprobe
                     else:
                         analyzed += 1
                         item = analyze(path, root, ffmpeg, ffprobe)
+                        # Preserve listener metadata only across a schema upgrade of the
+                        # exact same bytes/mtime, never across a changed source file.
+                        stat = path.stat()
+                        old_key = hashlib.sha256(f"2|{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}".encode()).hexdigest()
+                        if row and row[0] == old_key:
+                            old_data = json.loads(row[1])
+                            for field in ("description", "tags", "vocals"):
+                                if field in old_data:
+                                    item[field] = old_data[field]
                         item["fingerprint"] = key
                         db.execute("INSERT OR REPLACE INTO tracks VALUES (?, ?, ?)", (item["path"], key, json.dumps(item)))
                         db.commit()

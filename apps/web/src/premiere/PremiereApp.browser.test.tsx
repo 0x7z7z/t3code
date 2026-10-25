@@ -765,6 +765,7 @@ function setupMusic(name: string) {
     filename: "Strings.wav",
     category: "calm music",
     peakDbfs: -3,
+    integratedLufs: -8,
     duration: 1200,
     loudnessDbfs: -18,
     energy: [],

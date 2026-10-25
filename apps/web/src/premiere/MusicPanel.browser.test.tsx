@@ -33,6 +33,11 @@ function setup(id: string) {
     duration: 200,
     peakDbfs: -3,
     loudnessDbfs: -18,
+    integratedLufs: -9,
+    firstAudible: 1.85,
+    loudPartStart: 29,
+    biggestDrop: 40,
+    loudnessSpread: 4,
     energy: [],
     rises: [],
     loudWindows: [],
@@ -42,6 +47,8 @@ function setup(id: string) {
     description: "",
     tags: [],
   }));
+  tracks[0]!.vocals = true;
+  tracks[1]!.integratedLufs = -20;
   const snapshot: TimelineSnapshot = {
     projectId: id,
     sequenceId: "main",
@@ -66,6 +73,12 @@ function setup(id: string) {
       expectedSignature: "after",
       sequenceId: "",
       message: "1 Constant Power joins; remaining edges use Volume fades.",
+      effectReports: request.cues?.map((cue: { id: string; effects?: string[] }) => ({
+        id: cue.id,
+        results: (cue.effects ?? []).map((effect) =>
+          effect === "Hard Limiter" ? "Hard Limiter failed (QE unavailable)" : effect,
+        ),
+      })),
     };
   });
   const props = {
@@ -122,7 +135,7 @@ it.each([440, 1000])(
     await expect
       .element(screen.getByRole("checkbox", { name: "Lower music during speech" }))
       .not.toBeChecked();
-    await page.screenshot({ path: `../../../../.t3/music-simple/before-${width}.png` });
+    await page.screenshot({ path: `../../../../.t3/music-mix/before-${width}.png` });
     await screen.getByRole("button", { name: "Place music", exact: true }).click();
     await vi.waitFor(() => expect(f.props.onPlace).toHaveBeenCalledOnce());
     expect(f.props.onPlace.mock.calls[0]![0]).toContain("requestId:");
@@ -130,14 +143,24 @@ it.each([440, 1000])(
     await expect.element(screen.getByRole("button", { name: "Undo all" })).toBeEnabled();
     expect(screen.container.querySelectorAll("[data-music-cues] li")).toHaveLength(2);
     const apply = host.request.mock.calls.find(([, r]) => r.action === "apply")![1];
-    expect(apply.crossfade).toBe(1.5);
+    expect(apply.crossfade).toBe(3);
+    expect(apply.cues[0].fadeOut + apply.cues[1].fadeIn).toBe(3);
     expect(apply.ducking).toBe(false);
-    expect(apply.cues[0].baseDb).toBe(-30);
-    expect(apply.cues[0].keys[1].value).toBeCloseTo(Math.pow(10, -30 / 20));
+    expect(apply.cues[0].baseDb).toBe(-29);
+    expect(apply.cues[0].sourceOffset).toBe(22);
+    expect(apply.cues[0].swellSeconds).toBe(7);
+    expect(apply.cues[0].keys.find((k: { time: number }) => k.time === 7).value).toBeCloseTo(
+      Math.pow(10, -29 / 20),
+    );
+    expect(screen.container.querySelector("[data-music-mix]")?.textContent).toContain("-29.0 dB");
+    expect(screen.container.querySelector("[data-music-mix]")?.textContent).toContain("Lowpass");
+    expect(screen.container.querySelectorAll("[data-music-mix]")[1]?.textContent).toContain(
+      "Hard Limiter failed",
+    );
     expect(screen.container.querySelector("[data-music-panel]")!.scrollWidth).toBeLessThanOrEqual(
       width,
     );
-    await page.screenshot({ path: `../../../../.t3/music-simple/after-${width}.png` });
+    await page.screenshot({ path: `../../../../.t3/music-mix/after-${width}.png` });
     await screen.getByRole("button", { name: "Undo all" }).click();
     expect(host.request).toHaveBeenLastCalledWith(
       "premiere.music.request",
@@ -181,7 +204,10 @@ it("swaps a matching song while preserving the original undo receipt across remo
     .toBeEnabled();
   await screen.getByRole("button", { name: "Place music", exact: true }).click();
   await vi.waitFor(() => expect(f.props.onPlace).toHaveBeenCalledOnce());
+  f.tracks[2]!.integratedLufs = -20;
+  f.tracks[2]!.vocals = true;
   const plan = f.plan();
+  plan.cues[0]!.keyTime = 10;
   await screen.rerender(<MusicPanel {...f.props} initialPlan={plan} />);
   await expect.element(screen.getByRole("button", { name: "Undo all" })).toBeEnabled();
   f.snapshot.audioTracks[0]!.clips = plan.cues.map((c) => ({
@@ -203,6 +229,10 @@ it("swaps a matching song while preserving the original undo receipt across remo
   const swap = host.request.mock.calls.find(([, r]) => r.action === "swap")![1];
   expect(swap.cues[0].track).toBe(f.tracks[2]!.path);
   expect(swap.checkpointId).toBe("checkpoint");
+  expect(swap.cues[0].sourceOffset).toBe(30);
+  expect(swap.cues[0].swellSeconds).toBe(10);
+  expect(swap.cues[0].baseDb).toBe(-28);
+  expect(swap.cues[0].effects).toEqual(["Hard Limiter", "Lowpass"]);
   await screen.rerender(<MusicPanel {...f.props} key="remount" />);
   await expect.element(screen.getByRole("button", { name: "Undo all" })).toBeEnabled();
 });

@@ -1,4 +1,23 @@
-﻿interface:
+interface:
   display_name: "Axis Music Placement"
-  short_description: "Place mood-matched music per script section with Undo"
-  default_prompt: "Use $axis-music-placement to place one catalogue-matched song per script section, back to back with crossfades and peak-normalized -33 dBFS levels. No ducking by default."
+  short_description: "Place mood-matched music with LUFS beds, swells and Undo"
+  default_prompt: >-
+    Use $axis-music-placement. Return the panel's matching requestId plan without timeline writes.
+    Follow all nine learned mix rules: (1) The user says "-29 is the best, -33 is way too quiet even with headphones."
+    Bed = clamp(-38 - integratedLUFS, -35, -25), retaining measured peak safety.
+    (2) Default +12 dB linear-gain intro swell to bed over 8 seconds, until the soft opening's loud part up to 28 seconds;
+    swell:false permits static beds. (3) Skip the measured leading silence around -50 dBFS RMS.
+    (4) For soft intros over 12 seconds start about 7 seconds before the loud part, within source bounds.
+    (5) Find a keyTime in sequence seconds from exact transcript words for a reveal or decisive beat;
+    align the biggest measured drop only when the offset covers the section and avoids silence.
+    (6) Explicit vocals flag or catalogue tags request Lowpass raw Cutoff 0.25 and a -28 to -30 dB bed;
+    unknown vocals skip it, with no ML detector. (7) Quiet (<= -18 LUFS) or uneven (>12 dB audible P90-P10 RMS spread)
+    songs request Hard Limiter: raw Maximum Amplitude 0.72, Input Boost 0.6667, Look-Ahead 0.1333,
+    Release 0.375, Link Channels 1, Decay to Ceiling 1, Limit True Peak 0; compensate uneven parts with bounded
+    coarse Volume keys. Effects are QE best-effort on new clips only; report failures per song and continue.
+    (8) Default 3-second Constant Power joins capped by section lengths, Volume fades as fallback, final fade-out.
+    Preserve the swell through joins. (9) Prefer Nordic/epic dark for dragon villains, trailer metal for destroyers,
+    melodic phonk for berserk-but-tender, stylish phonk for Goku Black, haunting violin for god-complex horror,
+    aggressive phonk for Vegeta. Mood folders stay primary. No ducking by default. Never loop or overrun sources,
+    repeat neighbouring songs, alter existing clips or write the library. Swaps recompute levels, offsets, keys and effects.
+    Show level and actual effect outcomes per result row; retain checkpoint and Undo all.
