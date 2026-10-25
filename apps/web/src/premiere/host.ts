@@ -50,6 +50,7 @@ const listeners = new Set<() => void>();
 let state: PremiereHostState = { connected: false, context: null };
 let playheadSample: PremierePlayheadSample | null = null;
 let highestPlayheadReadId = -1;
+let highestContextReadId = -1;
 const pending = new Map<string, (context: PremiereContext | null) => void>();
 const pendingFrames = new Map<string, (packet: Record<string, unknown>) => void>();
 let nextRequestId = 0;
@@ -85,7 +86,10 @@ export function parsePremiereContext(value: unknown): PremiereContext | null {
 
 function update(next: PremiereHostState) {
   if (!next.context) playheadSample = null;
-  if (!next.connected) highestPlayheadReadId = -1;
+  if (!next.connected) {
+    highestPlayheadReadId = -1;
+    highestContextReadId = -1;
+  }
   state = next;
   for (const listener of listeners) listener();
 }
@@ -139,6 +143,22 @@ export function installPremiereHostBridge(): () => void {
     if (packet.type !== "premiere.context" || packet.protocol !== 1) return;
     let context = parsePremiereContext(packet.context);
     if (packet.context !== null && context === null) return;
+    const contextReadId = packet.playheadReadId;
+    if (
+      typeof contextReadId === "number" &&
+      Number.isSafeInteger(contextReadId) &&
+      contextReadId >= 0
+    ) {
+      if (contextReadId < highestContextReadId) {
+        if (typeof packet.requestId === "string") pending.get(packet.requestId)?.(null);
+        return;
+      }
+      highestContextReadId = contextReadId;
+    }
+    if (!samePremiereScope(context, state.context)) {
+      playheadSample = null;
+      highestPlayheadReadId = -1;
+    }
     if (context && !applyPlayheadSample(context.playheadSeconds, receivedAt, packet.playheadReadId))
       context = {
         ...context,
