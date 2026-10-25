@@ -182,11 +182,13 @@ function CaptureTurn({
   threadId = "capture-thread",
   edit = true,
   missing = false,
+  later = false,
 }: {
   status: "running" | "completed";
   threadId?: string;
   edit?: boolean;
   missing?: boolean;
+  later?: boolean;
 }) {
   const run = {
     id: "capture-turn",
@@ -200,7 +202,17 @@ function CaptureTurn({
     type: "assistant_message",
   } as OrchestrationV2TurnItem;
   const block: TranscriptBlock = { kind: "assistant", id: "reply", text: "Done", streaming: false };
-  const changes = useTurnChanges(threadId, missing ? [] : [run], [item], [block], true);
+  const changes = useTurnChanges(
+    threadId,
+    missing
+      ? []
+      : later
+        ? [run, { ...run, id: "later" as OrchestrationV2Run["id"], ordinal: 2 }]
+        : [run],
+    [item],
+    [block],
+    true,
+  );
   const record = changes.byBlock.get("reply");
   return (
     <div>
@@ -216,8 +228,11 @@ function CaptureTurn({
           Turn {record.turnId}: {record.changes.length} changes
         </p>
       ) : null}
+      {record?.error ? <p role="alert">{record.error}</p> : null}
       {changes.unplaced.map((record) => (
-        <p key={record.messageId}>{record.error}</p>
+        <p role="alert" key={record.messageId}>
+          {record.error}
+        </p>
       ))}
     </div>
   );
@@ -323,6 +338,34 @@ it("uses read-only snapshots in Plan mode and completes a pending capture after 
   await expect.element(screen.getByText("Turn capture-turn: 1 changes")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(2);
   localStorage.removeItem("axis-turn-changes-v1");
+});
+
+it("does not attribute a late snapshot to an earlier turn or prune a later turn's checkpoint", async () => {
+  const props = setup();
+  localStorage.removeItem("axis-turn-changes-v1");
+  let finish = (_value: unknown) => {};
+  state.snapshot
+    .mockResolvedValueOnce({
+      snapshot: props.record.before,
+      signature: "before",
+      checkpointId: "checkpoint",
+      checkpointSignature: "before",
+      checkpointError: null,
+    })
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+  // This harness exercises the docked panel's turn lifecycle without router navigation.
+  await using screen = await render(<CaptureTurn status="running" />, { router: false });
+  await screen.getByRole("button", { name: "Start turn" }).click();
+  await screen.rerender(<CaptureTurn status="completed" />);
+  await vi.waitFor(() => expect(state.snapshot).toHaveBeenCalledTimes(2));
+  await screen.rerender(<CaptureTurn status="completed" later />);
+  finish({ snapshot: { ...props.record.before, outPoint: 10 }, signature: "later" });
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  expect(state.prune).not.toHaveBeenCalled();
 });
 
 it("unblocks capture when a reloaded draft was never accepted by the backend", async () => {

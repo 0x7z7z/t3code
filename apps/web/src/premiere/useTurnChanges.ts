@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { OrchestrationV2Run, OrchestrationV2TurnItem } from "@t3tools/contracts";
 import {
   diffTimeline,
@@ -28,6 +28,15 @@ export function useTurnChanges(
   const capturing = useRef(new Set<string>());
   const dispatching = useRef(new Set<string>());
   const [undoing, setUndoing] = useState(false);
+  const verifyCapture = useEffectEvent((record: TurnChangeRecord, ordinal: number) => {
+    if (record.threadId !== threadId)
+      throw new Error("The active thread changed before the after snapshot was captured.");
+    if (
+      runs.some((next) => next.ordinal > ordinal) ||
+      records.some((next) => next.messageId !== record.messageId && !next.after && !next.error)
+    )
+      throw new Error("A later turn started before the after snapshot was captured.");
+  });
   useEffect(() => {
     writeTurnChanges(localStorage, records);
   }, [records]);
@@ -66,6 +75,7 @@ export function useTurnChanges(
       }
       void requestTimelineSnapshot(false, record.before.sequenceId)
         .then((after) => {
+          verifyCapture(record, run.ordinal);
           if (after.snapshot.projectId !== record.before.projectId)
             throw new Error("The active Premiere project changed.");
           const changes = diffTimeline(record.before, after.snapshot);
