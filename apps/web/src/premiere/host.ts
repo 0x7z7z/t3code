@@ -234,7 +234,13 @@ export function requestPremiereFrame(): Promise<ComposerImage> {
         dataUrl: packet.dataUrl,
       });
     });
-    window.parent.postMessage({ type: "premiere.frame.request", protocol: 1, requestId }, "*");
+    try {
+      window.parent.postMessage({ type: "premiere.frame.request", protocol: 1, requestId }, "*");
+    } catch (error) {
+      clearTimeout(timeout);
+      pendingFrames.delete(requestId);
+      reject(error);
+    }
   });
 }
 
@@ -262,7 +268,13 @@ export function requestPremiereContext(): Promise<PremiereContext | null> {
       pending.delete(requestId);
       resolve(context);
     });
-    window.parent.postMessage({ type: "premiere.context.request", protocol: 1, requestId }, "*");
+    try {
+      window.parent.postMessage({ type: "premiere.context.request", protocol: 1, requestId }, "*");
+    } catch (error) {
+      clearTimeout(timeout);
+      pending.delete(requestId);
+      reject(error);
+    }
   });
 }
 

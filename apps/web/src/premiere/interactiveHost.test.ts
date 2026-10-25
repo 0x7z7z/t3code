@@ -78,3 +78,15 @@ it("reports host failures and clears listeners after a timeout", async () => {
   await timeout;
   expect(host.listeners.size).toBe(0);
 });
+
+it("releases the listener and timer if dispatch throws", async () => {
+  using host = bridge();
+  host.parent.postMessage.mockImplementation(() => {
+    throw new Error("Frame detached");
+  });
+  await expect(
+    requestTimelineAction("premiere.clips.request", { sequenceId: "seq" }),
+  ).rejects.toThrow("Frame detached");
+  expect(host.listeners.size).toBe(0);
+  expect(vi.getTimerCount()).toBe(0);
+});

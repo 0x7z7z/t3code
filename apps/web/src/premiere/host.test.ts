@@ -286,6 +286,17 @@ it("settles stale explicit context requests without reviving a previous sequence
 });
 
 describe("Premiere frame requests", () => {
+  it.each([requestPremiereContext, requestPremiereFrame])(
+    "cleans up a synchronously failed dispatch: %s",
+    async (request) => {
+      using bridge = frameBridge();
+      bridge.parent.postMessage.mockImplementation(() => {
+        throw new Error("Frame detached");
+      });
+      await expect(request()).rejects.toThrow("Frame detached");
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
   it("settles outstanding context reads and releases their timers when the bridge closes", async () => {
     using bridge = frameBridge();
     const first = requestPremiereContext();

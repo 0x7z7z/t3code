@@ -43,6 +43,22 @@ function fixture() {
   return { postMessage, listeners, send, snapshot };
 }
 
+it("releases the listener and timer if dispatch throws", async () => {
+  const f = fixture();
+  vi.useFakeTimers();
+  try {
+    f.postMessage.mockImplementation(() => {
+      throw new Error("Frame detached");
+    });
+    await expect(requestTimelineSnapshot(true, "sequence")).rejects.toThrow("Frame detached");
+    expect(f.listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
 it("correlates checkpointed cut replies and keeps recovery data for partial failures", async () => {
   const f = fixture();
   try {

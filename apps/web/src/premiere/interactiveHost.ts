@@ -63,7 +63,11 @@ export function requestTimelineAction(
       10000,
     );
     window.addEventListener("message", receive);
-    window.parent.postMessage({ ...payload, type, protocol: 1, requestId }, "*");
+    try {
+      window.parent.postMessage({ ...payload, type, protocol: 1, requestId }, "*");
+    } catch (error) {
+      finish(error instanceof Error ? error.message : "Premiere message dispatch failed.", {});
+    }
   });
 }
 
