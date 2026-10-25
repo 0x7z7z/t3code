@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import {
   NodeId,
   ProviderSessionId,
@@ -13,6 +13,7 @@ import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import type { PremiereContext } from "./host";
 import { transcriptStorageKey } from "./TranscriptView";
+import "./styles.css";
 
 const state = vi.hoisted(() => ({
   environmentId: "premiere-permission-test",
@@ -68,7 +69,37 @@ vi.mock("../state/environments", () => ({
             auth: { email: "" },
             slashCommands: [],
             skills: [],
-            models: [{ slug: "gpt-6-luna", name: "Luna", isCustom: false, capabilities: null }],
+            models: [
+              {
+                slug: "gpt-6-luna",
+                name: "Luna",
+                isCustom: false,
+                capabilities: {
+                  optionDescriptors: [
+                    {
+                      id: "reasoningEffort",
+                      label: "Reasoning",
+                      type: "select",
+                      currentValue: "max",
+                      options: [
+                        { id: "high", label: "High" },
+                        { id: "max", label: "Max" },
+                      ],
+                    },
+                    {
+                      id: "serviceTier",
+                      label: "Service Tier",
+                      type: "select",
+                      currentValue: "priority",
+                      options: [
+                        { id: "priority", label: "Priority" },
+                        { id: "flex", label: "Flex" },
+                      ],
+                    },
+                  ],
+                },
+              },
+            ],
           },
         ],
       ],
@@ -111,7 +142,7 @@ vi.mock("./whisperTranscription", async (original) => ({
   loadWhisperTranscript: state.handoff,
 }));
 
-import { PremiereApp } from "./PremiereApp";
+import { modelOptionsStorageKey, PremiereApp } from "./PremiereApp";
 
 function setup(name: string, allowed: boolean) {
   state.handoff.mockReset().mockResolvedValue({
@@ -134,6 +165,7 @@ function setup(name: string, allowed: boolean) {
       "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aG1cAAAAASUVORK5CYII=",
   });
   localStorage.removeItem(`premiere-draft:${state.environmentId}:editing:new`);
+  localStorage.removeItem(modelOptionsStorageKey);
 }
 
 function setupQuestion(name: string, capability: "live" | "message" | "not_resumable" = "live") {
@@ -330,6 +362,96 @@ it("sends the first draft after loading the paired session's permission", async 
   await screen.getByRole("button", { name: "Send", exact: true }).click();
   await expect.element(message).toHaveValue("");
   expect(state.run).toHaveBeenCalledTimes(1);
+});
+
+it("grows the composer to its line and panel caps and shrinks after clearing or sending", async () => {
+  setup("composer-height", true);
+  await page.viewport(440, 720);
+  try {
+    const container = document.createElement("div");
+    container.style.height = "100vh";
+    // The docked panel has no router navigation.
+    await using screen = await render(
+      <AppAtomRegistryProvider>
+        <PremiereApp />
+      </AppAtomRegistryProvider>,
+      { router: false, container },
+    );
+    const message = screen.getByRole("textbox", { name: "Message your editing assistant" });
+    const input = message.element() as HTMLTextAreaElement;
+    const initialHeight = input.clientHeight;
+    const sendBounds = screen
+      .getByRole("button", { name: "Send", exact: true })
+      .element()
+      .getBoundingClientRect();
+    const usageBounds = screen
+      .getByRole("button", { name: /^Context window/ })
+      .element()
+      .getBoundingClientRect();
+    expect(usageBounds.right).toBeLessThanOrEqual(sendBounds.left);
+    expect(Math.abs(usageBounds.top - sendBounds.top)).toBeLessThanOrEqual(2);
+    expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(440);
+    await message.fill(Array.from({ length: 6 }, (_, i) => `Line ${i + 1}`).join("\n"));
+    await expect.poll(() => input.clientHeight).toBeGreaterThan(initialHeight + 40);
+    await page.screenshot({ path: "./__screenshots__/axis-composer-after.png" });
+    await message.fill(Array.from({ length: 30 }, (_, i) => `Line ${i + 1}`).join("\n"));
+    await expect.poll(() => input.scrollHeight > input.clientHeight).toBe(true);
+    expect(input.clientHeight).toBeLessThanOrEqual(
+      12 * parseFloat(getComputedStyle(input).lineHeight) + 8,
+    );
+    expect(getComputedStyle(input, "::-webkit-scrollbar").width).toBe("4px");
+    await page.viewport(440, 360);
+    await expect.poll(() => input.clientHeight).toBeLessThanOrEqual(144);
+    await message.fill("");
+    await expect.poll(() => input.clientHeight).toBe(initialHeight);
+    await message.fill("Send this\nwith several\nlines of\ncontext.");
+    await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+    await screen.getByRole("button", { name: "Send", exact: true }).click();
+    await expect.element(message).toHaveValue("");
+    await expect.poll(() => input.clientHeight).toBe(initialHeight);
+  } finally {
+    await page.viewport(1280, 720);
+  }
+});
+
+it("opens compact model controls by default and remembers the user's toggle across mounts", async () => {
+  setup("model-controls", true);
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await expect
+    .element(screen.getByRole("combobox", { name: "Reasoning", exact: true }))
+    .toHaveValue("max");
+  await expect
+    .element(screen.getByRole("combobox", { name: "Service Tier", exact: true }))
+    .toHaveValue("priority");
+  await screen.getByRole("button", { name: "Model settings" }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Model settings" }))
+    .toHaveAttribute("aria-expanded", "false");
+  await screen.rerender(null);
+  await screen.rerender(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+  );
+  await expect
+    .element(screen.getByRole("combobox", { name: "Reasoning", exact: true }))
+    .not.toBeInTheDocument();
+  await screen.getByRole("button", { name: "Model settings" }).click();
+  await screen.rerender(null);
+  await screen.rerender(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+  );
+  await expect
+    .element(screen.getByRole("combobox", { name: "Reasoning", exact: true }))
+    .toHaveValue("max");
 });
 
 it("keeps the draft and disables sending for a read-only paired session", async () => {

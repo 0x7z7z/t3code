@@ -116,6 +116,24 @@ test("reads the actual host scope, including reserved characters and a zero play
   assert.equal(fields[6], "0");
 });
 
+test("publishes current scope for agent startup and clears it when the sequence closes", async () => {
+  using directory = fs.mkdtempDisposableSync(path.join(os.tmpdir(), "axis-host-context-"));
+  const fixture = await panelFixture({ bridgePath: directory.path });
+  fixture.evaluations[0].callback(
+    "premiere:Project|D%3A%2Fcut.prproj|document-a|Opening|sequence-a|29.97|0",
+  );
+  const filename = path.join(directory.path, "axis-context.json");
+  const snapshot = JSON.parse(fs.readFileSync(filename, "utf8"));
+  assert.equal(snapshot.context.projectName, "Project");
+  assert.equal(snapshot.context.sequenceName, "Opening");
+  assert.equal(snapshot.context.sequenceId, "sequence-a");
+  assert.equal(typeof snapshot.capturedAt, "number");
+  assert.equal(fs.existsSync(filename + ".tmp"), false);
+  fixture.send({ type: "premiere.context.request", requestId: "closed" });
+  fixture.evaluations.at(-1).callback("premiere:none");
+  assert.equal(JSON.parse(fs.readFileSync(filename, "utf8")).context, null);
+});
+
 test("streams lightweight playhead reads only while the transcript view is active", async () => {
   const f = await panelFixture();
   f.send({ type: "premiere.transcript.active", enabled: true }, { origin: "https://other.test" });

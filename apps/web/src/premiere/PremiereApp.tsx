@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type FormEvent,
+} from "react";
 import {
   AuthOrchestrationOperateScope,
   type RuntimeMode,
@@ -55,6 +62,14 @@ import { TurnChanges } from "./TurnChangesCard";
 import type { TurnChangeRecord } from "./turnChanges";
 import { QuestionCard } from "./QuestionCard";
 import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
+import { ComposerUsage } from "./ComposerUsage";
+import {
+  deriveLatestContextWindowSnapshot,
+  latestProviderTurnTokenUsage,
+} from "../lib/contextWindow";
+import { observeResize } from "../lib/observeResize";
+
+export const modelOptionsStorageKey = "axis-composer-model-options-open";
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 const SETTLED = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
@@ -111,7 +126,20 @@ export function PremiereApp() {
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   const [mode, setMode] = useState<"plan" | "default">("plan");
-  const [showOptions, setShowOptions] = useState(false);
+  const [showOptions, setShowOptions] = useState(() => {
+    try {
+      return localStorage.getItem(modelOptionsStorageKey) !== "false";
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(modelOptionsStorageKey, String(showOptions));
+    } catch {
+      /* CEP can disable browser storage. */
+    }
+  }, [showOptions]);
   // Auto lets supported providers approve routine actions; the editor can change it per message.
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("auto");
   const [images, setImages] = useState<ComposerImage[]>([]);
@@ -195,6 +223,35 @@ export function PremiereApp() {
     /* Browser storage can be unavailable. */
   }
   const draft = draftState?.key === draftKey ? draftState.value : storedDraft;
+  useLayoutEffect(() => {
+    const input = textarea.current;
+    const panel = input?.closest("[data-premiere-client]");
+    if (!input || !panel || input.value !== draft) return;
+    const resize = () => {
+      input.style.height = "0px";
+      input.style.height = `${input.scrollHeight}px`;
+    };
+    resize();
+    return observeResize(panel, resize);
+  }, [draft]);
+  const activeProviderThread = projection?.providerThreads.find(
+    (candidate) =>
+      candidate.id === projection.thread.activeProviderThreadId &&
+      candidate.providerInstanceId === provider?.instanceId,
+  );
+  const contextUsage = activeProviderThread
+    ? deriveLatestContextWindowSnapshot(
+        projection?.turnItems.map((item) => ({ item })) ?? [],
+        latestProviderTurnTokenUsage(
+          projection?.providerTurns.filter(
+            (turn) => turn.providerThreadId === activeProviderThread.id,
+          ) ?? [],
+          projection,
+          activeProviderThread,
+        ),
+        activeProviderThread,
+      )
+    : null;
   const trigger = slashTrigger(draft, Math.min(cursor, draft.length));
   const slashOpen = trigger !== null && slashDismissed !== trigger.start && !busy;
   const commandItems = slashOpen
@@ -849,6 +906,7 @@ export function PremiereApp() {
           onRemove={(id) => setImages((current) => current.filter((image) => image.id !== id))}
         />
         <textarea
+          data-shot-scroll=""
           ref={textarea}
           aria-label="Message your editing assistant"
           placeholder={
@@ -1038,46 +1096,53 @@ export function PremiereApp() {
               </svg>
             </button>
           ) : null}
-          {running ? (
-            <button
-              type="button"
-              data-send-button=""
-              aria-label="Stop"
-              onClick={() => {
-                if (environmentId && selectedThread)
-                  void stopTurn({ environmentId, input: { threadId: selectedThread } });
-              }}
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
-              </svg>
-            </button>
-          ) : (
-            <button
-              type="submit"
-              data-send-button=""
-              aria-label={busy ? "Sending" : "Send"}
-              disabled={
-                busy ||
-                transcriptBusy ||
-                capturingFrame ||
-                timelineChanges.pending ||
-                timelineChanges.undoing ||
-                !ready ||
-                !canOperate ||
-                (selectedThread !== null && !thread) ||
-                !host.connected ||
-                !provider ||
-                !model ||
-                (!draft.trim() && !images.length) ||
-                otherActive
-              }
-            >
-              <svg viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
-              </svg>
-            </button>
-          )}
+          <div data-composer-primary="">
+            <ComposerUsage
+              context={contextUsage}
+              limits={provider?.usageLimits}
+              account={provider?.displayName ?? provider?.instanceId}
+            />
+            {running ? (
+              <button
+                type="button"
+                data-send-button=""
+                aria-label="Stop"
+                onClick={() => {
+                  if (environmentId && selectedThread)
+                    void stopTurn({ environmentId, input: { threadId: selectedThread } });
+                }}
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="4.5" y="4.5" width="7" height="7" rx="1" />
+                </svg>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                data-send-button=""
+                aria-label={busy ? "Sending" : "Send"}
+                disabled={
+                  busy ||
+                  transcriptBusy ||
+                  capturingFrame ||
+                  timelineChanges.pending ||
+                  timelineChanges.undoing ||
+                  !ready ||
+                  !canOperate ||
+                  (selectedThread !== null && !thread) ||
+                  !host.connected ||
+                  !provider ||
+                  !model ||
+                  (!draft.trim() && !images.length) ||
+                  otherActive
+                }
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="M8 13V3M3.5 7.5 8 3l4.5 4.5" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
       </form>
     </main>
