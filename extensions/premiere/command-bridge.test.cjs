@@ -108,6 +108,7 @@ test("mirrors JSON, raw error and empty evalScript response semantics", (t) => {
   const results = [
     ['{"success":false,"error":"host rejected"}', { success: false, error: "host rejected" }],
     ["Error: host failed", { success: false, error: "Error: host failed" }],
+    ["EvalScript error.", { success: false, error: "EvalScript error." }],
     ["hello", { success: true, data: "hello" }],
     ["42", 42],
     ["false", false],
