@@ -10,6 +10,25 @@ vm.runInNewContext(readFileSync(path.join(__dirname, "snapshot.js"), "utf8"), {
   module: timelineModule,
 });
 const { timelineOperation, handle } = timelineModule.exports;
+// Use the repository's existing Acorn dependency to parse exactly the dialect Premiere accepts.
+const { parse } = require(
+  require.resolve("acorn", { paths: [path.join(__dirname, "../../apps/desktop")] }),
+);
+
+test("emitted timeline operations avoid trailing commas unsupported by ExtendScript ES3", () => {
+  let script;
+  handle(
+    { type: "premiere.snapshot.request", requestId: "syntax", checkpoint: true },
+    {
+      evalScript: (value) => {
+        script = value;
+      },
+    },
+    () => {},
+  );
+  assert.equal(typeof script, "string");
+  assert.doesNotThrow(() => parse(script, { ecmaVersion: 3 }));
+});
 
 function fixture() {
   const time = (seconds) => ({ seconds });

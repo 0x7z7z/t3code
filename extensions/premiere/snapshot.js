@@ -2,6 +2,7 @@
   "use strict";
 
   /* eslint-disable no-unused-vars -- These functions also run in ES3 ExtendScript. */
+  // prettier-ignore
   function timelineOperation(
     action,
     checkpoint,
@@ -10,7 +11,7 @@
     expected,
     turnNumber,
     range,
-    cutRange,
+    cutRange
   ) {
     function quote(value) {
       return (
@@ -92,7 +93,7 @@
               end: seconds(clip.end),
               inPoint: seconds(clip.inPoint),
               outPoint: seconds(clip.outPoint),
-              enabled: enabled,
+              enabled: enabled
             });
           }
           if (items.length < clips.numItems) truncated = true;
@@ -116,7 +117,7 @@
           start: seconds(marker.start),
           end: seconds(marker.end),
           comments: text(marker.comments),
-          color: color,
+          color: color
         });
         marker = seq.markers.getNextMarker(marker);
       }
@@ -132,7 +133,7 @@
         markers: markers,
         inPoint: point(seq, "getInPointAsTime"),
         outPoint: point(seq, "getOutPointAsTime"),
-        truncated: truncated,
+        truncated: truncated
       };
     }
     function find(id) {
@@ -181,7 +182,7 @@
               var item = clips[c].projectItem;
               if (item && String(item.nodeId) === String(itemId))
                 fail(
-                  "This sequence is nested in another sequence. Checkpoint swaps cannot restore its parent references.",
+                  "This sequence is nested in another sequence. Checkpoint swaps cannot restore its parent references."
                 );
             }
           }
@@ -275,7 +276,7 @@
             fail(
               String(restoreError) +
                 " Restore recovery was incomplete. Inspect both sequences: " +
-                recoveryErrors.join("; "),
+                recoveryErrors.join("; ")
             );
           throw restoreError;
         }
@@ -304,7 +305,7 @@
             if (!ids["s" + candidate.sequenceID]) {
               if (clone)
                 fail(
-                  "Premiere created multiple sequences; the checkpoint could not be identified.",
+                  "Premiere created multiple sequences; the checkpoint could not be identified."
                 );
               clone = candidate;
             }
@@ -352,7 +353,7 @@
           checkpointSignature: savedId ? content : null,
           checkpointError: checkpointError,
           checkpointIds: available,
-          cutError: cutError,
+          cutError: cutError
         })
       );
     } catch (error) {

@@ -46,6 +46,7 @@
     });
 
   /* eslint-disable no-unused-vars -- ExtendScript requires bindings for ignored errors. */
+  // prettier-ignore
   function timelineContext() {
     try {
       var p = app.project;
@@ -238,6 +239,7 @@
     });
   }
 
+  // prettier-ignore
   function playheadContext() {
     try {
       var p = app.project;
@@ -288,6 +290,7 @@
     }
   }
 
+  // prettier-ignore
   function exportFrame(targetPath) {
     try {
       var s = app.project && app.project.activeSequence;
@@ -427,6 +430,7 @@
   }
 
   // These functions are serialized into ExtendScript. No native JSON is required there.
+  // prettier-ignore
   function timelineClips(sequenceId) {
     try {
       var s = app.project && app.project.activeSequence;
@@ -460,6 +464,7 @@
     }
   }
 
+  // prettier-ignore
   function timelineSelect(request) {
     try {
       var s = app.project && app.project.activeSequence;
@@ -500,6 +505,7 @@
     }
   }
 
+  // prettier-ignore
   function timelineMarkers(request) {
     var created = [];
     var markers;
@@ -518,7 +524,7 @@
         orange: 3,
         yellow: 4,
         blue: 6,
-        cyan: 7,
+        cyan: 7
       };
       var end = Number(s.end) / 254016000000;
       var i;
@@ -553,7 +559,7 @@
           String(error).slice(0, 400) +
             (rollbackFailure
               ? " Some markers remain. Inspect the timeline before retrying. " + rollbackFailure
-              : " No markers were added."),
+              : " No markers were added.")
         )
       );
     }

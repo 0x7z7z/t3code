@@ -7,6 +7,9 @@ const { readFileSync } = fs;
 const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
+const { parse } = require(
+  require.resolve("acorn", { paths: [path.join(__dirname, "../../apps/desktop")] }),
+);
 
 async function panelFixture(settingsOverride = {}) {
   const elements = new Map();
@@ -76,7 +79,9 @@ async function panelFixture(settingsOverride = {}) {
     evaluations,
     messages,
     contentWindow,
-    setEvalScript: (callback) => { window.__adobe_cep__.evalScript = callback; },
+    setEvalScript: (callback) => {
+      window.__adobe_cep__.evalScript = callback;
+    },
     runTimers: (delay) => {
       for (const [id, timer] of [...timers])
         if (timer.delay === delay) {
@@ -93,6 +98,21 @@ async function panelFixture(settingsOverride = {}) {
       }),
   };
 }
+
+test("scripts sent to Premiere for timeline actions parse as ES3", async () => {
+  const f = await panelFixture();
+  const requests = [
+    { type: "premiere.clips.request", sequenceId: "seq-1" },
+    { type: "premiere.select", sequenceId: "seq-1", nodeId: "clip-1" },
+    { type: "premiere.markers.add", sequenceId: "seq-1", markers: [{ time: 0, name: "Test" }] },
+    { type: "premiere.seek", sequenceId: "seq-1", seconds: 1 },
+    { type: "premiere.frame.request" },
+    { type: "premiere.transcript.active", enabled: true },
+  ];
+  for (const request of requests) f.send({ requestId: "syntax", ...request });
+  for (const { script } of f.evaluations)
+    assert.doesNotThrow(() => parse(script, { ecmaVersion: 3 }));
+});
 
 test("reads the actual host scope, including reserved characters and a zero playhead", async () => {
   const fixture = await panelFixture();
@@ -221,13 +241,17 @@ test("recovers context reads after a synchronous CEP dispatch failure", async ()
   const f = await panelFixture();
   f.evaluations[0].callback("premiere:none");
   // CEP can throw while the host is sleeping or reconnecting.
-  f.setEvalScript(() => { throw new Error("CEP asleep"); });
+  f.setEvalScript(() => {
+    throw new Error("CEP asleep");
+  });
   assert.doesNotThrow(() => f.send({ type: "premiere.context.request", requestId: "asleep" }));
   assert.equal(f.messages.at(-1).packet.context, null);
   assert.equal(f.messages.at(-1).packet.requestId, "asleep");
   f.setEvalScript((script, callback) => f.evaluations.push({ script, callback }));
   f.send({ type: "premiere.context.request", requestId: "awake" });
-  f.evaluations.at(-1).callback("premiere:Project|D%3A%2Fcut.prproj|document-a|Main|sequence-a|25|1");
+  f.evaluations
+    .at(-1)
+    .callback("premiere:Project|D%3A%2Fcut.prproj|document-a|Main|sequence-a|25|1");
   assert.equal(f.messages.at(-1).packet.requestId, "awake");
   assert.equal(f.messages.at(-1).packet.context.sequenceId, "sequence-a");
 });
