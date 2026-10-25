@@ -35,9 +35,14 @@ test("malformed pairing output rejects without escaping the asynchronous CEP cal
   let finish;
   vm.runInNewContext(readFileSync(path.join(__dirname, "runtime.cjs"), "utf8"), {
     module: runtimeModule,
-    require: (name) => name === "child_process" ? {
-      execFile: (_command, _args, _options, callback) => { finish = callback; },
-    } : require(name),
+    require: (name) =>
+      name === "child_process"
+        ? {
+            execFile: (_command, _args, _options, callback) => {
+              finish = callback;
+            },
+          }
+        : require(name),
     URL,
   });
   const result = runtimeModule.exports.pairBackend(config("http://127.0.0.1:5749/", tmpdir()));
@@ -137,6 +142,14 @@ test("reports a missing bundled connector before launching the backend", async (
   const settings = config("http://127.0.0.1:5739/", directory);
   await writeFile(settings.serverPath, 'throw new Error("must not start");');
   assert.throws(() => startBackend(settings), /bundled Premiere connector is missing/);
+});
+
+test("missing or quarantined runtime files give repair instructions for installed users", () => {
+  const settings = config("http://127.0.0.1:5749/", "missing-axis-runtime");
+  settings.nodePath = "missing-axis-node.exe";
+  assert.throws(() => startBackend(settings), /Windows Security.*reinstall/i);
+  settings.nodePath = process.execPath;
+  assert.throws(() => startBackend(settings), /Reinstall Axis/);
 });
 
 test("reuses a running backend and refuses another service without spawning", async (t) => {

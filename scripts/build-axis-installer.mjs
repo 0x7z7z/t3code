@@ -134,6 +134,8 @@ for (const file of [
   "premiere-connector.mjs",
   "axis-install.mjs",
   "axis-sandbox-paths.mjs",
+  "axis-install-port.mjs",
+  "axis-adobe-settings.mjs",
 ])
   copy(NodePath.join(root, "scripts", file), NodePath.join(payload, "scripts", file));
 copy(NodePath.join(root, "LICENSE"), NodePath.join(payload, "LICENSE"));

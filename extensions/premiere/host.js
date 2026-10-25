@@ -10,6 +10,7 @@
   var readingContext = false;
   var contextReadTimeout = null;
   var timer = null;
+  var frameLoadTimer = null;
   var playheadTimer = null;
   var readingPlayhead = false;
   var playheadReadTimeout = null;
@@ -1048,6 +1049,44 @@
       return;
     }
     if (
+      event.data.type === "premiere.diagnostics.request" &&
+      typeof event.data.requestId === "string" &&
+      event.data.requestId.length <= 128
+    ) {
+      var diagnosticsRequest = event.data;
+      var diagnosticsOrigin = event.origin;
+      nodeRequire(nodeRequire("path").join(extensionDirectory, "diagnostics.cjs"))
+        .collect(config, extensionDirectory, runtime.probeBackend)
+        .then(function (report) {
+          report.bridgeState = bridgeStatus ? bridgeStatus.state : "unavailable";
+          report.host = hostVersions();
+          if (backendOrigin === diagnosticsOrigin)
+            frame.contentWindow.postMessage(
+              {
+                type: "premiere.diagnostics",
+                protocol: 1,
+                requestId: diagnosticsRequest.requestId,
+                ok: true,
+                report: report
+              },
+              diagnosticsOrigin
+            );
+        })
+        .catch(function () {
+          frame.contentWindow.postMessage(
+            {
+              type: "premiere.diagnostics",
+              protocol: 1,
+              requestId: diagnosticsRequest.requestId,
+              ok: false,
+              error: "Could not collect diagnostics. Close and reopen Axis, then try again."
+            },
+            diagnosticsOrigin
+          );
+        });
+      return;
+    }
+    if (
       event.data.type === "premiere.transcript.active" &&
       typeof event.data.enabled === "boolean"
     ) {
@@ -1090,6 +1129,7 @@
     if (event.data.type === "premiere.ready" || event.data.type === "premiere.context.request") {
       publishContext(typeof event.data.requestId === "string" ? event.data.requestId : null);
       if (event.data.type === "premiere.ready") {
+        if (frameLoadTimer) clearTimeout(frameLoadTimer);
         startup.hidden = true;
         frame.hidden = false;
         status("ready", "Connected");
@@ -1135,13 +1175,19 @@
   function fail(error) {
     startup.hidden = false;
     frame.hidden = true;
-    document.getElementById("startup-message").textContent = error.message;
+    document.getElementById("startup-message").textContent =
+      error.code === "ENOENT"
+        ? "An Axis installation file is missing. Check Windows Security > Protection history, then reinstall Axis from your trusted installer. Your conversations are kept."
+        : /^(EACCES|EPERM|ECONNREFUSED|ECONNRESET|ETIMEDOUT)$/.test(error.code || "")
+          ? "Axis could not reach its local backend. Click Try again. Check Windows Security > Protection history if this continues, or reinstall Axis. Public network access is not required. Your conversations are kept."
+          : error.message;
     retry.hidden = false;
     status("error", "Needs attention");
   }
 
   function connect() {
     if (connecting) return;
+    if (frameLoadTimer) clearTimeout(frameLoadTimer);
     if (window.AxisPremiereBridge) window.AxisPremiereBridge.retry();
     connecting = true;
     retry.hidden = true;
@@ -1173,6 +1219,14 @@
         frame.src = url;
         document.getElementById("startup-message").textContent =
           "Opening your editing workspace...";
+        frameLoadTimer = setTimeout(function () {
+          if (!startup.hidden)
+            fail(
+              new Error(
+                "The workspace did not finish opening. Click Try again. If this continues, reinstall Axis and check Windows Security > Protection history."
+              )
+            );
+        }, 20000);
         if (!timer)
           timer = setInterval(function () {
             publishContext(null);
@@ -1191,11 +1245,54 @@
   }
 
   retry.addEventListener("click", connect);
+  function hostVersions() {
+    try {
+      var environment = JSON.parse(window.__adobe_cep__.getHostEnvironment());
+      return { premiere: environment.appVersion, cep: window.__adobe_cep__.getCurrentApiVersion() };
+    } catch (error) {
+      return { premiere: "unavailable", cep: "unavailable" };
+    }
+  }
+  function refreshDiagnostics() {
+    var output = document.getElementById("diagnostics-report");
+    output.value = "Collecting local versions and paths...";
+    if (!runtime || !config) {
+      output.value =
+        "Axis configuration could not be loaded. Reinstall Axis from your trusted installer. User data is retained.";
+      return;
+    }
+    nodeRequire(nodeRequire("path").join(extensionDirectory, "diagnostics.cjs"))
+      .collect(config, extensionDirectory, runtime.probeBackend)
+      .then(function (report) {
+        report.host = hostVersions();
+        report.bridge = bridgeStatus || "unavailable";
+        report.providers = "Open workspace > Menu > Diagnostics for provider sign-in status.";
+        output.value = JSON.stringify(report, null, 2);
+      })
+      .catch(function () {
+        output.value = "Could not collect diagnostics. Close and reopen Axis, then try again.";
+      });
+  }
+  document.getElementById("diagnostics-toggle").addEventListener("click", function () {
+    var panel = document.getElementById("host-diagnostics");
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) refreshDiagnostics();
+  });
+  document.getElementById("diagnostics-refresh").addEventListener("click", refreshDiagnostics);
+  document.getElementById("diagnostics-copy").addEventListener("click", function () {
+    var output = document.getElementById("diagnostics-report");
+    output.focus();
+    output.select();
+    document.getElementById("diagnostics-message").textContent = document.execCommand("copy")
+      ? "Report copied."
+      : "Press Ctrl+C to copy the selected report.";
+  });
   window.addEventListener("unload", function () {
     if (timer) clearInterval(timer);
     if (playheadTimer) clearInterval(playheadTimer);
     clearTimeout(contextReadTimeout);
     clearTimeout(playheadReadTimeout);
+    if (frameLoadTimer) clearTimeout(frameLoadTimer);
   });
   readContext(function () {});
   connect();

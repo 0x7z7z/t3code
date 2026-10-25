@@ -14,7 +14,7 @@ const host = vi.hoisted(() => ({
   restore: vi.fn(),
   load: vi.fn(),
 }));
-vi.mock("./host", () => ({ seekPremiere: host.seek }));
+vi.mock("./host", () => ({ seekPremiere: host.seek, isPremierePanel: () => false }));
 vi.mock("./usePlayheadClock", () => ({ usePlayheadClock: () => null }));
 vi.mock("./interactiveHost", () => ({ requestTimelineAction: host.load }));
 vi.mock("./timelineHost", () => ({

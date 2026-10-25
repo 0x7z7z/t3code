@@ -147,6 +147,7 @@ test("visible panel keeps bridge errors in its status line across backend connec
     setInterval: () => 1,
     clearInterval() {},
     setTimeout,
+    clearTimeout,
   });
   await new Promise(setImmediate);
   const connection = elements.get("connection");
