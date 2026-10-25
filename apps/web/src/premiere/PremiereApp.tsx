@@ -62,6 +62,7 @@ import { TurnChanges } from "./TurnChangesCard";
 import type { TurnChangeRecord } from "./turnChanges";
 import { QuestionCard } from "./QuestionCard";
 import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
+import type { CleanupSettings } from "./transcriptCleanup";
 import { ComposerUsage } from "./ComposerUsage";
 import {
   deriveLatestContextWindowSnapshot,
@@ -87,7 +88,7 @@ export function PremiereApp() {
     : null;
   const environmentId = project?.environmentId ?? environments[0]?.environmentId ?? null;
   const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
-  const timelineActions = createTimelineActions(host.context, clips, canOperate);
+  const baseTimelineActions = createTimelineActions(host.context, clips, canOperate);
   const providers = environmentId ? (providerMap.get(environmentId) ?? []) : [];
   const [providerKey, setProviderKey] = useState<string | null>(null);
   const provider = selectEditingProvider(providers, providerKey);
@@ -112,6 +113,20 @@ export function PremiereApp() {
   const [draftState, setDraftState] = useState<{ key: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [panelView, setPanelView] = useState<"conversation" | "transcript">("conversation");
+  const [cleanupRequest, setCleanupRequest] = useState<{
+    scope: string;
+    settings: CleanupSettings;
+  } | null>(null);
+  const timelineActions = baseTimelineActions
+    ? {
+        ...baseTimelineActions,
+        reviewCleanup: (settings: CleanupSettings) => {
+          if (!host.context) return;
+          setCleanupRequest({ scope: transcriptStorageKey(host.context), settings });
+          setPanelView("transcript");
+        },
+      }
+    : undefined;
   const [transcriptBusy, setTranscriptBusy] = useState(false);
   const [transcriptionTurn, setTranscriptionTurn] = useState<{
     threadId: ThreadId;
@@ -769,6 +784,9 @@ export function PremiereApp() {
           <TranscriptView
             key={transcriptStorageKey(host.context)}
             context={host.context}
+            cleanupRequest={
+              cleanupRequest?.scope === transcriptStorageKey(host.context) ? cleanupRequest : null
+            }
             active={transcriptVisible}
             disabled={
               !canOperate ||

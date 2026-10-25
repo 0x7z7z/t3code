@@ -281,6 +281,7 @@ export function formatPremierePrompt(text: string, context: PremiereContext | nu
     "Do not use Git checkpoints to restore a Premiere project. Use Premiere save and undo operations appropriate to the edit.",
     "To suggest markers, use an axis-markers JSON fence: [{time: seconds or HH:MM:SS:FF, name, comment?, color?, duration?}].",
     "For shot lists use an axis-shots JSON fence: [{shot, in, out, description, source?, notes?, status?: todo|done}]. The panel renders interactive cards; use quoted JSON keys and strings.",
+    'For "clean up the VO", emit an axis-cleanup JSON fence with optional settings: {"pauseThreshold":0.6,"padding":0.12,"restartWindow":5,"fillers":["um","uh","erm","like","you know"]}. Its Review cleanup action runs deterministic detection on the current linked transcript, then the editor reviews and applies all accepted ripple cuts with one checkpoint. Transcribe first if needed. Do not independently delete guessed ranges.',
     "</premiere-host-context>",
   ].join("\n");
 }

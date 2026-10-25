@@ -1,5 +1,11 @@
 import { expect, it, vi } from "vite-plus/test";
-import { cutTranscriptRange, requestTimelineSnapshot, restoreTimeline } from "./timelineHost";
+import {
+  cutTranscriptRange,
+  cutTranscriptRanges,
+  requestTimelineSnapshot,
+  restoreTimeline,
+  TimelineRequestError,
+} from "./timelineHost";
 
 function fixture() {
   const postMessage = vi.fn();
@@ -66,6 +72,7 @@ it("correlates checkpointed cut replies and keeps recovery data for partial fail
       cutError: "Razor failed",
     });
     await expect(pending).resolves.toEqual({
+      snapshot: f.snapshot,
       checkpointId: "saved",
       checkpointSignature: "before",
       expectedSignature: "after",
@@ -79,6 +86,35 @@ it("correlates checkpointed cut replies and keeps recovery data for partial fail
     });
     f.send({ ok: true, snapshot: f.snapshot, signature: "after", checkpointId: null });
     await expect(malformed).rejects.toThrow("Invalid cut response");
+    expect(f.listeners.size).toBe(0);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("sends cleanup as one signature-guarded request and distinguishes preflight refusal from uncertain failure", async () => {
+  const f = fixture();
+  try {
+    const fields = {
+      sequenceId: "sequence",
+      projectId: "project",
+      expectedSignature: "reviewed",
+      ranges: [
+        { start: 1, end: 2 },
+        { start: 5, end: 6 },
+      ],
+    };
+    const refused = cutTranscriptRanges(fields);
+    expect(f.postMessage.mock.lastCall?.[0]).toMatchObject({
+      ...fields,
+      type: "premiere.cut.request",
+    });
+    f.send({ ok: false, error: "Timeline changed", unchanged: true });
+    await expect(refused).rejects.toMatchObject({ message: "Timeline changed", unchanged: true });
+    const failed = cutTranscriptRanges(fields);
+    f.send({ ok: false, error: "Response lost" });
+    await expect(failed).rejects.toBeInstanceOf(TimelineRequestError);
+    await expect(failed).rejects.toMatchObject({ unchanged: false });
     expect(f.listeners.size).toBe(0);
   } finally {
     vi.unstubAllGlobals();

@@ -2,6 +2,8 @@ export interface TranscriptWord {
   readonly text: string;
   readonly start: number;
   readonly end: number;
+  /** Axis sequence mapping preserves clip boundaries even without a source-media link. */
+  readonly clip?: number;
 }
 
 // Importers and a future transcription service share this sequence-relative format.
@@ -34,7 +36,14 @@ function validateWords(values: unknown): TranscriptWord[] {
     )
       throw new Error("Every word needs text and ordered, positive start/end timestamps.");
     previous = value.start;
-    return { text: value.text.trim(), start: value.start, end: value.end };
+    return {
+      text: value.text.trim(),
+      start: value.start,
+      end: value.end,
+      ...(typeof value.clip === "number" && Number.isSafeInteger(value.clip) && value.clip >= 0
+        ? { clip: value.clip }
+        : {}),
+    };
   });
 }
 
@@ -151,7 +160,9 @@ export function parseTranscript(input: string, filename: string): SequenceTransc
     const words = validateWords(
       fillWordTimes(
         rows?.map((row: unknown) =>
-          object(row) ? { text: row.word ?? row.text, start: row.start, end: row.end } : row,
+          object(row)
+            ? { text: row.word ?? row.text, start: row.start, end: row.end, clip: row.clip }
+            : row,
         ),
       ),
     );

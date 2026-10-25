@@ -15,6 +15,7 @@ function fixture({
   noopRazor = false,
   noopMove = false,
   linkedLocked = false,
+  speed = 1,
 } = {}) {
   let id = 0;
   const time = (value) => ({ ticks: String(value), seconds: value / TICKS });
@@ -24,7 +25,7 @@ function fixture({
     const item = {
       nodeId: `clip-${++id}`,
       inPoint: time(sourceIn * TICKS),
-      outPoint: time((sourceIn + end - start) * TICKS),
+      outPoint: time((sourceIn + (end - start) * speed) * TICKS),
       get start() {
         return time(a);
       },
@@ -68,7 +69,7 @@ function fixture({
           const right = clip(
             point,
             original.end.seconds,
-            original.inPoint.seconds + point - original.start.seconds,
+            original.inPoint.seconds + (point - original.start.seconds) * speed,
           );
           items.splice(items.indexOf(original), 1, left, right);
         }
@@ -176,6 +177,74 @@ test("closes a range consisting of gaps without deleting later clips", () => {
   ]);
 });
 
+test("batch cleanup runs back to front across V+A and unions overlapping/adjacent ranges", () => {
+  const f = fixture({ locked: true });
+  f.run(false, {
+    projectId: "project",
+    ranges: [
+      { start: 2, end: 4 },
+      { start: 6, end: 7 },
+    ],
+  });
+  assert.deepEqual(f.positions(f.audio), [
+    [0, 2, 0, 2],
+    [2, 4, 4, 6],
+    [4, 7, 7, 10],
+  ]);
+  assert.deepEqual(f.positions(f.video).at(-1), [9, 11, 0, 2]);
+  const union = fixture();
+  union.run(false, {
+    projectId: "project",
+    ranges: [
+      { start: 2, end: 4 },
+      { start: 3, end: 5 },
+      { start: 5, end: 6 },
+    ],
+  });
+  assert.deepEqual(union.positions(union.audio), [
+    [0, 2, 0, 2],
+    [2, 6, 6, 10],
+  ]);
+});
+
+test("all batch ranges preflight before mutation, including invalid ranges late in the list", () => {
+  const f = fixture();
+  const before = f.positions(f.video);
+  assert.throws(
+    () =>
+      f.run(false, {
+        projectId: "project",
+        ranges: [
+          { start: 2, end: 4 },
+          { start: 15, end: 16 },
+        ],
+      }),
+    /inside the sequence/,
+  );
+  assert.deepEqual(f.positions(f.video), before);
+  assert.throws(() => f.run(false, { projectId: "project", ranges: [] }), /2000/);
+  assert.throws(
+    () => f.run(false, { projectId: "project", ranges: [{ start: 0, end: NaN }] }),
+    /Invalid/,
+  );
+});
+
+test("batch cleanup preserves speed-changed source times and cuts exactly at clip boundaries", () => {
+  const f = fixture({ speed: 2 });
+  f.run(false, {
+    projectId: "project",
+    ranges: [
+      { start: 2, end: 4 },
+      { start: 10, end: 12 },
+    ],
+  });
+  assert.deepEqual(f.positions(f.audio), [
+    [0, 2, 0, 4],
+    [2, 8, 8, 20],
+  ]);
+  assert.deepEqual(f.positions(f.video).at(-1), [8, 10, 0, 4]);
+});
+
 test("the CEP cut handler validates ranges and serializes the checkpoint and range operation without native JSON", () => {
   const window = {};
   const context = { window };
@@ -208,4 +277,22 @@ test("the CEP cut handler validates ranges and serializes the checkpoint and ran
   window.AxisTimeline.handle(request, cep, (reply) => replies.push(reply));
   assert.equal(evaluations, 1);
   assert.match(replies[1].error, /Open a sequence/);
+  const batch = {
+    ...request,
+    ranges: [
+      { start: 2, end: 4 },
+      { start: 6, end: 7 },
+    ],
+    expectedSignature: "review",
+  };
+  window.AxisTimeline.handle({ ...batch, expectedSignature: undefined }, cep, (reply) =>
+    replies.push(reply),
+  );
+  window.AxisTimeline.handle({ ...batch, ranges: [{ start: 1, end: NaN }] }, cep, (reply) =>
+    replies.push(reply),
+  );
+  assert.equal(evaluations, 1);
+  window.AxisTimeline.handle(batch, cep, (reply) => replies.push(reply));
+  assert.equal(evaluations, 2);
+  assert.match(replies.at(-1).error, /Open a sequence/);
 });

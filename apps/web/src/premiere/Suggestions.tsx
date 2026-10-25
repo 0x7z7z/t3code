@@ -100,6 +100,7 @@ export function Suggestions({
   complete: boolean;
 }) {
   const parsed = parseSuggestion(kind, source, actions.fps);
+  const [sequenceId] = useState(actions.sequenceId);
   const [unchecked, setUnchecked] = useState<ReadonlySet<string>>(new Set());
   const [copy, setCopy] = useState("");
   if (parsed.kind === "invalid" || !complete)
@@ -123,6 +124,25 @@ export function Suggestions({
       {timecodeLabel(seconds, actions.fps)}
     </button>
   );
+  if (parsed.kind === "cleanup")
+    return (
+      <section data-timeline-suggestions="cleanup" aria-label="Suggested voice-over cleanup">
+        <p>
+          Review pauses, filler words, stutters and restarted takes in the linked transcript. Keep
+          the last take.
+        </p>
+        <button
+          type="button"
+          disabled={!actions.reviewCleanup || sequenceId !== actions.sequenceId}
+          onClick={() => actions.reviewCleanup?.(parsed.settings)}
+        >
+          Review cleanup
+        </button>
+        <small>
+          Requires a transcript for this sequence. Review and apply there with one undo checkpoint.
+        </small>
+      </section>
+    );
   if (parsed.kind === "markers")
     return (
       <section data-timeline-suggestions="markers" aria-label="Suggested markers">

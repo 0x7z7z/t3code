@@ -154,6 +154,7 @@
     function prefix(id) {
       return "[Axis checkpoint " + id + "] ";
     }
+    var mutationStarted = false;
     try {
       if (!app.project || !app.project.activeSequence) fail("Open a sequence in Premiere first.");
       var original = app.project.activeSequence;
@@ -212,6 +213,8 @@
       }
       var cutting = action === "cut";
       if (cutting) {
+        if (expected && json(before) !== expected)
+          fail("The timeline changed since cleanup review. Review the cuts again.");
         if (before.truncated) fail("This sequence exceeds the checkpoint limit. No range was cut.");
         cutRange(original, range, true);
       }
@@ -258,6 +261,7 @@
         if (!savedId)
           fail(checkpointError || "No verified checkpoint could be created. No range was cut.");
         try {
+          mutationStarted = true;
           cutRange(original, range, false);
         } catch (rangeError) {
           cutError = String(rangeError).slice(0, 1000);
@@ -284,7 +288,10 @@
         })
       );
     } catch (error) {
-      return "axis:" + json({ ok: false, error: String(error).slice(0, 1000) });
+      return (
+        "axis:" +
+        json({ ok: false, error: String(error).slice(0, 1000), unchanged: !mutationStarted })
+      );
     }
   }
   /* eslint-enable no-unused-vars */
@@ -304,6 +311,27 @@
     var restore = data.type === "premiere.restore.request";
     var prune = data.type === "premiere.prune.request";
     var cutting = data.type === "premiere.cut.request";
+    var batch = cutting && data.ranges !== undefined;
+    var rangesValid = true;
+    if (batch) {
+      rangesValid =
+        Array.isArray(data.ranges) && data.ranges.length > 0 && data.ranges.length <= 2000;
+      if (rangesValid)
+        for (var ri = 0; ri < data.ranges.length; ri++) {
+          var row = data.ranges[ri];
+          if (
+            !row ||
+            typeof row.start !== "number" ||
+            !isFinite(row.start) ||
+            typeof row.end !== "number" ||
+            !isFinite(row.end) ||
+            row.start < 0 ||
+            row.end <= row.start ||
+            row.end > 8640000
+          )
+            rangesValid = false;
+        }
+    }
     if (
       (prune &&
         (!valid(data.sequenceId, 512) ||
@@ -313,13 +341,16 @@
         (!root.AxisRangeCut ||
           !valid(data.sequenceId, 512) ||
           !valid(data.projectId, 2048) ||
-          typeof data.start !== "number" ||
-          !isFinite(data.start) ||
-          typeof data.end !== "number" ||
-          !isFinite(data.end) ||
-          data.start < 0 ||
-          data.end <= data.start ||
-          data.end > 8640000)) ||
+          !rangesValid ||
+          (batch && !valid(data.expectedSignature, 4000000)) ||
+          (!batch &&
+            (typeof data.start !== "number" ||
+              !isFinite(data.start) ||
+              typeof data.end !== "number" ||
+              !isFinite(data.end) ||
+              data.start < 0 ||
+              data.end <= data.start ||
+              data.end > 8640000)))) ||
       (data.sequenceId !== undefined && !valid(data.sequenceId, 512)) ||
       (restore &&
         (!valid(data.sequenceId, 512) ||
@@ -343,7 +374,11 @@
       (prune ? data.keepId : data.checkpointId) || "",
       data.expectedSignature || "",
       data.turnNumber || 1,
-      cutting ? { start: data.start, end: data.end, projectId: data.projectId } : null,
+      cutting
+        ? batch
+          ? { ranges: data.ranges, projectId: data.projectId }
+          : { start: data.start, end: data.end, projectId: data.projectId }
+        : null,
     ];
     try {
       cep.evalScript(

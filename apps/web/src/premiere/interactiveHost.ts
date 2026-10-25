@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { isPremierePanel, seekPremiere, type PremiereContext } from "./host";
 import { parseClipIndex, type TimelineClip } from "./clipLinks";
 import type { MarkerSuggestion } from "./suggestionBlocks";
+import type { CleanupSettings } from "./transcriptCleanup";
 
 let nextRequestId = 0;
 
@@ -68,6 +69,7 @@ export function requestTimelineAction(
 }
 
 export interface TimelineActions {
+  readonly reviewCleanup?: (settings: CleanupSettings) => void;
   readonly sequenceId: string;
   readonly fps: number;
   readonly canAddMarkers: boolean;

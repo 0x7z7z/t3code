@@ -4,9 +4,11 @@ import { seekPremiere, type PremiereContext } from "./host";
 import { importWhisperHandoff, loadWhisperTranscript, whisperPrompt } from "./whisperTranscription";
 import {
   cutTranscriptRange,
+  cutTranscriptRanges,
   pruneCheckpoints,
   requestTimelineSnapshot,
   restoreTimeline,
+  TimelineRequestError,
 } from "./timelineHost";
 import {
   mapTranscript,
@@ -30,8 +32,17 @@ import {
   type VoiceLink,
 } from "./transcriptSync";
 import { usePlayheadClock } from "./usePlayheadClock";
+import { CleanupReview } from "./CleanupReview";
+import {
+  defaultCleanupSettings,
+  detectTranscriptCleanup,
+  mergeCleanupRanges,
+  type CleanupCut,
+  type CleanupSettings,
+} from "./transcriptCleanup";
 
 interface CutUndo {
+  readonly beforeLink?: VoiceLink | null | undefined;
   readonly before: SequenceTranscript;
   readonly checkpointId: string;
   readonly checkpointSignature: string;
@@ -96,7 +107,7 @@ function readStored(key: string): StoredTranscript {
       candidate.checkpointSignature.length <= 4000000 &&
       typeof candidate.expectedSignature === "string" &&
       candidate.expectedSignature.length <= 4000000
-        ? { ...candidate, before }
+        ? { ...candidate, before, beforeLink: parseLink(candidate.beforeLink) }
         : null;
     return { transcript, undo, uncertain: data?.uncertain === true, link: parseLink(data?.link) };
   } catch {
@@ -158,6 +169,9 @@ const Paragraph = memo(function Paragraph({
   marks,
   current,
   busy,
+  cleanupWords,
+  cleanupPauses,
+  excluded,
 }: {
   words: readonly TranscriptWord[];
   from: number;
@@ -168,18 +182,38 @@ const Paragraph = memo(function Paragraph({
   marks: Uint8Array;
   current: boolean;
   busy: boolean;
+  cleanupWords: readonly (CleanupCut | undefined)[];
+  cleanupPauses: ReadonlyMap<number, readonly CleanupCut[]>;
+  excluded: ReadonlySet<string>;
 }) {
   const items = [];
   for (let index = from; index < to; index++) {
     const word = words[index]!;
+    for (const pause of cleanupPauses.get(index) ?? []) {
+      items.push(
+        <button
+          type="button"
+          key={pause.id}
+          data-cut-id={pause.id}
+          data-cleanup-cut={excluded.has(pause.id) ? "kept" : "accepted"}
+          disabled={busy}
+          aria-label={`Toggle pause at ${transcriptTime(pause.start)}`}
+        >
+          [{(pause.end - pause.start).toFixed(2)} s pause]
+        </button>,
+      );
+    }
+    const cut = cleanupWords[index];
     items.push(
       <button
         type="button"
         data-transcript-word=""
         data-index={index}
+        data-cut-id={cut?.id}
+        data-cleanup-cut={cut ? (excluded.has(cut.id) ? "kept" : "accepted") : undefined}
         key={index}
         aria-label={`${word.text} at ${transcriptTime(word.start)}`}
-        aria-pressed={index >= selFirst && index <= selLast}
+        aria-pressed={cut ? !excluded.has(cut.id) : index >= selFirst && index <= selLast}
         aria-current={index === active ? "true" : undefined}
         data-match={marks[index] === 2 ? "current" : marks[index] === 1 ? "" : undefined}
         disabled={busy}
@@ -188,6 +222,20 @@ const Paragraph = memo(function Paragraph({
       </button>,
     );
   }
+  if (to === words.length)
+    for (const pause of cleanupPauses.get(to) ?? [])
+      items.push(
+        <button
+          type="button"
+          key={pause.id}
+          data-cut-id={pause.id}
+          data-cleanup-cut={excluded.has(pause.id) ? "kept" : "accepted"}
+          disabled={busy}
+          aria-label={`Toggle pause at ${transcriptTime(pause.start)}`}
+        >
+          [{(pause.end - pause.start).toFixed(2)} s pause]
+        </button>,
+      );
   return (
     <div data-transcript-paragraph="" data-current={current ? "" : undefined}>
       <button
@@ -215,6 +263,7 @@ export function TranscriptView({
   agentStatus = "idle",
   agentOutcome = null,
   active = true,
+  cleanupRequest,
 }: {
   context: PremiereContext;
   disabled: boolean;
@@ -226,6 +275,7 @@ export function TranscriptView({
   agentOutcome?: string | null;
   /** The tab is visible; only then does the view follow the playhead and timeline. */
   active?: boolean;
+  cleanupRequest?: { settings: CleanupSettings } | null;
 }) {
   const key = transcriptStorageKey(context);
   const [stored, setStored] = useState(() => readStored(key));
@@ -238,6 +288,9 @@ export function TranscriptView({
   const [confirmCut, setConfirmCut] = useState(false);
   const [fixScript, setFixScript] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [cleanup, setCleanup] = useState<{ signature: string } | null>(null);
+  const [cleanupSettings, setCleanupSettings] = useState(defaultCleanupSettings);
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
   const [candidates, setCandidates] = useState<ReturnType<typeof voiceCandidates> | null>(null);
   const [query, setQuery] = useState("");
   const [matchCursor, setMatchCursor] = useState(0);
@@ -280,6 +333,19 @@ export function TranscriptView({
   const current = wordAtTime(words, playhead, fps);
   const anchorWord = current >= 0 ? current : lastWordBefore(words, playhead, fps);
   const range = selection ? selectionRange(words, selection.anchor, selection.focus, fps) : null;
+  const cleanupCuts = cleanup
+    ? detectTranscriptCleanup(words, cleanupSettings, fps, link?.segments)
+    : [];
+  const cleanupWords = Array.from<CleanupCut | undefined>({ length: words.length });
+  const cleanupPauses = new Map<number, CleanupCut[]>();
+  let cleanupCursor = 0;
+  for (const cut of cleanupCuts) {
+    while (cleanupCursor < words.length && words[cleanupCursor]!.end <= cut.start) cleanupCursor++;
+    let index = cleanupCursor;
+    while (index < words.length && words[index]!.start < cut.end) cleanupWords[index++] = cut;
+    if (index === cleanupCursor)
+      cleanupPauses.set(index, [...(cleanupPauses.get(index) ?? []), cut]);
+  }
 
   const normalized = words.map((word) => normalize(word.text));
   const tokens = query.split(/\s+/).map(normalize).filter(Boolean);
@@ -312,6 +378,7 @@ export function TranscriptView({
   }, []);
 
   function persist(next: StoredTranscript, destination = key) {
+    if (storedRef.current.transcript !== next.transcript) setCleanup(null);
     storedRef.current = next;
     setStored(next);
     try {
@@ -367,6 +434,7 @@ export function TranscriptView({
     setNotice(null);
     if (JSON.stringify(fresh.segments) !== JSON.stringify(saved.link.segments)) {
       persist({ ...saved, link: fresh });
+      setCleanup(null);
       setSelection(null);
       setConfirmCut(false);
     }
@@ -612,6 +680,115 @@ export function TranscriptView({
     }
   }
 
+  async function openCleanup(settings = cleanupSettings) {
+    if (!doc || operation.current || busy) {
+      if (!doc) setNotice("Import or transcribe the voice-over before reviewing cleanup.");
+      return;
+    }
+    setMenuOpen(false);
+    operation.current = true;
+    setBusy(true);
+    setError(null);
+    try {
+      const reply = await requestTimelineSnapshot(false, context.sequenceId);
+      if (
+        reply.snapshot &&
+        reply.snapshot.projectId !== (context.projectDocumentId || context.projectPath)
+      )
+        throw new Error("The active Premiere project changed.");
+      const saved = storedRef.current;
+      if (saved.link && reply.snapshot) {
+        const fresh = refreshVoiceLink(reply.snapshot, saved.link);
+        persist({ ...saved, link: fresh ?? { ...saved.link, segments: [] } });
+      }
+      setCleanupSettings(settings);
+      setExcluded(new Set());
+      setSelection(null);
+      setConfirmCut(false);
+      setFollowing(false);
+      setCleanup({ signature: reply.signature });
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : "Could not open cleanup review.");
+    } finally {
+      operation.current = false;
+      setBusy(false);
+    }
+  }
+
+  const requestedCleanup = useEffectEvent((settings: CleanupSettings) => {
+    void openCleanup(settings);
+  });
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- A suggestion starts a Premiere snapshot request, which must mark the view busy before awaiting the host.
+    if (cleanupRequest) requestedCleanup(cleanupRequest.settings);
+  }, [cleanupRequest]);
+
+  function toggleCleanup(id: string) {
+    const cut = cleanupCuts.find((candidate) => candidate.id === id);
+    if (cut) seekPremiere(Math.max(0, cut.start - 0.3), context.sequenceId);
+    const next = new Set(excluded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setExcluded(next);
+  }
+
+  async function applyCleanup() {
+    if (!doc || !cleanup || disabled || operation.current || stored.uncertain) return;
+    const ranges = mergeCleanupRanges(cleanupCuts.filter((cut) => !excluded.has(cut.id)));
+    if (!ranges.length || ranges.length > 2000) return;
+    operation.current = true;
+    setBusy(true);
+    onBusy(true);
+    setError(null);
+    try {
+      const result = await cutTranscriptRanges({
+        sequenceId: context.sequenceId,
+        projectId: context.projectDocumentId || context.projectPath,
+        ranges,
+        expectedSignature: cleanup.signature,
+      });
+      // Source words remain intact. The after snapshot places them through the surviving,
+      // speed-aware clip segments; an entirely removed VO has zero surviving segments.
+      const fresh = link
+        ? (refreshVoiceLink(result.snapshot, link) ?? { ...link, segments: [] })
+        : null;
+      let transcript = doc;
+      if (!link && !result.cutError)
+        for (let i = ranges.length - 1; i >= 0; i--) {
+          const range = ranges[i]!;
+          transcript = rippleTranscript(transcript, range.start, range.end);
+        }
+      persist({
+        transcript,
+        link: fresh,
+        uncertain: result.cutError !== null,
+        undo: {
+          before: doc,
+          beforeLink: link,
+          checkpointId: result.checkpointId,
+          checkpointSignature: result.checkpointSignature,
+          expectedSignature: result.expectedSignature,
+        },
+      });
+      setCleanup(null);
+      setSelection(null);
+      await pruneCheckpoints(context.sequenceId, result.checkpointId).catch(() => {});
+      if (result.cutError)
+        setError(`${result.cutError} Undo transcript cut restores the entire cleanup.`);
+    } catch (problem) {
+      const unchanged = problem instanceof TimelineRequestError && problem.unchanged;
+      persist({ ...storedRef.current, uncertain: !unchanged });
+      setCleanup(null);
+      setError(
+        `${problem instanceof Error ? problem.message : "Cleanup failed."} ${unchanged ? "Open Clean up to review again." : "Inspect the timeline and Axis checkpoints before retrying."}`,
+      );
+    } finally {
+      operation.current = false;
+      setBusy(false);
+      onBusy(false);
+    }
+  }
+
   async function undo() {
     const saved = stored.undo;
     if (!saved || disabled || operation.current) return;
@@ -639,7 +816,12 @@ export function TranscriptView({
         throw new Error(
           "Premiere restored the checkpoint but did not return its sequence ID. Reimport the transcript in the restored sequence.",
         );
-      const next = { transcript: saved.before, undo: null, uncertain: false, link };
+      const next = {
+        transcript: saved.before,
+        undo: null,
+        uncertain: false,
+        link: saved.beforeLink === undefined ? link : saved.beforeLink,
+      };
       persist(next, transcriptStorageKey(context, restoredId));
       // Restore opens the clone; the preserved after sequence keeps its own transcript.
       localStorage.setItem(key, JSON.stringify({ ...stored, undo: null }));
@@ -807,6 +989,13 @@ export function TranscriptView({
                   <h3>Source</h3>
                   <p>{doc.source}</p>
                   <div data-row="">
+                    <button
+                      type="button"
+                      disabled={busy || stored.uncertain || !words.length}
+                      onClick={() => void openCleanup()}
+                    >
+                      Clean up
+                    </button>
                     <button type="button" disabled={busy} onClick={() => input.current?.click()}>
                       Replace transcript
                     </button>
@@ -981,93 +1170,118 @@ export function TranscriptView({
           {scriptToggle}
         </div>
       ) : (
-        <div data-transcript-body="">
-          <div
-            ref={wordArea}
-            data-transcript-words=""
-            data-shot-scroll=""
-            tabIndex={-1}
-            onWheel={() => setFollowing(false)}
-            onTouchMove={() => setFollowing(false)}
-            onPointerDown={(event) => {
-              if (event.target === event.currentTarget) setFollowing(false);
-              const index = wordIndex(event.target);
-              if (event.button !== 0 || index < 0) return;
-              gesture.current = {
-                anchor: event.shiftKey && selection ? selection.anchor : index,
-                dragged: false,
-              };
-            }}
-            onPointerOver={(event) => {
-              const index = wordIndex(event.target);
-              if (!gesture.current || event.buttons !== 1 || index < 0) return;
-              if (index === gesture.current.anchor && !gesture.current.dragged) return;
-              gesture.current.dragged = true;
-              setSelection({ anchor: gesture.current.anchor, focus: index });
-              setConfirmCut(false);
-              setFollowing(false);
-            }}
-            onPointerLeave={() => {
-              gesture.current = null;
-            }}
-            onClick={(event) => {
-              const seek = (event.target as HTMLElement).closest?.("[data-seek]");
-              if (seek) {
-                const index = Number(seek.getAttribute("data-seek"));
-                seekPremiere(seekTime(words[index]!.start, fps), context.sequenceId);
-                setFollowing(true);
-                return;
-              }
-              const index = wordIndex(event.target);
-              if (index < 0) return;
-              if (!gesture.current?.dragged) {
-                setSelection({
+        <>
+          {cleanup ? (
+            <CleanupReview
+              cuts={cleanupCuts}
+              excluded={excluded}
+              settings={cleanupSettings}
+              busy={busy}
+              canApply={!disabled && !stored.uncertain}
+              onSettings={setCleanupSettings}
+              onToggle={toggleCleanup}
+              onSeek={(seconds) => seekPremiere(Math.max(0, seconds - 0.3), context.sequenceId)}
+              onApply={() => void applyCleanup()}
+              onClose={() => setCleanup(null)}
+            />
+          ) : null}
+          <div data-transcript-body="">
+            <div
+              ref={wordArea}
+              data-transcript-words=""
+              data-shot-scroll=""
+              tabIndex={-1}
+              onWheel={() => setFollowing(false)}
+              onTouchMove={() => setFollowing(false)}
+              onPointerDown={(event) => {
+                if (cleanup) return;
+                if (event.target === event.currentTarget) setFollowing(false);
+                const index = wordIndex(event.target);
+                if (event.button !== 0 || index < 0) return;
+                gesture.current = {
                   anchor: event.shiftKey && selection ? selection.anchor : index,
-                  focus: index,
-                });
+                  dragged: false,
+                };
+              }}
+              onPointerOver={(event) => {
+                const index = wordIndex(event.target);
+                if (!gesture.current || event.buttons !== 1 || index < 0) return;
+                if (index === gesture.current.anchor && !gesture.current.dragged) return;
+                gesture.current.dragged = true;
+                setSelection({ anchor: gesture.current.anchor, focus: index });
                 setConfirmCut(false);
-                if (!event.shiftKey) {
+                setFollowing(false);
+              }}
+              onPointerLeave={() => {
+                gesture.current = null;
+              }}
+              onClick={(event) => {
+                const cut = (event.target as HTMLElement).closest?.("[data-cut-id]");
+                if (cleanup && cut) {
+                  toggleCleanup(cut.getAttribute("data-cut-id")!);
+                  return;
+                }
+                const seek = (event.target as HTMLElement).closest?.("[data-seek]");
+                if (seek) {
+                  const index = Number(seek.getAttribute("data-seek"));
                   seekPremiere(seekTime(words[index]!.start, fps), context.sequenceId);
                   setFollowing(true);
+                  return;
                 }
-              }
-              gesture.current = null;
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                setSelection(null);
-                setConfirmCut(false);
-              }
-            }}
-          >
-            {!words.length ? (
-              <p data-transcript-none="">
-                {doc.words.length
-                  ? "None of these words are on the timeline. Check the sync clip in the menu."
-                  : "The imported words have all been cut. Undo to restore them."}
-              </p>
+                const index = wordIndex(event.target);
+                if (index < 0) return;
+                if (!gesture.current?.dragged) {
+                  setSelection({
+                    anchor: event.shiftKey && selection ? selection.anchor : index,
+                    focus: index,
+                  });
+                  setConfirmCut(false);
+                  if (!event.shiftKey) {
+                    seekPremiere(seekTime(words[index]!.start, fps), context.sequenceId);
+                    setFollowing(true);
+                  }
+                }
+                gesture.current = null;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSelection(null);
+                  setConfirmCut(false);
+                }
+              }}
+            >
+              {!words.length ? (
+                <p data-transcript-none="">
+                  {doc.words.length
+                    ? "None of these words are on the timeline. Check the sync clip in the menu."
+                    : "The imported words have all been cut. Undo to restore them."}
+                </p>
+              ) : null}
+              {blocks.map(([from, to]) => (
+                <Paragraph
+                  key={from}
+                  words={words}
+                  from={from}
+                  to={to}
+                  active={current >= from && current < to ? current : -1}
+                  selFirst={range && range.last >= from && range.first < to ? range.first : -1}
+                  selLast={range && range.last >= from && range.first < to ? range.last : -2}
+                  marks={marks}
+                  current={anchorWord >= from && anchorWord < to}
+                  busy={busy}
+                  cleanupWords={cleanupWords}
+                  cleanupPauses={cleanupPauses}
+                  excluded={excluded}
+                />
+              ))}
+            </div>
+            {!following && words.length ? (
+              <button type="button" data-transcript-jump="" onClick={() => setFollowing(true)}>
+                Jump to playhead
+              </button>
             ) : null}
-            {blocks.map(([from, to]) => (
-              <Paragraph
-                key={from}
-                words={words}
-                from={from}
-                to={to}
-                active={current >= from && current < to ? current : -1}
-                selFirst={range && range.last >= from && range.first < to ? range.first : -1}
-                selLast={range && range.last >= from && range.first < to ? range.last : -2}
-                marks={marks}
-                current={anchorWord >= from && anchorWord < to}
-                busy={busy}
-              />
-            ))}
           </div>
-          {!following && words.length ? (
-            <button type="button" data-transcript-jump="" onClick={() => setFollowing(true)}>
-              Jump to playhead
-            </button>
-          ) : null}
-        </div>
+        </>
       )}
       {range ? (
         <div data-transcript-actions="" role="group" aria-label="Transcript selection actions">
