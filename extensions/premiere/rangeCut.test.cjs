@@ -7,7 +7,14 @@ const path = require("node:path");
 const exported = { exports: {} };
 vm.runInNewContext(readFileSync(path.join(__dirname, "rangeCut.js"), "utf8"), { module: exported });
 const { cutRange } = exported.exports;
+const { parse } = require(
+  require.resolve("acorn", { paths: [path.join(__dirname, "../../apps/desktop")] }),
+);
 const TICKS = 254016000000;
+
+test("the range cut sent to Premiere parses as ES3", () => {
+  assert.doesNotThrow(() => parse("(" + cutRange.toString() + ")", { ecmaVersion: 3 }));
+});
 
 function fixture({
   locked = false,

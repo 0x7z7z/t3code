@@ -3,6 +3,8 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- This pure config matcher needs Windows normalization on every host OS.
+import * as NodePath from "node:path";
 
 const decodeSnapshot = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -44,8 +46,13 @@ export function premiereMcpServer(
   )
     throw new Error("Invalid Premiere connector configuration. Reinstall the extension.");
   const normalize = (path: string) => {
+    if (/^(?:[a-z]:[\\/]|[\\/]{2})/i.test(path))
+      return NodePath.win32
+        .normalize(path)
+        .replace(/[\\/]+$/, "")
+        .toLowerCase();
     const normalized = path.replaceAll("\\", "/").replace(/\/+$/, "");
-    return /^[a-z]:\//i.test(normalized) ? normalized.toLowerCase() : normalized;
+    return normalized;
   };
   if (normalize(cwd) !== normalize(config.workspacePath)) return undefined;
   if (

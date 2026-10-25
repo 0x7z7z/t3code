@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { OrchestrationV2Run, OrchestrationV2TurnItem } from "@t3tools/contracts";
 import {
   diffTimeline,
@@ -28,6 +28,15 @@ export function useTurnChanges(
   const capturing = useRef(new Set<string>());
   const dispatching = useRef(new Set<string>());
   const [undoing, setUndoing] = useState(false);
+  const verifyCapture = useEffectEvent((record: TurnChangeRecord, ordinal: number) => {
+    if (record.threadId !== threadId)
+      throw new Error("The active thread changed before the after snapshot was captured.");
+    if (
+      runs.some((next) => next.ordinal > ordinal) ||
+      records.some((next) => next.messageId !== record.messageId && !next.after && !next.error)
+    )
+      throw new Error("A later turn started before the after snapshot was captured.");
+  });
   useEffect(() => {
     writeTurnChanges(localStorage, records);
   }, [records]);
@@ -66,6 +75,7 @@ export function useTurnChanges(
       }
       void requestTimelineSnapshot(false, record.before.sequenceId)
         .then((after) => {
+          verifyCapture(record, run.ordinal);
           if (after.snapshot.projectId !== record.before.projectId)
             throw new Error("The active Premiere project changed.");
           const changes = diffTimeline(record.before, after.snapshot);
@@ -134,9 +144,22 @@ export function useTurnChanges(
       projectId?: string,
     ) {
       if (!sequenceId) return;
-      // A failed snapshot only loses this turn's change card; the message still goes out.
-      const before = await requestTimelineSnapshot(checkpoint, sequenceId).catch(() => null);
+      // Editing must have a complete, verified checkpoint before dispatch.
+      const before = await requestTimelineSnapshot(checkpoint, sequenceId).catch(
+        (error: unknown) => {
+          if (checkpoint) throw error;
+          return null;
+        },
+      );
       if (!before) return;
+      if (
+        checkpoint &&
+        (before.snapshot.truncated || !before.checkpointId || !before.checkpointSignature)
+      )
+        throw new Error(
+          before.checkpointError ||
+            "A complete timeline checkpoint is required before editing. No turn was sent.",
+        );
       if (projectId && before.snapshot.projectId !== projectId)
         throw new Error(
           "The active Premiere project changed. Check the timeline, then send again.",

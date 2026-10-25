@@ -1,6 +1,7 @@
 (function (root) {
   "use strict";
 
+  // prettier-ignore
   function cutRange(sequence, range, dryRun) {
     function fail(message) {
       throw new Error(message);
@@ -26,7 +27,7 @@
         batch.push({
           start: Math.round(row.start / batchFrame) * batchFrame,
           end: Math.round(row.end / batchFrame) * batchFrame,
-          projectId: range.projectId,
+          projectId: range.projectId
         });
       }
       batch.sort(function (a, b) {
@@ -87,7 +88,7 @@
         for (i = 0; i < dom.transitions.numItems; i++)
           if (clipTime(dom.transitions[i].end) > start)
             fail(
-              "Remove transitions at or after the cut on unlocked tracks before using transcript cuts.",
+              "Remove transitions at or after the cut on unlocked tracks before using transcript cuts."
             );
         tracks.push({ dom: dom, qe: qt });
       }
@@ -162,7 +163,7 @@
             start: cs,
             end: ce,
             inPoint: clipTime(clip.inPoint),
-            outPoint: clipTime(clip.outPoint),
+            outPoint: clipTime(clip.outPoint)
           });
       }
     }

@@ -236,7 +236,78 @@ it("accepts legacy packets and repeated stationary samples, and clears samples o
   expect(getPremierePlayheadSample()).toBeNull();
 });
 
+it("never carries playhead samples into another sequence on an older context reply", () => {
+  using bridge = frameBridge();
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 10 });
+  bridge.reply({
+    type: "premiere.context",
+    context: { ...context, sequenceId: "sequence-b", playheadSeconds: 20 },
+    playheadReadId: 11,
+  });
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 9 });
+  expect(getPremiereHostState().context?.sequenceId).toBe("sequence-b");
+  expect(getPremiereHostState().context?.playheadSeconds).toBe(20);
+  expect(getPremierePlayheadSample()?.seconds).toBe(20);
+});
+
+it("starts a new sequence's playhead independently of a newer fast sample for the previous one", () => {
+  using bridge = frameBridge();
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 1 });
+  bridge.reply({
+    type: "premiere.playhead",
+    projectId: "project-a",
+    sequenceId: "sequence-a",
+    seconds: 5,
+    readId: 3,
+  });
+  bridge.reply({
+    type: "premiere.context",
+    context: { ...context, sequenceId: "sequence-b", playheadSeconds: 20 },
+    playheadReadId: 2,
+  });
+  expect(getPremiereHostState().context?.playheadSeconds).toBe(20);
+  expect(getPremierePlayheadSample()?.seconds).toBe(20);
+});
+
+it("settles stale explicit context requests without reviving a previous sequence", async () => {
+  using bridge = frameBridge();
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 10 });
+  const request = requestPremiereContext();
+  const requestId = bridge.parent.postMessage.mock.calls.at(-1)?.[0].requestId;
+  bridge.reply({
+    type: "premiere.context",
+    context: { ...context, projectDocumentId: "project-b", playheadSeconds: 50 },
+    playheadReadId: 12,
+  });
+  bridge.reply({ type: "premiere.context", context, playheadReadId: 11, requestId });
+  await expect(request).resolves.toBeNull();
+  expect(getPremiereHostState().context?.projectDocumentId).toBe("project-b");
+  expect(getPremiereHostState().context?.playheadSeconds).toBe(50);
+});
+
 describe("Premiere frame requests", () => {
+  it.each([requestPremiereContext, requestPremiereFrame])(
+    "cleans up a synchronously failed dispatch: %s",
+    async (request) => {
+      using bridge = frameBridge();
+      bridge.parent.postMessage.mockImplementation(() => {
+        throw new Error("Frame detached");
+      });
+      await expect(request()).rejects.toThrow("Frame detached");
+      expect(vi.getTimerCount()).toBe(0);
+    },
+  );
+  it("settles outstanding context reads and releases their timers when the bridge closes", async () => {
+    using bridge = frameBridge();
+    const first = requestPremiereContext();
+    const second = requestPremiereContext();
+    expect(vi.getTimerCount()).toBe(2);
+    bridge.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    await expect(first).resolves.toBeNull();
+    await expect(second).resolves.toBeNull();
+  });
+
   it("correlates concurrent requests and ignores untrusted messages", async () => {
     using bridge = frameBridge();
     const first = requestPremiereFrame();

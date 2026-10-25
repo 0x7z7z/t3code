@@ -157,7 +157,11 @@ export default defineConfig({
     overrides: [
       {
         // These files serialize functions into Premiere's ES3 ExtendScript VM.
-        files: ["extensions/premiere/host.js", "extensions/premiere/snapshot.js"],
+        files: [
+          "extensions/premiere/host.js",
+          "extensions/premiere/snapshot.js",
+          "extensions/premiere/rangeCut.js",
+        ],
         options: { trailingComma: "none" },
       },
       {

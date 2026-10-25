@@ -10,6 +10,25 @@ vm.runInNewContext(readFileSync(path.join(__dirname, "snapshot.js"), "utf8"), {
   module: timelineModule,
 });
 const { timelineOperation, handle } = timelineModule.exports;
+// Use the repository's existing Acorn dependency to parse exactly the dialect Premiere accepts.
+const { parse } = require(
+  require.resolve("acorn", { paths: [path.join(__dirname, "../../apps/desktop")] }),
+);
+
+test("emitted timeline operations avoid trailing commas unsupported by ExtendScript ES3", () => {
+  let script;
+  handle(
+    { type: "premiere.snapshot.request", requestId: "syntax", checkpoint: true },
+    {
+      evalScript: (value) => {
+        script = value;
+      },
+    },
+    () => {},
+  );
+  assert.equal(typeof script, "string");
+  assert.doesNotThrow(() => parse(script, { ecmaVersion: 3 }));
+});
 
 function fixture() {
   const time = (seconds) => ({ seconds });
@@ -227,7 +246,8 @@ test("opens the checkpoint on restore and preserves the after version without de
   assert.equal(f.project.activeSequence.name, "Main Edit");
   assert.equal(f.original.name, "Main Edit (after turn 3)");
   assert.equal(f.project.sequences.numSequences, 2);
-  assert.equal(f.moves.at(-1).id, "sequence-a");
+  assert.equal(f.moves.at(-1).id, "checkpoint-a");
+  assert.equal(f.moves.at(-1).value, f.project.rootItem);
 });
 
 test("puts the restored version in the bin the original sequence was in", () => {
@@ -288,6 +308,32 @@ test("rejects edited checkpoints and reports refusal to clone while preserving r
   assert.match(refused.checkpointError, /refused/);
 });
 
+for (const change of ["source", "speed", "reverse"]) {
+  test(`refuses undo after a ${change} change with unchanged timing`, () => {
+    const f = fixture();
+    let speed = 1;
+    let reverse = false;
+    f.clip.projectItem.nodeId = "source-a";
+    f.clip.getSpeed = () => speed;
+    f.clip.isSpeedReversed = () => reverse;
+    const checkpoint = f.run("snapshot", true);
+    const after = f.run();
+    if (change === "source") f.clip.projectItem = { name: "Source", nodeId: "source-b" };
+    if (change === "speed") speed = 2;
+    if (change === "reverse") reverse = true;
+    const restored = f.run(
+      "restore",
+      checkpoint.checkpointSignature,
+      "sequence-a",
+      "checkpoint-a",
+      after.signature,
+    );
+    assert.equal(restored.ok, false, change);
+    assert.match(restored.error, /timeline changed/, change);
+    assert.equal(f.project.activeSequence, f.original);
+  });
+}
+
 test("caps clips and markers and never checkpoints a partial snapshot", () => {
   const f = fixture();
   f.original.videoTracks[0].clips = { numItems: 2001 };
@@ -327,6 +373,106 @@ test("restoration failure returns an error and reopens the after version", () =>
   );
   assert.equal(f.project.activeSequence, f.original);
   assert.equal(f.original.name, "Main Edit");
+});
+
+test("failed restore rolls back both bin moves and names before reopening the original", () => {
+  const f = fixture();
+  const checkpoint = f.run("snapshot", true);
+  const saved = f.project.sequences[1];
+  const savedName = saved.name;
+  const home = { name: "Edits", type: 2, children: { numItems: 1, 0: f.original.projectItem } };
+  const checkpoints = {
+    name: "Axis checkpoints",
+    type: 2,
+    children: { numItems: 1, 0: saved.projectItem },
+  };
+  f.original.projectItem.nodeId = "original-item";
+  saved.projectItem.nodeId = "saved-item";
+  f.project.rootItem.children = { numItems: 2, 0: home, 1: checkpoints };
+  let originalBin = home;
+  let savedBin = checkpoints;
+  f.original.projectItem.moveBin = (value) => {
+    originalBin = value;
+  };
+  saved.projectItem.moveBin = (value) => {
+    savedBin = value;
+    if (value === home) throw new Error("checkpoint bin move failed");
+  };
+  const after = f.run();
+  const result = f.run(
+    "restore",
+    checkpoint.checkpointSignature,
+    "sequence-a",
+    "checkpoint-a",
+    after.signature,
+  );
+  assert.match(result.error, /checkpoint bin move failed/);
+  assert.equal(originalBin, home);
+  assert.equal(savedBin, checkpoints);
+  assert.equal(f.original.name, "Main Edit");
+  assert.equal(saved.name, savedName);
+  assert.equal(f.project.activeSequence, f.original);
+});
+
+test("a silently refused bin move cannot report a successful restore", () => {
+  const f = fixture();
+  const checkpoint = f.run("snapshot", true);
+  const after = f.run();
+  f.original.projectItem.moveBin = () => false;
+  const result = f.run(
+    "restore",
+    checkpoint.checkpointSignature,
+    "sequence-a",
+    "checkpoint-a",
+    after.signature,
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error, /move/);
+  assert.equal(f.project.activeSequence, f.original);
+});
+
+test("refuses a checkpoint swap when the edited sequence is nested in another sequence", () => {
+  const f = fixture();
+  f.original.projectItem.nodeId = "main-sequence-item";
+  const checkpoint = f.run("snapshot", true);
+  f.project.sequences[f.project.sequences.numSequences++] = {
+    sequenceID: "parent-sequence",
+    videoTracks: {
+      numTracks: 1,
+      0: { clips: { numItems: 1, 0: { projectItem: f.original.projectItem } } },
+    },
+    audioTracks: { numTracks: 0 },
+  };
+  const after = f.run();
+  const movesBefore = f.moves.length;
+  const result = f.run(
+    "restore",
+    checkpoint.checkpointSignature,
+    "sequence-a",
+    "checkpoint-a",
+    after.signature,
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error, /nested/);
+  assert.equal(f.project.activeSequence, f.original);
+  assert.equal(f.moves.length, movesBefore);
+});
+
+test("refuses a checkpoint for a nested sequence before dispatching an edit", () => {
+  const f = fixture();
+  f.original.projectItem.nodeId = "nested-item";
+  f.project.sequences[f.project.sequences.numSequences++] = {
+    sequenceID: "parent",
+    videoTracks: { numTracks: 0 },
+    audioTracks: {
+      numTracks: 1,
+      0: { clips: { numItems: 1, 0: { projectItem: { nodeId: "nested-item" } } } },
+    },
+  };
+  const result = f.run("snapshot", true);
+  assert.equal(result.checkpointId, null);
+  assert.match(result.checkpointError, /nested/);
+  assert.equal(f.project.sequences.numSequences, 2);
 });
 
 test("validates message arguments and parses malformed ExtendScript replies defensively", () => {

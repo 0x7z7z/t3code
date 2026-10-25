@@ -8,9 +8,11 @@
   var connecting = false;
   var contextCallbacks = [];
   var readingContext = false;
+  var contextReadTimeout = null;
   var timer = null;
   var playheadTimer = null;
   var readingPlayhead = false;
+  var playheadReadTimeout = null;
   var nextPlayheadReadId = 0;
   var nodeRequire =
     typeof require === "function" ? require : window.cep_node && window.cep_node.require;
@@ -46,6 +48,7 @@
     });
 
   /* eslint-disable no-unused-vars -- ExtendScript requires bindings for ignored errors. */
+  // prettier-ignore
   function timelineContext() {
     try {
       var p = app.project;
@@ -152,7 +155,15 @@
       timelineContext.toString() +
       ")()";
     var readId = ++nextPlayheadReadId;
-    window.__adobe_cep__.evalScript(script, function (raw) {
+    var completed = false;
+    contextReadTimeout = setTimeout(function () {
+      finish("premiere:error");
+    }, 5000);
+    function finish(raw) {
+      if (completed) return;
+      completed = true;
+      clearTimeout(contextReadTimeout);
+      contextReadTimeout = null;
       var next = null;
       try {
         if (String(raw).indexOf("premiere:") === 0 && raw !== "premiere:none") {
@@ -221,7 +232,12 @@
       callbacks.forEach(function (notify) {
         notify(next, readId);
       });
-    });
+    }
+    try {
+      window.__adobe_cep__.evalScript(script, finish);
+    } catch {
+      finish("premiere:error");
+    }
   }
 
   function publishContext(requestId) {
@@ -240,6 +256,7 @@
     });
   }
 
+  // prettier-ignore
   function playheadContext() {
     try {
       var p = app.project;
@@ -258,38 +275,48 @@
   function publishPlayhead() {
     if (readingPlayhead || !playheadTimer || !window.__adobe_cep__) return;
     readingPlayhead = true;
+    var completed = false;
+    var readId = ++nextPlayheadReadId;
+    playheadReadTimeout = setTimeout(function () {
+      finish("");
+    }, 5000);
     try {
-      var readId = ++nextPlayheadReadId;
-      window.__adobe_cep__.evalScript("(" + playheadContext.toString() + ")()", function (raw) {
-        readingPlayhead = false;
-        if (!playheadTimer || !backendOrigin || !frame.contentWindow) return;
-        var fields = String(raw).split("|");
-        if (
-          fields.length !== 3 ||
-          !fields[2] ||
-          !isFinite(Number(fields[2])) ||
-          Number(fields[2]) < 0
-        )
-          return;
-        try {
-          frame.contentWindow.postMessage(
-            {
-              type: "premiere.playhead",
-              protocol: 1,
-              projectId: decodeURIComponent(fields[0]),
-              sequenceId: decodeURIComponent(fields[1]),
-              seconds: Number(fields[2]),
-              readId: readId
-            },
-            backendOrigin
-          );
-        } catch {}
-      });
+      window.__adobe_cep__.evalScript("(" + playheadContext.toString() + ")()", finish);
     } catch {
+      finish("");
+    }
+    function finish(raw) {
+      if (completed) return;
+      completed = true;
+      clearTimeout(playheadReadTimeout);
+      playheadReadTimeout = null;
       readingPlayhead = false;
+      if (!playheadTimer || !backendOrigin || !frame.contentWindow) return;
+      var fields = String(raw).split("|");
+      if (
+        fields.length !== 3 ||
+        !fields[2] ||
+        !isFinite(Number(fields[2])) ||
+        Number(fields[2]) < 0
+      )
+        return;
+      try {
+        frame.contentWindow.postMessage(
+          {
+            type: "premiere.playhead",
+            protocol: 1,
+            projectId: decodeURIComponent(fields[0]),
+            sequenceId: decodeURIComponent(fields[1]),
+            seconds: Number(fields[2]),
+            readId: readId
+          },
+          backendOrigin
+        );
+      } catch {}
     }
   }
 
+  // prettier-ignore
   function exportFrame(targetPath) {
     try {
       var s = app.project && app.project.activeSequence;
@@ -429,11 +456,14 @@
   }
 
   // These functions are serialized into ExtendScript. No native JSON is required there.
-  function timelineClips(sequenceId) {
+  // prettier-ignore
+  function timelineClips(request) {
     try {
       var s = app.project && app.project.activeSequence;
-      if (!s || String(s.sequenceID) !== sequenceId)
+      if (!s || String(s.sequenceID) !== request.sequenceId)
         return "axis:error|Sequence changed. Refresh the timeline.";
+      if (request.projectId && String(app.project.documentID || app.project.path) !== request.projectId)
+        return "axis:error|Project changed. Refresh the timeline.";
       var rows = [];
       var groups = [s.videoTracks, s.audioTracks];
       for (var g = 0; g < groups.length; g++) {
@@ -462,11 +492,14 @@
     }
   }
 
+  // prettier-ignore
   function timelineSelect(request) {
     try {
       var s = app.project && app.project.activeSequence;
       if (!s || String(s.sequenceID) !== request.sequenceId)
         return "axis:error|Sequence changed. Refresh the timeline.";
+      if (request.projectId && String(app.project.documentID || app.project.path) !== request.projectId)
+        return "axis:error|Project changed. Refresh the timeline.";
       var target = null;
       var groups = [s.videoTracks, s.audioTracks];
       for (var g = 0; g < groups.length && !target; g++) {
@@ -502,6 +535,7 @@
     }
   }
 
+  // prettier-ignore
   function timelineMarkers(request) {
     var created = [];
     var markers;
@@ -509,6 +543,8 @@
       var s = app.project && app.project.activeSequence;
       if (!s || String(s.sequenceID) !== request.sequenceId)
         return "axis:error|Sequence changed. Refresh the timeline.";
+      if (request.projectId && String(app.project.documentID || app.project.path) !== request.projectId)
+        return "axis:error|Project changed. Refresh the timeline.";
       markers = s.markers;
       if (!markers || typeof markers.createMarker !== "function")
         return "axis:error|Sequence markers are unavailable.";
@@ -586,8 +622,10 @@
       return typeof value === "number" && isFinite(value) && value >= 0 && value <= 8640000;
     }
     if (!text(data.sequenceId, 32768)) return reply({ ok: false, error: "Invalid sequence ID." });
+    if (data.projectId !== undefined && !text(data.projectId, 32768))
+      return reply({ ok: false, error: "Invalid project ID." });
     var operation = timelineClips;
-    var argument = data.sequenceId;
+    var argument = { sequenceId: data.sequenceId, projectId: data.projectId };
     if (data.type === "premiere.select") {
       if (
         !(
@@ -603,9 +641,10 @@
         return reply({ ok: false, error: "Invalid clip selection." });
       operation = timelineSelect;
       argument = text(data.nodeId, 512)
-        ? { sequenceId: data.sequenceId, nodeId: data.nodeId }
+        ? { sequenceId: data.sequenceId, projectId: data.projectId, nodeId: data.nodeId }
         : {
             sequenceId: data.sequenceId,
+            projectId: data.projectId,
             trackType: data.trackType,
             trackIndex: data.trackIndex,
             start: data.start
@@ -635,6 +674,7 @@
       operation = timelineMarkers;
       argument = {
         sequenceId: data.sequenceId,
+        projectId: data.projectId,
         markers: data.markers.map(function (row) {
           return {
             time: row.time,
@@ -1154,6 +1194,8 @@
   window.addEventListener("unload", function () {
     if (timer) clearInterval(timer);
     if (playheadTimer) clearInterval(playheadTimer);
+    clearTimeout(contextReadTimeout);
+    clearTimeout(playheadReadTimeout);
   });
   readContext(function () {});
   connect();

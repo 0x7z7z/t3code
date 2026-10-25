@@ -2,6 +2,7 @@
   "use strict";
 
   /* eslint-disable no-unused-vars -- These functions also run in ES3 ExtendScript. */
+  // prettier-ignore
   function timelineOperation(
     action,
     checkpoint,
@@ -69,6 +70,16 @@
           for (var c = 0; c < clips.numItems && count < 2000; c++, count++) {
             var clip = clips[c];
             var enabled = null;
+            var speed = null;
+            var reversed = null;
+            try {
+              var rate = clip.getSpeed();
+              if (typeof rate === "number" && isFinite(rate)) speed = rate;
+            } catch (ignoredSpeed) {}
+            try {
+              var direction = clip.isSpeedReversed();
+              if (typeof direction === "boolean") reversed = direction;
+            } catch (ignoredDirection) {}
             try {
               enabled = !clip.isDisabled();
             } catch (ignored) {
@@ -80,6 +91,9 @@
               name: text(clip.name),
               nodeId: identities ? text(clip.nodeId) : "",
               projectItemName: clip.projectItem ? text(clip.projectItem.name) : "",
+              projectItemId: clip.projectItem ? text(clip.projectItem.nodeId) : "",
+              speed: speed,
+              reversed: reversed,
               start: seconds(clip.start),
               end: seconds(clip.end),
               inPoint: seconds(clip.inPoint),
@@ -166,6 +180,27 @@
       );
     }
     var mutationStarted = false;
+    function requireStandalone(seq) {
+      var itemId = seq.projectItem && seq.projectItem.nodeId;
+      if (!itemId) return;
+      for (var n = 0; n < app.project.sequences.numSequences; n++) {
+        var other = app.project.sequences[n];
+        if (String(other.sequenceID) === String(seq.sequenceID)) continue;
+        var groups = [other.videoTracks, other.audioTracks];
+        for (var g = 0; g < groups.length; g++) {
+          for (var t = 0; t < groups[g].numTracks; t++) {
+            var clips = groups[g][t].clips;
+            for (var c = 0; c < clips.numItems; c++) {
+              var item = clips[c].projectItem;
+              if (item && String(item.nodeId) === String(itemId))
+                fail(
+                  "This sequence is nested in another sequence. Checkpoint swaps cannot restore its parent references."
+                );
+            }
+          }
+        }
+      }
+    }
     try {
       if (!app.project || !app.project.activeSequence) fail("Open a sequence in Premiere first.");
       var original = app.project.activeSequence;
@@ -189,6 +224,7 @@
       }
       var before = snapshot(original, true);
       if (action === "restore") {
+        requireStandalone(original);
         if (before.truncated || json(before) !== expected)
           fail("The timeline changed after this turn. Undo is unavailable.");
         var saved = find(checkpointId);
@@ -199,7 +235,8 @@
         var name = String(original.name);
         var savedName = String(saved.name);
         var destination = bin();
-        var home = parentBin(original.projectItem);
+        var home = parentBin(original.projectItem) || app.project.rootItem;
+        var savedHome = parentBin(saved.projectItem) || destination;
         try {
           app.project.openSequence(String(saved.sequenceID));
           if (
@@ -208,16 +245,51 @@
           )
             fail("Premiere could not open the checkpoint.");
           original.name = name.slice(0, 210) + " (after turn " + turnNumber + ")";
-          original.projectItem.moveBin(destination);
+          if (original.projectItem.moveBin(destination) === false)
+            fail("Premiere refused to move the current sequence to the checkpoint bin.");
           saved.name = name;
           // The restored version takes the original's place in the project panel.
-          if (home) saved.projectItem.moveBin(home);
+          if (saved.projectItem.moveBin(home) === false)
+            fail("Premiere refused to move the restored sequence to its original bin.");
         } catch (restoreError) {
-          try {
-            original.name = name;
-            saved.name = savedName;
-            app.project.openSequence(originalId);
-          } catch (rollbackError) {}
+          var recovery = [
+            function () {
+              original.name = name;
+            },
+            function () {
+              saved.name = savedName;
+            },
+            function () {
+              if (original.projectItem.moveBin(home) === false)
+                fail("Current sequence bin move failed.");
+            },
+            function () {
+              if (saved.projectItem.moveBin(savedHome) === false)
+                fail("Checkpoint bin move failed.");
+            },
+            function () {
+              app.project.openSequence(originalId);
+              if (
+                !app.project.activeSequence ||
+                String(app.project.activeSequence.sequenceID) !== originalId
+              )
+                fail("Could not reopen the current sequence.");
+            },
+          ];
+          var recoveryErrors = [];
+          for (var r = 0; r < recovery.length; r++) {
+            try {
+              recovery[r]();
+            } catch (rollbackError) {
+              recoveryErrors.push(String(rollbackError));
+            }
+          }
+          if (recoveryErrors.length)
+            fail(
+              String(restoreError) +
+                " Restore recovery was incomplete. Inspect both sequences: " +
+                recoveryErrors.join("; ")
+            );
           throw restoreError;
         }
         return result({ ok: true, sequenceId: String(saved.sequenceID) });
@@ -234,6 +306,7 @@
       var checkpointError = null;
       if (checkpoint && !before.truncated) {
         try {
+          requireStandalone(original);
           var ids = {};
           var i;
           for (i = 0; i < app.project.sequences.numSequences; i++)

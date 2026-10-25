@@ -7,6 +7,9 @@ const { readFileSync } = fs;
 const os = require("node:os");
 const path = require("node:path");
 const vm = require("node:vm");
+const { parse } = require(
+  require.resolve("acorn", { paths: [path.join(__dirname, "../../apps/desktop")] }),
+);
 
 async function panelFixture(settingsOverride = {}) {
   const elements = new Map();
@@ -14,6 +17,7 @@ async function panelFixture(settingsOverride = {}) {
   const evaluations = [];
   const messages = [];
   const timers = new Map();
+  const intervals = new Map();
   let timerId = 0;
   const contentWindow = { postMessage: (packet, origin) => messages.push({ packet, origin }) };
   const document = {
@@ -59,8 +63,11 @@ async function panelFixture(settingsOverride = {}) {
             : name.endsWith("transcript-handoff.cjs")
               ? require("./transcript-handoff.cjs")
               : runtime,
-    setInterval: () => 1,
-    clearInterval() {},
+    setInterval: (callback, delay) => {
+      intervals.set(++timerId, { callback, delay });
+      return timerId;
+    },
+    clearInterval: (id) => intervals.delete(id),
     setTimeout: (callback, delay) => {
       timers.set(++timerId, { callback, delay });
       return timerId;
@@ -77,6 +84,12 @@ async function panelFixture(settingsOverride = {}) {
     messages,
     contentWindow,
     timelineOperation: window.AxisTimeline.operation,
+    runIntervals: (delay) => {
+      for (const timer of intervals.values()) if (timer.delay === delay) timer.callback();
+    },
+    setEvalScript: (callback) => {
+      window.__adobe_cep__.evalScript = callback;
+    },
     runTimers: (delay) => {
       for (const [id, timer] of [...timers])
         if (timer.delay === delay) {
@@ -93,6 +106,21 @@ async function panelFixture(settingsOverride = {}) {
       }),
   };
 }
+
+test("scripts sent to Premiere for timeline actions parse as ES3", async () => {
+  const f = await panelFixture();
+  const requests = [
+    { type: "premiere.clips.request", sequenceId: "seq-1" },
+    { type: "premiere.select", sequenceId: "seq-1", nodeId: "clip-1" },
+    { type: "premiere.markers.add", sequenceId: "seq-1", markers: [{ time: 0, name: "Test" }] },
+    { type: "premiere.seek", sequenceId: "seq-1", seconds: 1 },
+    { type: "premiere.frame.request" },
+    { type: "premiere.transcript.active", enabled: true },
+  ];
+  for (const request of requests) f.send({ requestId: "syntax", ...request });
+  for (const { script } of f.evaluations)
+    assert.doesNotThrow(() => parse(script, { ecmaVersion: 3 }));
+});
 
 test("reads the actual host scope, including reserved characters and a zero playhead", async () => {
   const fixture = await panelFixture();
@@ -215,6 +243,58 @@ test("clears host context when Premiere has no active sequence", async () => {
   fixture.evaluations[0].callback("premiere:none");
   assert.equal(fixture.messages[0].packet.context, null);
   assert.equal(fixture.elements.get("project").textContent, "Axis");
+});
+
+test("a dropped context callback cannot permanently stop polling or revive a stale sequence", async () => {
+  const f = await panelFixture();
+  const abandoned = f.evaluations[0];
+  f.send({ type: "premiere.context.request", requestId: "sleeping" });
+  f.runTimers(5000);
+  assert.equal(f.messages.at(-1)?.packet.requestId, "sleeping");
+  assert.equal(f.messages.at(-1).packet.context, null);
+  f.send({ type: "premiere.context.request", requestId: "awake" });
+  assert.equal(f.evaluations.length, 2);
+  f.evaluations
+    .at(-1)
+    .callback("premiere:Project|D%3A%2Fcut.prproj|document-a|New|sequence-b|25|9");
+  const count = f.messages.length;
+  abandoned.callback("premiere:Project|D%3A%2Fcut.prproj|document-a|Old|sequence-a|25|0");
+  assert.equal(f.messages.length, count);
+  assert.equal(f.messages.at(-1).packet.context.sequenceId, "sequence-b");
+});
+
+test("a dropped fast playhead callback cannot permanently stop the transcript clock", async () => {
+  const f = await panelFixture();
+  f.send({ type: "premiere.transcript.active", enabled: true });
+  const abandoned = f.evaluations.at(-1);
+  f.runTimers(5000);
+  f.runIntervals(100);
+  const fresh = f.evaluations.at(-1);
+  assert.notEqual(fresh, abandoned);
+  fresh.callback("project-a|sequence-b|9");
+  const count = f.messages.length;
+  abandoned.callback("project-a|sequence-a|0");
+  assert.equal(f.messages.length, count);
+  assert.equal(f.messages.at(-1).packet.sequenceId, "sequence-b");
+});
+
+test("recovers context reads after a synchronous CEP dispatch failure", async () => {
+  const f = await panelFixture();
+  f.evaluations[0].callback("premiere:none");
+  // CEP can throw while the host is sleeping or reconnecting.
+  f.setEvalScript(() => {
+    throw new Error("CEP asleep");
+  });
+  assert.doesNotThrow(() => f.send({ type: "premiere.context.request", requestId: "asleep" }));
+  assert.equal(f.messages.at(-1).packet.context, null);
+  assert.equal(f.messages.at(-1).packet.requestId, "asleep");
+  f.setEvalScript((script, callback) => f.evaluations.push({ script, callback }));
+  f.send({ type: "premiere.context.request", requestId: "awake" });
+  f.evaluations
+    .at(-1)
+    .callback("premiere:Project|D%3A%2Fcut.prproj|document-a|Main|sequence-a|25|1");
+  assert.equal(f.messages.at(-1).packet.requestId, "awake");
+  assert.equal(f.messages.at(-1).packet.context.sequenceId, "sequence-a");
 });
 
 test("moves the playhead to a whole frame only in the sequence the chat refers to", async () => {
@@ -481,6 +561,29 @@ function runTimeline(fixture, context) {
   evaluation.callback(raw);
   return raw;
 }
+
+test("rejects timeline actions after switching to a project with the same sequence ID", async () => {
+  for (const action of [
+    { type: "premiere.clips.request" },
+    { type: "premiere.select", nodeId: "video-1" },
+    { type: "premiere.markers.add", markers: [{ time: 1, name: "Beat" }] },
+  ]) {
+    const f = await panelFixture();
+    const host = timelineFixture();
+    host.app.project.documentID = "other-project";
+    f.send({
+      ...action,
+      requestId: "project-race",
+      sequenceId: "seq-1",
+      projectId: "original-project",
+    });
+    runTimeline(f, host);
+    assert.equal(f.messages.at(-1).packet.ok, false);
+    assert.match(f.messages.at(-1).packet.error, /project changed/i);
+    assert.equal(host.calls.length, 0);
+    assert.equal(host.created.length, 0);
+  }
+});
 
 test("publishes a bounded clip index without native JSON and preserves encoded names", async () => {
   const fixture = await panelFixture();

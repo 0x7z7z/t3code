@@ -68,6 +68,11 @@ export function parseTimelineSnapshot(value: unknown): TimelineSnapshot | null {
           !text(clip.name) ||
           !text(clip.nodeId) ||
           !text(clip.projectItemName) ||
+          (clip.projectItemId !== undefined && !text(clip.projectItemId)) ||
+          (clip.speed !== undefined && clip.speed !== null && !finite(clip.speed)) ||
+          (clip.reversed !== undefined &&
+            clip.reversed !== null &&
+            typeof clip.reversed !== "boolean") ||
           !finite(clip.start) ||
           !finite(clip.end) ||
           !finite(clip.inPoint) ||
@@ -145,10 +150,14 @@ async function request(
       type === "cut" && "ranges" in fields ? 120000 : 15000,
     );
     window.addEventListener("message", onMessage);
-    window.parent.postMessage(
-      { type: `premiere.${type}.request`, protocol: 1, requestId, ...fields },
-      "*",
-    );
+    try {
+      window.parent.postMessage(
+        { type: `premiere.${type}.request`, protocol: 1, requestId, ...fields },
+        "*",
+      );
+    } catch (error) {
+      finish(error instanceof Error ? error.message : "Premiere message dispatch failed.");
+    }
   });
 }
 
