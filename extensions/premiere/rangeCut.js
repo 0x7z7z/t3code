@@ -5,6 +5,45 @@
     function fail(message) {
       throw new Error(message);
     }
+    if (range.ranges) {
+      if (!range.ranges.length || range.ranges.length > 2000)
+        fail("Choose between 1 and 2000 cleanup ranges.");
+      var batch = [];
+      var batchFrame = Number(sequence.timebase) / 254016000000;
+      if (!isFinite(batchFrame) || batchFrame <= 0) fail("Sequence frame rate is unavailable.");
+      for (var r = 0; r < range.ranges.length; r++) {
+        var row = range.ranges[r];
+        if (
+          !row ||
+          typeof row.start !== "number" ||
+          typeof row.end !== "number" ||
+          !isFinite(row.start) ||
+          !isFinite(row.end) ||
+          row.start < 0 ||
+          row.end <= row.start
+        )
+          fail("Invalid cleanup range.");
+        batch.push({
+          start: Math.round(row.start / batchFrame) * batchFrame,
+          end: Math.round(row.end / batchFrame) * batchFrame,
+          projectId: range.projectId,
+        });
+      }
+      batch.sort(function (a, b) {
+        return a.start - b.start;
+      });
+      var merged = [];
+      for (r = 0; r < batch.length; r++) {
+        var previous = merged.length ? merged[merged.length - 1] : null;
+        if (previous && batch[r].start <= previous.end)
+          previous.end = Math.max(previous.end, batch[r].end);
+        else merged.push(batch[r]);
+      }
+      // Preflight every range before creating the checkpoint or touching the timeline.
+      for (r = 0; r < merged.length; r++) cutRange(sequence, merged[r], true);
+      if (!dryRun) for (r = merged.length - 1; r >= 0; r--) cutRange(sequence, merged[r], false);
+      return;
+    }
     var ticks = 254016000000;
     var frame = Number(sequence.timebase);
     if (!isFinite(frame) || frame <= 0) fail("Sequence frame rate is unavailable.");

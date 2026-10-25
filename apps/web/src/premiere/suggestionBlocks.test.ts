@@ -8,6 +8,22 @@ import {
 } from "./suggestionBlocks";
 
 describe("suggestions", () => {
+  it("exposes cleanup detection settings through a validated interactive suggestion", () => {
+    expect(suggestionKind("axis-cleanup", "{}", 25)).toBe("axis-cleanup");
+    expect(parseSuggestion("axis-cleanup", '{"padding":0,"fillers":["um"]}', 25)).toEqual({
+      kind: "cleanup",
+      settings: { pauseThreshold: 0.6, padding: 0, restartWindow: 5, fillers: ["um"] },
+    });
+    for (const source of [
+      '{"padding":-1}',
+      '{"pauseThreshold":0}',
+      '{"restartWindow":999}',
+      '{"ranges":[[1,2]]}',
+      "[]",
+    ])
+      expect(parseSuggestion("axis-cleanup", source, 25).kind).toBe("invalid");
+    expect(suggestionKind("json", "{}", 25)).toBeNull();
+  });
   it("parses frame timecodes and optional marker values", () => {
     expect(
       parseSuggestion(

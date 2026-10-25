@@ -21,6 +21,30 @@ function actions(): TimelineActions {
   };
 }
 
+it("opens cleanup review from a completed agent suggestion and refuses a different sequence", async () => {
+  const reviewCleanup = vi.fn();
+  const timeline = { ...actions(), reviewCleanup };
+  const text = '```axis-cleanup\n{"pauseThreshold":0.8,"fillers":["um"]}\n```';
+  // Suggestions are embedded in the panel, without navigation.
+  await using screen = await render(<Markdown actions={timeline} text={text} complete={false} />, {
+    router: false,
+  });
+  await expect
+    .element(screen.getByRole("button", { name: "Review cleanup" }))
+    .not.toBeInTheDocument();
+  await screen.rerender(<Markdown actions={timeline} text={text} />);
+  await screen.getByRole("button", { name: "Review cleanup" }).click();
+  expect(reviewCleanup).toHaveBeenCalledWith({
+    pauseThreshold: 0.8,
+    padding: 0.12,
+    restartWindow: 5,
+    fillers: ["um"],
+  });
+  expect(timeline.addMarkers).not.toHaveBeenCalled();
+  await screen.rerender(<Markdown actions={{ ...timeline, sequenceId: "other" }} text={text} />);
+  await expect.element(screen.getByRole("button", { name: "Review cleanup" })).toBeDisabled();
+});
+
 it("links longest clip names and exact code spans, excluding links, code blocks and short names", async () => {
   const timeline = actions();
   // Markdown is embedded in the CEP transcript without router navigation.

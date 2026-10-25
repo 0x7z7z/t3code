@@ -29,6 +29,23 @@ it("imports WhisperX segments and word_segments without losing punctuation", () 
   }
 });
 
+it("retains Axis clip boundaries through import, persistence, offset mapping and ripple edits", () => {
+  const doc = parseTranscript(
+    JSON.stringify({
+      words: [
+        { word: "Hello", start: 1, end: 1.4, clip: 0 },
+        { word: "world", start: 10, end: 10.4, clip: 1 },
+      ],
+    }),
+    "axis-whisper.json",
+  );
+  expect(doc.words.map((word) => word.clip)).toEqual([0, 1]);
+  const saved = parseStoredTranscript(JSON.parse(JSON.stringify(doc)))!;
+  expect(saved.words).toEqual(doc.words);
+  expect(mapTranscript(saved.words, 2).map((word) => word.clip)).toEqual([0, 1]);
+  expect(rippleTranscript(saved, 2, 3).words[1]).toMatchObject({ start: 9, clip: 1 });
+});
+
 it("imports transcriber sentence files and fills WhisperX gaps from neighbours", () => {
   const doc = parseTranscript(
     JSON.stringify({

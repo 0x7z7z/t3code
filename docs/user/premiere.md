@@ -75,6 +75,22 @@ regions. The finished transcript loads and saves for the current project and seq
 You can still import WhisperX JSON, SRT or VTT manually. **Stop waiting** stops the
 automatic import; use the conversation's stop control to interrupt the agent itself.
 
+## Clean up voice-over
+
+In Transcript, open the options menu and choose **Clean up**, or ask Axis to
+"clean up the VO" and open its cleanup suggestion. Import or transcribe first.
+Review pauses, filler words, repeated words, stutters and restarted takes before
+applying them. Restarted takes keep the last take. The default pause threshold is
+0.6 seconds, with 0.12 seconds retained on each side; thresholds and the filler
+list update the preview as you edit them.
+
+Red, struck-through text and pause chips show proposed cuts. Click one to keep
+or cut it and seek nearby to listen. Apply removes all accepted ranges across
+unlocked audio and video tracks. Locked tracks, captions and markers stay put;
+clips linked to locked tracks and affected transitions must be resolved first.
+**Undo transcript cut** restores the whole cleanup from one checkpoint. Further
+timeline edits can invalidate that undo, so review the result before continuing.
+
 ## Compatibility
 
 The CEP manifest targets Premiere 25.x and later, including 25.3. This development

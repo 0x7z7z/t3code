@@ -1,5 +1,6 @@
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
+import { defaultCleanupSettings, type CleanupSettings } from "./transcriptCleanup";
 
 const seconds = Schema.Number.check(
   Schema.isFinite(),
@@ -40,6 +41,24 @@ const decodeMarkers = Schema.decodeUnknownOption(
 const decodeShots = Schema.decodeUnknownOption(
   Schema.Array(shotSchema).check(Schema.isMinLength(1), Schema.isMaxLength(200)),
 );
+// Agents propose detection settings, not guessed word ranges: the linked transcript lives
+// in the panel, which derives fresh clip-relative cuts and owns review/checkpoint recovery.
+const decodeCleanup = Schema.decodeUnknownOption(
+  Schema.Struct({
+    pauseThreshold: Schema.optional(
+      Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0.1, maximum: 30 })),
+    ),
+    padding: Schema.optional(
+      Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: 2 })),
+    ),
+    restartWindow: Schema.optional(
+      Schema.Number.check(Schema.isFinite(), Schema.isBetween({ minimum: 0, maximum: 30 })),
+    ),
+    fillers: Schema.optional(
+      Schema.Array(Schema.String.check(Schema.isMaxLength(100))).check(Schema.isMaxLength(100)),
+    ),
+  }),
+);
 
 export const markerColors = {
   green: 0,
@@ -76,6 +95,7 @@ export function parseSuggestionTime(value: string | number, fps: number): number
 }
 
 export type ParsedSuggestion =
+  | { readonly kind: "cleanup"; readonly settings: CleanupSettings }
   | { readonly kind: "markers"; readonly markers: readonly MarkerSuggestion[] }
   | { readonly kind: "shots"; readonly shots: readonly PlanShot[] }
   | { readonly kind: "invalid"; readonly error: string };
@@ -84,6 +104,22 @@ export function parseSuggestion(kind: string, source: string, fps: number): Pars
   try {
     if (source.length > 600000) throw new Error("Suggestion block is too large.");
     const value: unknown = JSON.parse(source);
+    if (kind === "axis-cleanup") {
+      const settings = Option.getOrNull(decodeCleanup(value, { onExcessProperty: "error" }));
+      if (!settings)
+        throw new Error(
+          "Expected cleanup settings: pauseThreshold, padding, restartWindow, fillers.",
+        );
+      return {
+        kind: "cleanup",
+        settings: {
+          pauseThreshold: settings.pauseThreshold ?? defaultCleanupSettings.pauseThreshold,
+          padding: settings.padding ?? defaultCleanupSettings.padding,
+          restartWindow: settings.restartWindow ?? defaultCleanupSettings.restartWindow,
+          fillers: settings.fillers ?? defaultCleanupSettings.fillers,
+        },
+      };
+    }
     if (kind === "axis-markers") {
       const rows = Option.getOrNull(decodeMarkers(value, { onExcessProperty: "error" }));
       if (!rows) throw new Error("Expected 1-200 valid markers.");
@@ -171,7 +207,8 @@ export function suggestionKind(
   fence: string,
   source: string,
   fps: number,
-): "axis-markers" | "axis-shots" | null {
+): "axis-markers" | "axis-shots" | "axis-cleanup" | null {
+  if (fence === "axis-cleanup") return fence;
   if (fence === "axis-markers" || fence === "axis-shots") return fence;
   if (fence !== "json" && fence !== "") return null;
   for (const kind of ["axis-shots", "axis-markers"] as const)

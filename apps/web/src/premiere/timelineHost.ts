@@ -11,6 +11,15 @@ const point = (value: unknown) => value === null || finite(value);
 const count = (value: unknown) => finite(value) && Number.isInteger(value) && value >= 0;
 let nextRequest = 0;
 
+export class TimelineRequestError extends Error {
+  constructor(
+    message: string,
+    readonly unchanged: boolean,
+  ) {
+    super(message);
+  }
+}
+
 export function parseTimelineSnapshot(value: unknown): TimelineSnapshot | null {
   if (
     !object(value) ||
@@ -107,7 +116,7 @@ async function request(
     const finish = (error: string | null, packet?: Record<string, unknown>) => {
       clearTimeout(timer);
       window.removeEventListener("message", onMessage);
-      if (error) reject(new Error(error));
+      if (error) reject(new TimelineRequestError(error, packet?.unchanged === true));
       else resolve(packet!);
     };
     const onMessage = (event: MessageEvent<unknown>) => {
@@ -127,12 +136,13 @@ async function request(
       if (packet.ok !== true)
         finish(
           text(packet.error) ? packet.error : "Premiere could not complete the timeline request.",
+          packet,
         );
       else finish(null, packet);
     };
     const timer = setTimeout(
       () => finish("Premiere did not respond to the timeline request. Reopen the panel to retry."),
-      15000,
+      type === "cut" && "ranges" in fields ? 120000 : 15000,
     );
     window.addEventListener("message", onMessage);
     window.parent.postMessage(
@@ -185,13 +195,31 @@ export async function restoreTimeline(fields: {
   return text(packet.sequenceId, 512) ? packet.sequenceId : null;
 }
 
-export async function cutTranscriptRange(fields: {
+type CutFields = {
   sequenceId: string;
   projectId: string;
-  start: number;
-  end: number;
-}) {
-  const packet = await request("cut", fields);
+};
+
+export function cutTranscriptRanges(
+  fields: CutFields & {
+    ranges: readonly { start: number; end: number }[];
+    expectedSignature: string;
+  },
+) {
+  return requestCut(fields);
+}
+
+export function cutTranscriptRange(
+  fields: CutFields & {
+    start: number;
+    end: number;
+  },
+) {
+  return requestCut(fields);
+}
+
+async function requestCut(fields: object) {
+  const packet = await request("cut", { ...fields });
   if (
     !parseTimelineSnapshot(packet.snapshot) ||
     !text(packet.signature, 4000000) ||
@@ -205,6 +233,7 @@ export async function cutTranscriptRange(fields: {
       "Invalid cut response. Inspect the timeline and its Axis checkpoint before retrying.",
     );
   return {
+    snapshot: parseTimelineSnapshot(packet.snapshot)!,
     checkpointId: packet.checkpointId,
     checkpointSignature: packet.checkpointSignature,
     expectedSignature: packet.signature,

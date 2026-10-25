@@ -126,6 +126,34 @@ test("a transcript cut preflights, creates a verified checkpoint, then mutates i
   assert.equal(result.cutError, null);
 });
 
+test("cleanup refuses a stale review signature before preflight or checkpoint creation", () => {
+  const f = fixture();
+  const result = f.run("cut", true, "sequence-a", "", "stale", 1, () =>
+    assert.fail("Must not cut"),
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error, /changed since cleanup review/);
+  assert.equal(result.unchanged, true);
+  assert.equal(f.project.sequences.numSequences, 1);
+});
+
+test("cleanup matching the review signature uses one checkpoint for the complete batch", () => {
+  const f = fixture();
+  const signature = f.run().signature;
+  let applied = 0;
+  const result = f.run("cut", true, "sequence-a", "", signature, 1, (sequence, range, dry) => {
+    if (!dry) {
+      applied++;
+      f.clip.end.seconds = 3;
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(applied, 1);
+  assert.equal(f.project.sequences.numSequences, 2);
+  assert.equal(result.checkpointId, "checkpoint-a");
+  assert.equal(result.snapshot.videoTracks[0].clips[0].end, 3);
+});
+
 test("a transcript cut cannot mutate without a checkpoint and returns recovery data after a partial failure", () => {
   const f = fixture();
   f.original.clone = () => false;

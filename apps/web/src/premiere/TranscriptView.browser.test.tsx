@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
 import { act, render } from "../../test/render";
 import type { PremiereContext } from "./host";
 import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
@@ -9,6 +9,7 @@ import "./styles.css";
 const host = vi.hoisted(() => ({
   seek: vi.fn(),
   cut: vi.fn(),
+  batch: vi.fn(),
   snapshot: vi.fn(),
   restore: vi.fn(),
   load: vi.fn(),
@@ -17,8 +18,10 @@ vi.mock("./host", () => ({ seekPremiere: host.seek }));
 vi.mock("./usePlayheadClock", () => ({ usePlayheadClock: () => null }));
 vi.mock("./interactiveHost", () => ({ requestTimelineAction: host.load }));
 vi.mock("./timelineHost", () => ({
+  TimelineRequestError: class extends Error {},
   pruneCheckpoints: async () => {},
   cutTranscriptRange: host.cut,
+  cutTranscriptRanges: host.batch,
   requestTimelineSnapshot: host.snapshot,
   restoreTimeline: host.restore,
 }));
@@ -31,6 +34,12 @@ function setup(id: string, count = 3) {
   });
   host.seek.mockReset();
   host.cut.mockReset().mockResolvedValue({
+    checkpointId: "checkpoint",
+    checkpointSignature: "before",
+    expectedSignature: "after",
+    cutError: null,
+  });
+  host.batch.mockReset().mockResolvedValue({
     checkpointId: "checkpoint",
     checkpointSignature: "before",
     expectedSignature: "after",
@@ -98,6 +107,225 @@ it("transcribes in Plan mode, imports the matching handoff and persists the corr
   await expect
     .element(screen.getByRole("button", { name: "Frieza at 00:00:12.000" }))
     .toBeVisible();
+});
+
+it("reviews cleanup at panel width, toggles inline cuts, previews, updates thresholds and applies one undoable batch", async () => {
+  const f = setup("cleanup");
+  const words = [
+    { text: "Um,", start: 0, end: 0.4 },
+    { text: "Every", start: 0.6, end: 1 },
+    { text: "frame", start: 2.2, end: 2.6 },
+    { text: "matters.", start: 2.8, end: 3.2 },
+  ];
+  localStorage.setItem(
+    f.key,
+    JSON.stringify({
+      transcript: { ...f.transcript, words },
+      link: null,
+      undo: null,
+      uncertain: false,
+    }),
+  );
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await page.viewport(440, 780);
+  screen.container.style.width = "440px";
+  screen.container.style.height = "780px";
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Clean up", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Apply 2 cuts" })).toBeEnabled();
+  await expect
+    .element(screen.getByRole("button", { name: "Um, at 00:00:00.000" }))
+    .toHaveAttribute("data-cleanup-cut", "accepted");
+  await page.screenshot({ path: "../../../../.t3/cleanup-proposals-440.png" });
+  await screen.getByRole("button", { name: "Um, at 00:00:00.000" }).click();
+  expect(host.seek).toHaveBeenLastCalledWith(0, "cleanup");
+  await expect
+    .element(screen.getByRole("button", { name: "Apply 1 cut", exact: true }))
+    .toBeEnabled();
+  await expect
+    .element(screen.getByRole("button", { name: "Um, at 00:00:00.000" }))
+    .toHaveAttribute("data-cleanup-cut", "kept");
+  await screen.getByRole("spinbutton", { name: "Pause threshold (s)" }).fill("2");
+  await expect.element(screen.getByRole("button", { name: "Apply 0 cuts" })).toBeDisabled();
+  await screen.getByRole("spinbutton", { name: "Pause threshold (s)" }).fill("0.6");
+  await screen.getByRole("spinbutton", { name: "Padding each side (s)" }).fill("0.2");
+  await screen.getByRole("textbox", { name: "Filler words (comma separated)" }).fill("erm");
+  await expect
+    .element(screen.getByRole("button", { name: "Um, at 00:00:00.000" }))
+    .not.toHaveAttribute("data-cleanup-cut");
+  const pauses = screen.container.querySelector<HTMLDetailsElement>(
+    "[data-cleanup-groups] details",
+  )!;
+  await act(() => {
+    pauses.open = true;
+  });
+  await screen.getByRole("button", { name: "Preview cut at 00:00:01.200" }).click();
+  expect(host.seek.mock.lastCall?.[0]).toBeCloseTo(0.9);
+  await page.screenshot({ path: "../../../../.t3/cleanup-review-440.png" });
+  await screen.getByRole("button", { name: "Apply 1 cut", exact: true }).click();
+  await vi.waitFor(() =>
+    expect(host.batch).toHaveBeenCalledWith({
+      sequenceId: "cleanup",
+      projectId: "film",
+      expectedSignature: "after",
+      ranges: [{ start: 1.2, end: 2 }],
+    }),
+  );
+  expect(host.cut).not.toHaveBeenCalled();
+  await expect.element(screen.getByRole("button", { name: "frame at 00:00:01.400" })).toBeVisible();
+  await screen.getByRole("button", { name: "Undo transcript cut" }).click();
+  await expect.element(screen.getByRole("button", { name: "frame at 00:00:02.200" })).toBeVisible();
+});
+
+it("relinks cleanup through surviving speed-changed VO segments and restores the original link on undo", async () => {
+  const f = setup("cleanup-linked");
+  const source = [
+    { text: "Um,", start: 0, end: 0.4 },
+    { text: "yes", start: 1, end: 1.4 },
+    { text: "end.", start: 2, end: 2.4 },
+  ];
+  const link = {
+    trackIndex: 0,
+    mediaName: "VO.wav",
+    segments: [
+      {
+        trackIndex: 0,
+        clipName: "VO.wav",
+        sequenceStart: 10,
+        sequenceEnd: 11.2,
+        sourceIn: 0,
+        speed: 2,
+      },
+    ],
+  };
+  localStorage.setItem(
+    f.key,
+    JSON.stringify({
+      transcript: { ...f.transcript, words: source },
+      link,
+      undo: null,
+      uncertain: false,
+    }),
+  );
+  const timeline = (sourceIn: number, end: number) => ({
+    projectId: "film",
+    sequenceId: "cleanup-linked",
+    name: "Main edit",
+    videoTrackCount: 0,
+    audioTrackCount: 1,
+    videoTracks: [],
+    audioTracks: [
+      {
+        index: 0,
+        clips: [
+          {
+            name: "VO.wav",
+            projectItemName: "VO.wav",
+            nodeId: "vo",
+            start: 10,
+            end,
+            inPoint: sourceIn,
+            outPoint: 2.4,
+            enabled: true,
+          },
+        ],
+      },
+    ],
+    markers: [],
+    inPoint: null,
+    outPoint: null,
+    truncated: false,
+  });
+  host.snapshot.mockResolvedValue({
+    snapshot: timeline(0, 11.2),
+    signature: "before",
+    checkpointIds: [],
+  });
+  host.batch.mockImplementationOnce(async () => {
+    const snapshot = timeline(0.4, 11);
+    host.snapshot.mockResolvedValue({
+      snapshot,
+      signature: "after",
+      checkpointIds: ["checkpoint"],
+    });
+    return {
+      snapshot,
+      checkpointId: "checkpoint",
+      checkpointSignature: "before",
+      expectedSignature: "after",
+      cutError: null,
+    };
+  });
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Clean up", exact: true }).click();
+  await screen.getByRole("button", { name: "Apply 1 cut", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "yes at 00:00:10.300" })).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Um, at 00:00:10.000" }))
+    .not.toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem(f.key)!).transcript.words).toHaveLength(3);
+  expect(host.batch).toHaveBeenCalledWith(
+    expect.objectContaining({ expectedSignature: "before", ranges: [{ start: 10, end: 10.2 }] }),
+  );
+  await screen.getByRole("button", { name: "Undo transcript cut" }).click();
+  await expect.element(screen.getByRole("button", { name: "Um, at 00:00:10.000" })).toBeVisible();
+  expect(
+    JSON.parse(localStorage.getItem(transcriptStorageKey(f.props.context, "restored-sequence"))!)!
+      .link,
+  ).toEqual({ ...link, segments: [{ ...link.segments[0], speed: expect.closeTo(2) }] });
+});
+
+it("preserves intentional gaps between Axis-mapped clips during cleanup review", async () => {
+  const f = setup("cleanup-mapped-boundaries");
+  const transcript = parseTranscript(
+    JSON.stringify({
+      words: [
+        { word: "you", start: 0, end: 0.4, clip: 0 },
+        { word: "know", start: 10, end: 10.4, clip: 1 },
+      ],
+    }),
+    "axis-whisper.json",
+  );
+  localStorage.setItem(
+    f.key,
+    JSON.stringify({ transcript, link: null, undo: null, uncertain: false }),
+  );
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Clean up", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Apply 0 cuts" })).toBeDisabled();
+  expect(host.batch).not.toHaveBeenCalled();
+});
+
+it("keeps one recovery checkpoint after a partial cleanup and requires undo before another cut", async () => {
+  const f = setup("cleanup-partial");
+  localStorage.setItem(
+    f.key,
+    JSON.stringify({
+      transcript: { ...f.transcript, words: [{ text: "um", start: 0, end: 0.4 }] },
+      link: null,
+      undo: null,
+      uncertain: false,
+    }),
+  );
+  host.batch.mockResolvedValueOnce({
+    checkpointId: "checkpoint",
+    checkpointSignature: "before",
+    expectedSignature: "after",
+    cutError: "Razor failed on the second range",
+  });
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Clean up", exact: true }).click();
+  await screen.getByRole("button", { name: "Apply 1 cut", exact: true }).click();
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  expect(JSON.parse(localStorage.getItem(f.key)!).uncertain).toBe(true);
+  await expect.element(screen.getByRole("button", { name: "Undo transcript cut" })).toBeEnabled();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Clean up", exact: true }))
+    .toBeDisabled();
 });
 
 it("shows agent progress, permits stopping the wait and keeps manual import", async () => {
