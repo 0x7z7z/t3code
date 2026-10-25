@@ -76,6 +76,7 @@ async function panelFixture(settingsOverride = {}) {
     evaluations,
     messages,
     contentWindow,
+    setEvalScript: (callback) => { window.__adobe_cep__.evalScript = callback; },
     runTimers: (delay) => {
       for (const [id, timer] of [...timers])
         if (timer.delay === delay) {
@@ -214,6 +215,21 @@ test("clears host context when Premiere has no active sequence", async () => {
   fixture.evaluations[0].callback("premiere:none");
   assert.equal(fixture.messages[0].packet.context, null);
   assert.equal(fixture.elements.get("project").textContent, "Axis");
+});
+
+test("recovers context reads after a synchronous CEP dispatch failure", async () => {
+  const f = await panelFixture();
+  f.evaluations[0].callback("premiere:none");
+  // CEP can throw while the host is sleeping or reconnecting.
+  f.setEvalScript(() => { throw new Error("CEP asleep"); });
+  assert.doesNotThrow(() => f.send({ type: "premiere.context.request", requestId: "asleep" }));
+  assert.equal(f.messages.at(-1).packet.context, null);
+  assert.equal(f.messages.at(-1).packet.requestId, "asleep");
+  f.setEvalScript((script, callback) => f.evaluations.push({ script, callback }));
+  f.send({ type: "premiere.context.request", requestId: "awake" });
+  f.evaluations.at(-1).callback("premiere:Project|D%3A%2Fcut.prproj|document-a|Main|sequence-a|25|1");
+  assert.equal(f.messages.at(-1).packet.requestId, "awake");
+  assert.equal(f.messages.at(-1).packet.context.sequenceId, "sequence-a");
 });
 
 test("moves the playhead to a whole frame only in the sequence the chat refers to", async () => {

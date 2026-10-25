@@ -145,7 +145,7 @@
     readingContext = true;
     var script = "(" + timelineContext.toString() + ")()";
     var readId = ++nextPlayheadReadId;
-    window.__adobe_cep__.evalScript(script, function (raw) {
+    function finish(raw) {
       var next = null;
       try {
         if (String(raw).indexOf("premiere:") === 0 && raw !== "premiere:none") {
@@ -214,7 +214,12 @@
       callbacks.forEach(function (notify) {
         notify(next, readId);
       });
-    });
+    }
+    try {
+      window.__adobe_cep__.evalScript(script, finish);
+    } catch {
+      finish("premiere:error");
+    }
   }
 
   function publishContext(requestId) {
