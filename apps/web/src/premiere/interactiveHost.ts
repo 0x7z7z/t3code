@@ -24,6 +24,7 @@ export function requestTimelineAction(
     | "premiere.clips.request"
     | "premiere.select"
     | "premiere.markers.add"
+    | "premiere.captions.request"
     | "premiere.transcript.load.request",
   payload: object,
 ): Promise<object> {
@@ -60,7 +61,8 @@ export function requestTimelineAction(
     };
     const timeout = setTimeout(
       () => finish("Premiere did not respond. Check the timeline before trying again.", {}),
-      10000,
+      // Native caption import and Save dialogs can remain open for a while.
+      type === "premiere.captions.request" ? 120000 : 10000,
     );
     window.addEventListener("message", receive);
     window.parent.postMessage({ ...payload, type, protocol: 1, requestId }, "*");

@@ -111,7 +111,7 @@
               clip.inPoint.seconds,
               clip.outPoint.seconds,
               itemName,
-              mediaPath,
+              mediaPath
             ];
             for (var j = 0; j < row.length; j++) row[j] = encodeURIComponent(String(row[j]));
             rows.push(row.join("|"));
@@ -128,7 +128,7 @@
         String(s.getPlayerPosition().seconds),
         point("getInPointAsTime"),
         point("getOutPointAsTime"),
-        rows.join("\n"),
+        rows.join("\n")
       ];
       for (var k = 0; k < v.length; k++) v[k] = encodeURIComponent(v[k]);
       return "premiere:" + v.join("|");
@@ -143,7 +143,14 @@
     contextCallbacks.push(callback);
     if (readingContext) return;
     readingContext = true;
-    var script = "(" + timelineContext.toString() + ")()";
+    // Publish the same ES3 operation to the existing agent command bridge. No
+    // separate transport or MCP server is needed for agents that can run JSX.
+    var script =
+      "if(typeof $ !== 'undefined' && !$.global.axisCaptionOperation){$.global.axisCaptionOperation=" +
+      captionScript() +
+      ";}\n(" +
+      timelineContext.toString() +
+      ")()";
     var readId = ++nextPlayheadReadId;
     window.__adobe_cep__.evalScript(script, function (raw) {
       var next = null;
@@ -162,7 +169,7 @@
               sequenceName: fields[3],
               sequenceId: fields[4],
               fps: Number(fields[5]),
-              playheadSeconds: Number(fields[6]),
+              playheadSeconds: Number(fields[6])
             };
             if (fields.length === 10) {
               next.selection = fields[9]
@@ -178,7 +185,7 @@
                       sourceInSeconds: Number(clip[5]),
                       sourceOutSeconds: Number(clip[6]),
                       projectItemName: clip[7],
-                      mediaPath: clip[8],
+                      mediaPath: clip[8]
                     };
                   })
                 : [];
@@ -197,7 +204,7 @@
           var contextTemp = contextFile + ".tmp";
           contextFs.writeFileSync(
             contextTemp,
-            JSON.stringify({ capturedAt: Date.now(), context: next }),
+            JSON.stringify({ capturedAt: Date.now(), context: next })
           );
           contextFs.renameSync(contextTemp, contextFile);
         } catch {
@@ -226,9 +233,9 @@
             protocol: 1,
             requestId: requestId || null,
             context: context,
-            playheadReadId: readId,
+            playheadReadId: readId
           },
-          backendOrigin,
+          backendOrigin
         );
     });
   }
@@ -241,7 +248,7 @@
       return [
         encodeURIComponent(String(p.documentID || p.path)),
         encodeURIComponent(String(s.sequenceID)),
-        String(s.getPlayerPosition().seconds),
+        String(s.getPlayerPosition().seconds)
       ].join("|");
     } catch (error) {
       return "premiere:playhead-error|" + String(error);
@@ -272,9 +279,9 @@
               projectId: decodeURIComponent(fields[0]),
               sequenceId: decodeURIComponent(fields[1]),
               seconds: Number(fields[2]),
-              readId: readId,
+              readId: readId
             },
-            backendOrigin,
+            backendOrigin
           );
         } catch {}
       });
@@ -334,7 +341,7 @@
       if (backendOrigin === origin && frame.contentWindow)
         frame.contentWindow.postMessage(
           Object.assign({ type: "premiere.frame", protocol: 1, requestId: requestId }, result),
-          origin,
+          origin
         );
     }
     try {
@@ -347,7 +354,7 @@
       timeout = setTimeout(function () {
         finish({
           ok: false,
-          error: "Premiere did not finish exporting the frame. Try attaching it again.",
+          error: "Premiere did not finish exporting the frame. Try attaching it again."
         });
       }, 8000);
       var script = "(" + exportFrame.toString() + ")(" + JSON.stringify(filename) + ")";
@@ -359,7 +366,7 @@
             throw new Error(
               fields[0] === "premiere:frame-error"
                 ? decodeURIComponent(fields[1])
-                : "Premiere could not export this frame.",
+                : "Premiere could not export this frame."
             );
           var name =
             ("frame-" + decodeURIComponent(fields[1]) + "-" + decodeURIComponent(fields[2]))
@@ -379,7 +386,7 @@
               if (size > 10 * 1024 * 1024) {
                 finish({
                   ok: false,
-                  error: "This frame is larger than 10 MB. Attach a smaller image instead.",
+                  error: "This frame is larger than 10 MB. Attach a smaller image instead."
                 });
                 return;
               }
@@ -398,7 +405,7 @@
                     ok: true,
                     name: name,
                     mimeType: "image/png",
-                    dataUrl: "data:image/png;base64," + bytes.toString("base64"),
+                    dataUrl: "data:image/png;base64," + bytes.toString("base64")
                   });
                   return;
                 }
@@ -442,7 +449,7 @@
               g === 0 ? "V" : "A",
               t,
               clip.start.seconds,
-              clip.end.seconds,
+              clip.end.seconds
             ];
             for (var i = 0; i < row.length; i++) row[i] = encodeURIComponent(String(row[i]));
             rows.push(row.join("|"));
@@ -513,7 +520,7 @@
         orange: 3,
         yellow: 4,
         blue: 6,
-        cyan: 7,
+        cyan: 7
       };
       var end = Number(s.end) / 254016000000;
       var i;
@@ -548,7 +555,7 @@
           String(error).slice(0, 400) +
             (rollbackFailure
               ? " Some markers remain. Inspect the timeline before retrying. " + rollbackFailure
-              : " No markers were added."),
+              : " No markers were added.")
         )
       );
     }
@@ -567,9 +574,9 @@
         frame.contentWindow.postMessage(
           Object.assign(
             { type: type, protocol: 1, requestId: data.requestId, sequenceId: data.sequenceId },
-            result,
+            result
           ),
-          origin,
+          origin
         );
     }
     function text(value, limit) {
@@ -601,7 +608,7 @@
             sequenceId: data.sequenceId,
             trackType: data.trackType,
             trackIndex: data.trackIndex,
-            start: data.start,
+            start: data.start
           };
     }
     if (data.type === "premiere.markers.add") {
@@ -634,9 +641,9 @@
             name: row.name,
             comment: row.comment,
             color: row.color,
-            duration: row.duration,
+            duration: row.duration
           };
-        }),
+        })
       };
     }
     if (!window.__adobe_cep__)
@@ -666,7 +673,7 @@
                       trackType: fields[2],
                       trackIndex: Number(fields[3]),
                       start: Number(fields[4]),
-                      end: Number(fields[5]),
+                      end: Number(fields[5])
                     };
                   })
                 : [];
@@ -678,15 +685,291 @@
               error:
                 String(raw).indexOf("axis:error|") === 0
                   ? decodeURIComponent(raw.slice(11)).slice(0, 1024)
-                  : "Premiere could not complete this action.",
+                  : "Premiere could not complete this action."
             });
           } catch (error) {
             reply({ ok: false, error: String(error).slice(0, 1024) });
           }
-        },
+        }
       );
     } catch (error) {
       reply({ ok: false, error: String(error).slice(0, 1024) });
+    }
+  }
+
+  function captionScript() {
+    return (
+      "function(request){return (" +
+      captionOperation.toString() +
+      ")(request," +
+      window.AxisTimeline.operation.toString() +
+      ");}"
+    );
+  }
+
+  // Serialized into ES3 ExtendScript. Clone the entire sequence before adding:
+  // ExtendScript exposes caption creation but no caption-track removal API.
+  /* eslint-disable no-unused-vars -- ES3 requires catch bindings, even for unsupported optional APIs. */
+  function captionOperation(request, timeline) {
+    var bin = null;
+    var file = null;
+    try {
+      if (
+        !request ||
+        typeof request.projectId !== "string" ||
+        typeof request.sequenceId !== "string" ||
+        (request.action !== "add" && request.action !== "save" && request.action !== "undo") ||
+        (request.action !== "undo" &&
+          (typeof request.srt !== "string" || !request.srt || request.srt.length > 4000000)) ||
+        (request.action === "add" &&
+          (request.confirmed !== true ||
+            typeof request.id !== "string" ||
+            !/^[a-zA-Z0-9-]{1,100}$/.test(request.id))) ||
+        (request.action === "undo" &&
+          (typeof request.binId !== "string" ||
+            !request.binId ||
+            typeof request.itemId !== "string" ||
+            !request.itemId ||
+            (request.checkpointId &&
+              (typeof request.checkpointId !== "string" ||
+                typeof request.checkpointSignature !== "string" ||
+                request.checkpointSignature.length > 4000000 ||
+                typeof request.expectedSignature !== "string" ||
+                request.expectedSignature.length > 4000000))))
+      )
+        throw new Error("Invalid captions request. Preview and confirm captions before adding.");
+      var p = app.project;
+      var s = p && p.activeSequence;
+      var projectId = p && String(p.documentID || p.path);
+      if (!s || String(s.sequenceID) !== request.sequenceId || projectId !== request.projectId)
+        throw new Error("The active project or sequence changed. Reopen Captions.");
+      if (request.action === "undo") {
+        if (request.checkpointId) {
+          var restored = timeline(
+            "restore",
+            request.checkpointSignature,
+            request.sequenceId,
+            request.checkpointId,
+            request.expectedSignature,
+            "captions",
+            null,
+            null,
+            true,
+            "captions"
+          );
+          if (!restored.ok) throw new Error(restored.error);
+          return "axis:captions|undone|" + encodeURIComponent(restored.sequenceId);
+        }
+        var children = p.rootItem.children;
+        for (var i = 0; i < children.numItems; i++) {
+          if (String(children[i].nodeId) === request.binId) bin = children[i];
+        }
+        if (!bin || String(bin.name).indexOf("Axis captions ") !== 0)
+          throw new Error("The caption source bin is gone or was renamed.");
+        if (bin.children.numItems !== 1 || String(bin.children[0].nodeId) !== request.itemId)
+          throw new Error(
+            "The caption bin changed. Remove its captions manually to preserve other items."
+          );
+        if (bin.deleteBin() !== 0)
+          throw new Error("Premiere could not delete the caption source bin.");
+        return "axis:captions|undone";
+      }
+      if (request.action === "save") {
+        file = File.saveDialog("Save captions as SRT", "*.srt");
+        if (!file) return "axis:captions|cancelled";
+        if (!/\.srt$/i.test(file.fsName)) {
+          var withExtension = new File(file.fsName + ".srt");
+          if (withExtension.exists && !confirm("Replace " + withExtension.fsName + "?"))
+            return "axis:captions|cancelled";
+          file = withExtension;
+        }
+      } else {
+        var candidateFile = new File(Folder.temp.fsName + "/axis-captions-" + request.id + ".srt");
+        if (candidateFile.exists)
+          throw new Error("This captions ID already exists. Inspect the project before retrying.");
+        file = candidateFile;
+      }
+      file.encoding = "UTF-8";
+      file.lineFeed = "Windows";
+      if (!file.open("w")) throw new Error("Could not write the captions file.");
+      var written = file.write(request.srt);
+      var closed = file.close();
+      if (!written || !closed) throw new Error("Could not finish writing the captions file.");
+      if (request.action === "save")
+        return "axis:captions|saved|" + encodeURIComponent(file.fsName);
+      bin = p.rootItem.createBin("Axis captions " + request.id);
+      if (!bin || typeof bin.deleteBin !== "function")
+        throw new Error("Premiere cannot create an undoable captions bin.");
+      if (!p.importFiles([file.fsName], true, bin, false) || bin.children.numItems !== 1)
+        throw new Error("Premiere could not import the SRT.");
+      var item = bin.children[0];
+      var placed = false;
+      var checkpoint = null;
+      // Adobe PProPanel and the scripting guide use seconds, not ticks. The
+      // optional caption format defaults to SUBTITLE in Premiere 2024/2025.
+      // https://github.com/Adobe-CEP/Samples/blob/master/PProPanel/jsx/PPRO/Premiere.jsx
+      // https://ppro-scripting.docsforadobe.dev/sequence/sequence/#sequencecreatecaptiontrack
+      try {
+        if (typeof s.createCaptionTrack === "function") {
+          checkpoint = timeline(
+            "snapshot",
+            true,
+            request.sequenceId,
+            "",
+            "",
+            0,
+            null,
+            null,
+            true,
+            "captions"
+          );
+          if (checkpoint.ok && checkpoint.checkpointId && checkpoint.checkpointSignature) {
+            if (
+              typeof Sequence !== "undefined" &&
+              typeof Sequence.CAPTION_FORMAT_SUBTITLE !== "undefined"
+            )
+              placed = s.createCaptionTrack(item, 0, Sequence.CAPTION_FORMAT_SUBTITLE) === true;
+            else placed = s.createCaptionTrack(item, 0) === true;
+          }
+        }
+      } catch (ignoredCaption) {
+        // Keep the imported source when this build cannot create caption tracks.
+      }
+      return (
+        "axis:captions|" +
+        (placed ? "added" : "imported") +
+        "|" +
+        encodeURIComponent(String(bin.nodeId)) +
+        "|" +
+        encodeURIComponent(String(item.nodeId)) +
+        "|" +
+        encodeURIComponent(file.fsName) +
+        "|" +
+        encodeURIComponent(String(bin.name)) +
+        "|" +
+        (checkpoint && checkpoint.ok && checkpoint.checkpointId
+          ? encodeURIComponent(checkpoint.checkpointId) +
+            "|" +
+            encodeURIComponent(checkpoint.checkpointSignature) +
+            "|" +
+            encodeURIComponent(checkpoint.signature)
+          : "")
+      );
+    } catch (error) {
+      var cleanup = "";
+      if (bin && request.action !== "undo") {
+        try {
+          if (bin.deleteBin() !== 0) cleanup = " Remove the Axis captions bin manually.";
+        } catch (ignoredCleanup) {
+          cleanup = " Remove the Axis captions bin manually.";
+        }
+      }
+      if (file && request.action === "add" && !cleanup) {
+        try {
+          file.remove();
+        } catch (ignoredFile) {}
+      }
+      return "axis:error|" + encodeURIComponent(String(error).slice(0, 800) + cleanup);
+    }
+  }
+  /* eslint-enable no-unused-vars */
+
+  var captionsBusy = false;
+  function captionsMessage(data, origin) {
+    if (data.type !== "premiere.captions.request") return;
+    function reply(result) {
+      if (backendOrigin === origin && frame.contentWindow)
+        frame.contentWindow.postMessage(
+          Object.assign(
+            { type: "premiere.captions", protocol: 1, requestId: data.requestId },
+            result
+          ),
+          origin
+        );
+    }
+    if (typeof data.requestId !== "string" || !data.requestId || data.requestId.length > 128)
+      return;
+    if (
+      typeof data.projectId !== "string" ||
+      !data.projectId ||
+      data.projectId.length > 32768 ||
+      typeof data.sequenceId !== "string" ||
+      !data.sequenceId ||
+      data.sequenceId.length > 32768 ||
+      ["add", "save", "undo"].indexOf(data.action) < 0 ||
+      (data.action !== "undo" &&
+        (typeof data.srt !== "string" || !data.srt || data.srt.length > 4000000)) ||
+      (data.action === "add" && data.confirmed !== true) ||
+      (data.action === "undo" &&
+        (typeof data.binId !== "string" ||
+          !data.binId ||
+          data.binId.length > 512 ||
+          typeof data.itemId !== "string" ||
+          !data.itemId ||
+          data.itemId.length > 512 ||
+          (data.checkpointId &&
+            (typeof data.checkpointId !== "string" ||
+              data.checkpointId.length > 512 ||
+              typeof data.checkpointSignature !== "string" ||
+              data.checkpointSignature.length > 4000000 ||
+              typeof data.expectedSignature !== "string" ||
+              data.expectedSignature.length > 4000000))))
+    )
+      return reply({
+        ok: false,
+        error: "Invalid captions request. Preview and confirm captions before adding."
+      });
+    if (captionsBusy)
+      return reply({ ok: false, error: "A captions operation is already running." });
+    if (!window.__adobe_cep__)
+      return reply({ ok: false, error: "Premiere scripting is unavailable." });
+    var argument = {
+      action: data.action,
+      confirmed: data.confirmed,
+      projectId: data.projectId,
+      sequenceId: data.sequenceId,
+      srt: data.srt,
+      binId: data.binId,
+      itemId: data.itemId,
+      checkpointId: data.checkpointId,
+      checkpointSignature: data.checkpointSignature,
+      expectedSignature: data.expectedSignature,
+      id: Date.now() + "-" + Math.floor(Math.random() * 1000000000)
+    };
+    var encoded = JSON.stringify(argument)
+      .replace(/\u2028/g, "\\u2028")
+      .replace(/\u2029/g, "\\u2029");
+    captionsBusy = true;
+    try {
+      window.__adobe_cep__.evalScript("(" + captionScript() + ")(" + encoded + ")", function (raw) {
+        captionsBusy = false;
+        try {
+          var fields = String(raw).split("|").map(decodeURIComponent);
+          if (fields[0] !== "axis:captions")
+            throw new Error(
+              fields[0] === "axis:error"
+                ? fields[1]
+                : "Premiere could not complete captions. Inspect the project before retrying."
+            );
+          reply({
+            ok: true,
+            status: fields[1],
+            binId: fields[2],
+            itemId: fields[3],
+            path: fields[4] || fields[2],
+            binName: fields[5],
+            checkpointId: fields[6],
+            checkpointSignature: fields[7],
+            expectedSignature: fields[8],
+            sequenceId: fields[1] === "undone" ? fields[2] : undefined
+          });
+        } catch (error) {
+          reply({ ok: false, error: String(error.message).slice(0, 1024) });
+        }
+      });
+    } catch (error) {
+      captionsBusy = false;
+      reply({ ok: false, error: String(error.message).slice(0, 1024) });
     }
   }
 
@@ -698,6 +981,7 @@
       event.data.protocol !== 1
     )
       return;
+    captionsMessage(event.data, event.origin);
     if (event.data.type === "premiere.transcript.load.request") {
       var transcriptRequest = event.data;
       if (
@@ -708,7 +992,7 @@
       var transcriptResult;
       try {
         transcriptResult = nodeRequire(
-          nodeRequire("path").join(extensionDirectory, "transcript-handoff.cjs"),
+          nodeRequire("path").join(extensionDirectory, "transcript-handoff.cjs")
         ).loadTranscript(config, transcriptRequest, extensionDirectory);
       } catch (error) {
         transcriptResult = { ok: false, error: String(error.message).slice(0, 1024) };
@@ -717,9 +1001,9 @@
         Object.assign({}, transcriptResult, {
           type: "premiere.transcript.load",
           protocol: 1,
-          requestId: transcriptRequest.requestId,
+          requestId: transcriptRequest.requestId
         }),
-        event.origin,
+        event.origin
       );
       return;
     }
@@ -750,9 +1034,9 @@
               Object.assign({}, result, {
                 type: request.type.replace(".request", ""),
                 protocol: 1,
-                requestId: request.requestId,
+                requestId: request.requestId
               }),
-              requestOrigin,
+              requestOrigin
             );
           if (
             result.ok &&
@@ -801,7 +1085,7 @@
           if (window.cep && window.cep.util) window.cep.util.openURLInDefaultBrowser(target.href);
           else
             fail(
-              new Error("Could not open account setup. Open the local backend in your browser."),
+              new Error("Could not open account setup. Open the local backend in your browser.")
             );
         })
         .catch(fail);
@@ -826,7 +1110,7 @@
       .then(function () {
         if (!nodeRequire)
           throw new Error(
-            "Open this extension inside Premiere Pro after running the extension installer.",
+            "Open this extension inside Premiere Pro after running the extension installer."
           );
         var path = nodeRequire("path");
         var fs = nodeRequire("fs");
@@ -836,7 +1120,7 @@
         extensionDirectory = directory;
         runtime = nodeRequire(path.join(directory, "runtime.cjs"));
         config = runtime.validateConfig(
-          JSON.parse(fs.readFileSync(path.join(directory, "config.json"), "utf8")),
+          JSON.parse(fs.readFileSync(path.join(directory, "config.json"), "utf8"))
         );
         backendOrigin = new URL(config.backendUrl).origin;
         return runtime.ensureBackend(config);

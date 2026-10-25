@@ -30,6 +30,7 @@ import {
   type VoiceLink,
 } from "./transcriptSync";
 import { usePlayheadClock } from "./usePlayheadClock";
+import { CaptionsPanel } from "./CaptionsPanel";
 
 interface CutUndo {
   readonly before: SequenceTranscript;
@@ -238,6 +239,7 @@ export function TranscriptView({
   const [confirmCut, setConfirmCut] = useState(false);
   const [fixScript, setFixScript] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [captionsOpen, setCaptionsOpen] = useState(false);
   const [candidates, setCandidates] = useState<ReturnType<typeof voiceCandidates> | null>(null);
   const [query, setQuery] = useState("");
   const [matchCursor, setMatchCursor] = useState(0);
@@ -805,6 +807,16 @@ export function TranscriptView({
               <div data-transcript-popover="" role="dialog" aria-label="Transcript options">
                 <section>
                   <h3>Source</h3>
+                  <button
+                    type="button"
+                    disabled={busy || !words.length}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setCaptionsOpen(true);
+                    }}
+                  >
+                    Captions
+                  </button>
                   <p>{doc.source}</p>
                   <div data-row="">
                     <button type="button" disabled={busy} onClick={() => input.current?.click()}>
@@ -900,6 +912,25 @@ export function TranscriptView({
             ) : null}
           </div>
         </header>
+      ) : null}
+      {doc && captionsOpen ? (
+        <CaptionsPanel
+          key={key}
+          context={context}
+          words={words}
+          disabled={disabled || busy || stored.uncertain}
+          onBusy={(value) => {
+            setBusy(value);
+            onBusy(value);
+          }}
+          onClose={() => setCaptionsOpen(false)}
+          onRestored={(sequenceId) => {
+            localStorage.setItem(
+              transcriptStorageKey(context, sequenceId),
+              JSON.stringify({ ...storedRef.current, undo: null }),
+            );
+          }}
+        />
       ) : null}
       {doc ? (
         <p data-transcript-meta="">

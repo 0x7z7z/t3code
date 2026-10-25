@@ -1516,3 +1516,90 @@ small[data-shot-text] {
   gap: 5px;
   font-size: 11px;
 }
+
+[data-captions-panel] {
+  margin: 10px 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  min-width: 0;
+  flex-shrink: 0;
+  max-height: calc(100% - 40px);
+  overflow-y: auto;
+}
+[data-captions-panel] header,
+[data-captions-panel] footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+[data-captions-panel] header {
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+[data-captions-panel] fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+[data-captions-panel] label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+}
+[data-captions-panel] input,
+[data-captions-panel] select {
+  width: 100%;
+  min-width: 0;
+}
+[data-caption-fields] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 8px 0;
+}
+[data-captions-panel] [data-transcript-check] {
+  flex-direction: row;
+  align-items: center;
+}
+[data-captions-panel] [type="checkbox"] {
+  width: auto;
+}
+[data-captions-panel] p {
+  color: var(--muted);
+  line-height: 1.4;
+}
+[data-captions-panel] ol {
+  margin: 10px 0;
+  padding: 0;
+  list-style: none;
+  max-height: 190px;
+  overflow-y: auto;
+}
+[data-captions-panel] li {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+[data-captions-panel] time {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+[data-caption-text] {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+}
+[data-captions-panel] [role="alert"] {
+  color: var(--danger);
+}
+[data-captions-panel] [data-primary] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
