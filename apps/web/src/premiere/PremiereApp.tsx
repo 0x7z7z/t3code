@@ -68,6 +68,7 @@ import {
   latestProviderTurnTokenUsage,
 } from "../lib/contextWindow";
 import { observeResize } from "../lib/observeResize";
+import { SetupPanel } from "./SetupPanel";
 
 export const modelOptionsStorageKey = "axis-composer-model-options-open";
 
@@ -91,6 +92,7 @@ export function PremiereApp() {
   const providers = environmentId ? (providerMap.get(environmentId) ?? []) : [];
   const [providerKey, setProviderKey] = useState<string | null>(null);
   const provider = selectEditingProvider(providers, providerKey);
+  const providerSignedOut = provider?.auth.status === "unauthenticated";
   const [modelKey, setModelKey] = useState<string | null>(null);
   const model = selectEditingModel(provider?.models ?? [], modelKey);
   if (workspaceKey === null && project) setWorkspaceKey(`${project.environmentId}:${project.id}`);
@@ -125,6 +127,7 @@ export function PremiereApp() {
   const [capturingFrame, setCapturingFrame] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [mode, setMode] = useState<"plan" | "default">("plan");
   const [showOptions, setShowOptions] = useState(() => {
     try {
@@ -405,6 +408,7 @@ export function PremiereApp() {
     if (
       !project ||
       !provider ||
+      providerSignedOut ||
       !model ||
       (!transcriptionPrompt && !draft.trim() && !images.length) ||
       inFlight.current ||
@@ -618,7 +622,20 @@ export function PremiereApp() {
         <button type="button" data-ghost-button="" onClick={accountSetup}>
           Accounts
         </button>
+        <details data-axis-menu="">
+          <summary aria-label="Panel menu">Menu</summary>
+          <button type="button" onClick={() => setShowDiagnostics((current) => !current)}>
+            Diagnostics
+          </button>
+        </details>
       </header>
+      <SetupPanel
+        ready={ready}
+        connected={host.connected}
+        providers={providers}
+        diagnostics={showDiagnostics}
+        onAccounts={accountSetup}
+      />
       <nav data-panel-tabs="" aria-label="Panel views">
         <button
           type="button"
@@ -1132,6 +1149,7 @@ export function PremiereApp() {
                   (selectedThread !== null && !thread) ||
                   !host.connected ||
                   !provider ||
+                  providerSignedOut ||
                   !model ||
                   (!draft.trim() && !images.length) ||
                   otherActive

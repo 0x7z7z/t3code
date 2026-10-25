@@ -8,6 +8,7 @@ ${StrCase}
 Name "Axis"
 OutFile "${OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\Axis"
+InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Axis" "InstallLocation"
 RequestExecutionLevel user
 ShowInstDetails show
 ShowUninstDetails show
@@ -24,7 +25,7 @@ Var SkipRegistry
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
-!define MUI_FINISHPAGE_TEXT "Axis is installed. Restart Premiere Pro, then open Window > Extensions > Axis. Your accounts and conversations are retained during upgrades and uninstall."
+!define MUI_FINISHPAGE_TEXT "Axis is installed. Restart Premiere Pro, then open Window > Extensions > Axis. Choose Accounts to install a provider and sign in. Node and Git are included. Transcription setup is optional. Your accounts and conversations are retained during upgrades and uninstall."
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
@@ -115,6 +116,24 @@ FunctionEnd
 Section "Axis"
   ; The directory page and /D can change INSTDIR after .onInit.
   Call ValidateSandbox
+  ; Use a private bootstrap so same-version reinstalls can release a running node.exe
+  ; before NSIS overwrites it, even if the installed Node was quarantined.
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=node.exe "${PAYLOAD}\node\node.exe"
+  File "${PAYLOAD}\scripts\axis-install.mjs"
+  File "${PAYLOAD}\scripts\axis-install-port.mjs"
+  File "${PAYLOAD}\scripts\axis-adobe-settings.mjs"
+  File "${PAYLOAD}\scripts\axis-sandbox-paths.mjs"
+  IfFileExists "$INSTDIR\install-record.json" 0 axis_extract
+  nsExec::ExecToLog '"$PLUGINSDIR\node.exe" "$PLUGINSDIR\axis-install.mjs" --install-root "$INSTDIR" --prepare-upgrade --port "$Port"'
+  Pop $0
+  ${If} $0 != 0
+    MessageBox MB_OK|MB_ICONSTOP "Close Premiere and retry. Axis could not stop its previous backend for upgrade. Your data was retained." /SD IDOK
+    SetErrorLevel 1
+    Abort
+  ${EndIf}
+  axis_extract:
   SetOutPath "$INSTDIR\app-${BUILD_ID}"
   SetOverwrite ifdiff
   File /r "${PAYLOAD}\*"
@@ -126,7 +145,7 @@ Section "Axis"
   nsExec::ExecToLog $Arguments
   Pop $0
   ${If} $0 != 0
-    MessageBox MB_OK|MB_ICONSTOP "Axis could not be configured. See the installation log. Your data was retained." /SD IDOK
+    MessageBox MB_OK|MB_ICONSTOP "Axis could not be configured. Close Premiere and retry. If a runtime file is missing, check Windows Security > Protection history and reinstall from your trusted installer. See the installation log for details. Your data was retained." /SD IDOK
     SetErrorLevel 1
     Abort
   ${EndIf}
@@ -150,7 +169,15 @@ Section "Uninstall"
   ReadINIStr $Sandbox "$INSTDIR\install.ini" "Axis" "Sandbox"
   ReadEnvStr $SkipRegistry "AXIS_SKIP_REGISTRY"
   Call un.ValidateSandbox
-  StrCpy $Arguments '"$Runtime\node\node.exe" "$Runtime\scripts\axis-install.mjs" --install-root "$INSTDIR" --uninstall'
+  ; The uninstaller must also work after the installed runtime was quarantined.
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=node.exe "${PAYLOAD}\node\node.exe"
+  File "${PAYLOAD}\scripts\axis-install.mjs"
+  File "${PAYLOAD}\scripts\axis-install-port.mjs"
+  File "${PAYLOAD}\scripts\axis-adobe-settings.mjs"
+  File "${PAYLOAD}\scripts\axis-sandbox-paths.mjs"
+  StrCpy $Arguments '"$PLUGINSDIR\node.exe" "$PLUGINSDIR\axis-install.mjs" --install-root "$INSTDIR" --runtime-root "$Runtime" --uninstall'
   nsExec::ExecToLog $Arguments
   Pop $0
   ${If} $0 != 0
@@ -159,19 +186,28 @@ Section "Uninstall"
     Abort
   ${EndIf}
   ; Each owned release has its own marker. Leave unrelated files in a custom /D directory alone.
+  StrCpy $0 "0"
   ClearErrors
   FindFirst $1 $2 "$INSTDIR\app-*"
   ${DoWhile} $2 != ""
     ${If} ${FileExists} "$INSTDIR\$2\release.json"
+      CopyFiles /SILENT "$INSTDIR\$2\release.json" "$PLUGINSDIR\axis-release.json"
+      ${If} ${Errors}
+        StrCpy $0 "1"
+        ${Break}
+      ${EndIf}
       RMDir /r "$INSTDIR\$2"
+      ${If} ${FileExists} "$INSTDIR\$2\*.*"
+        ; Preserve ownership so a retry can finish removing a partially locked release.
+        CopyFiles /SILENT "$PLUGINSDIR\axis-release.json" "$INSTDIR\$2\release.json"
+        StrCpy $0 "1"
+      ${EndIf}
+      ClearErrors
     ${EndIf}
     FindNext $1 $2
   ${Loop}
   FindClose $1
-  ClearErrors
-  IfFileExists "$Runtime\node\node.exe" 0 +2
-    SetErrors
-  ${If} ${Errors}
+  ${If} $0 == "1"
     MessageBox MB_OK|MB_ICONEXCLAMATION "Some Axis runtime files are in use. Close Premiere and the Axis backend, then run the uninstaller again. Your data was retained." /SD IDOK
     SetErrorLevel 1
     Abort

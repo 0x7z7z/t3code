@@ -54,14 +54,14 @@ function probeBackend(config) {
           try {
             if (response.statusCode !== 200 || JSON.parse(body).protocol !== 1) {
               throw new Error(
-                "This port belongs to a different server. Choose another port when installing.",
+                "This port belongs to a different server. Close Premiere and rerun the Axis installer to select a free local port. Your conversations are kept.",
               );
             }
             resolve();
           } catch {
             reject(
               new Error(
-                "This port belongs to a different server. Choose another port when installing.",
+                "This port belongs to a different server. Close Premiere and rerun the Axis installer to select a free local port. Your conversations are kept.",
               ),
             );
           }
@@ -77,9 +77,13 @@ function probeBackend(config) {
 
 function startBackend(config) {
   if (!fs.existsSync(config.nodePath))
-    throw new Error("The Node runtime is missing. Reinstall Axis.");
+    throw new Error(
+      "The Axis runtime is missing. Check Windows Security > Protection history for a quarantined Axis file, then reinstall Axis from your trusted installer. Your conversations will be kept.",
+    );
   if (!fs.existsSync(config.serverPath))
-    throw new Error("Build the backend first with vp run --filter t3 build.");
+    throw new Error(
+      "The Axis backend is missing. Reinstall Axis from your trusted installer. Your conversations will be kept.",
+    );
   if (!fs.existsSync(config.connectorPath))
     throw new Error("The bundled Premiere connector is missing. Reinstall the extension.");
   fs.mkdirSync(config.homeDir, { recursive: true });

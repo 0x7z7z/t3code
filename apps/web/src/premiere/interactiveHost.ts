@@ -24,7 +24,8 @@ export function requestTimelineAction(
     | "premiere.clips.request"
     | "premiere.select"
     | "premiere.markers.add"
-    | "premiere.transcript.load.request",
+    | "premiere.transcript.load.request"
+    | "premiere.diagnostics.request",
   payload: object,
 ): Promise<object> {
   if (!isPremierePanel())
@@ -60,7 +61,7 @@ export function requestTimelineAction(
     };
     const timeout = setTimeout(
       () => finish("Premiere did not respond. Check the timeline before trying again.", {}),
-      10000,
+      type === "premiere.diagnostics.request" ? 35000 : 10000,
     );
     window.addEventListener("message", receive);
     window.parent.postMessage({ ...payload, type, protocol: 1, requestId }, "*");

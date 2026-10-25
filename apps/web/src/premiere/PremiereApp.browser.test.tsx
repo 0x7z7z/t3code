@@ -18,6 +18,7 @@ import "./styles.css";
 const state = vi.hoisted(() => ({
   environmentId: "premiere-permission-test",
   allowed: true,
+  signedIn: true,
   run: vi.fn(),
   dismiss: vi.fn(),
   projection: null as OrchestrationV2ThreadProjection | null,
@@ -66,7 +67,7 @@ vi.mock("../state/environments", () => ({
             instanceId: "codex",
             enabled: true,
             installed: true,
-            auth: { email: "" },
+            auth: { status: state.signedIn ? "authenticated" : "unauthenticated", email: "" },
             slashCommands: [],
             skills: [],
             models: [
@@ -152,6 +153,7 @@ function setup(name: string, allowed: boolean) {
   });
   state.environmentId = `premiere-permission-${name}`;
   state.allowed = allowed;
+  state.signedIn = true;
   state.run.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
   state.dismiss.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
   state.projection = null;
@@ -344,6 +346,24 @@ it("also dismisses asynchronous questions on the server", async () => {
       input: { threadId, requestId },
     }),
   );
+  expect(state.run).not.toHaveBeenCalled();
+});
+
+it("guides a signed-out account to setup and disables sending", async () => {
+  setup("signed-out", true);
+  state.signedIn = false;
+  // The docked panel has no router navigation.
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+    { router: false },
+  );
+  await screen
+    .getByRole("textbox", { name: "Message your editing assistant" })
+    .fill("Help me edit.");
+  await expect.element(screen.getByRole("button", { name: "Open account setup" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
   expect(state.run).not.toHaveBeenCalled();
 });
 

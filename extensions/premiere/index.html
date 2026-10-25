@@ -18,12 +18,40 @@
         ><span id="sequence">Open a sequence to attach timeline context</span>
       </div>
       <span id="connection" role="status">Starting</span>
+      <details class="host-menu">
+        <summary aria-label="Axis menu">Menu</summary>
+        <button id="diagnostics-toggle" type="button">Diagnostics</button>
+      </details>
     </header>
+    <section id="host-diagnostics" class="startup" hidden aria-label="Diagnostics">
+      <h1>Diagnostics</h1>
+      <p>Includes local paths. Review before sharing with support.</p>
+      <button id="diagnostics-refresh" type="button">Refresh report</button>
+      <button id="diagnostics-copy" type="button">Copy report</button>
+      <textarea id="diagnostics-report" aria-label="Support report" readonly></textarea>
+      <p id="diagnostics-message" role="status"></p>
+    </section>
     <section id="startup" class="startup" aria-live="polite">
       <span class="eyebrow">Your editing workspace</span>
       <h1>From idea to timeline.</h1>
       <p id="startup-message">Starting Axis...</p>
       <button id="retry" type="button" hidden>Try again</button>
+      <details>
+        <summary>Setup checklist</summary>
+        <ol>
+          <li>Restart Premiere after installing. Open Window &gt; Extensions &gt; Axis.</li>
+          <li>Click Try again to restart the local backend. Axis includes Node and Git.</li>
+          <li>
+            If a file is missing, review Windows Security &gt; Protection history and reinstall from
+            your trusted Axis installer. Your conversations are kept.
+          </li>
+          <li>
+            Axis listens only on this laptop. You do not need to allow public network access in a
+            firewall prompt.
+          </li>
+          <li>When the workspace opens, choose Accounts to install and sign in to a provider.</li>
+        </ol>
+      </details>
     </section>
     <iframe
       id="workspace"

@@ -77,7 +77,9 @@ export function validateSandboxEnvironment(root, runtime, env = process.env) {
   const protectedPaths = [
     ...(env.APPDATA ? [NodePath.join(env.APPDATA, "Adobe/CEP/extensions/Axis")] : []),
     ...(env.LOCALAPPDATA
-      ? ["PremiereAssistant", "Programs/Axis"].map((name) => NodePath.join(env.LOCALAPPDATA, name))
+      ? ["PremiereAssistant", "Axis", "Programs/Axis"].map((name) =>
+          NodePath.join(env.LOCALAPPDATA, name),
+        )
       : []),
   ].filter((directory) => !root || !within(canonical(root), canonical(directory)));
   validateSandboxPaths(

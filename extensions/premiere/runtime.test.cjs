@@ -121,6 +121,14 @@ test("reports a missing bundled connector before launching the backend", async (
   assert.throws(() => startBackend(settings), /bundled Premiere connector is missing/);
 });
 
+test("missing or quarantined runtime files give repair instructions for installed users", () => {
+  const settings = config("http://127.0.0.1:5749/", "missing-axis-runtime");
+  settings.nodePath = "missing-axis-node.exe";
+  assert.throws(() => startBackend(settings), /Windows Security.*reinstall/i);
+  settings.nodePath = process.execPath;
+  assert.throws(() => startBackend(settings), /Reinstall Axis/);
+});
+
 test("reuses a running backend and refuses another service without spawning", async (t) => {
   let protocol = 1;
   const server = createServer((_request, response) => response.end(JSON.stringify({ protocol })));

@@ -291,7 +291,7 @@ if (values["dry-run"]) {
       ].join("\n"),
     );
   if (!values["skip-adobe-settings"] && platform === "win32") {
-    for (const version of [10, 11, 12]) {
+    for (const version of [9, 10, 11, 12]) {
       const result = NodeChildProcess.spawnSync(
         "reg.exe",
         [

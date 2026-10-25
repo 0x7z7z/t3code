@@ -10,14 +10,29 @@ const { pathToFileURL } = require("node:url");
 const { promisify } = require("node:util");
 const execFile = promisify(require("node:child_process").execFile);
 const { createServer } = require("node:net");
+const { once } = require("node:events");
+const { spawn } = require("node:child_process");
 
 const root = path.resolve(__dirname, "../..");
 const installer = path.join(root, "scripts/premiere-extension.mjs");
 
+test("installer chooses a free loopback port when another program owns the requested one", async (t) => {
+  const { availablePort } = await import(
+    pathToFileURL(path.join(root, "scripts/axis-install-port.mjs"))
+  );
+  const listener = createServer();
+  await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => listener.close(resolve)));
+  const selected = Number(await availablePort(listener.address().port));
+  assert.notEqual(selected, listener.address().port);
+  assert.ok(selected >= 1024 && selected <= 65535);
+  await assert.rejects(availablePort("0"), /Choose a port/);
+});
+
 async function fixture(t) {
   // oxlint-disable-next-line t3code/no-global-process-runtime -- E2E paths must match the real installer subprocess's OS.
   const platform = process.platform;
-  const directory = await fs.mkdtemp(path.join(tmpdir(), "premiere-installer-"));
+  const directory = await fs.mkdtemp(path.join(tmpdir(), "premiere installer Zoë-"));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const bundle = path.join(directory, "prebuilt");
   await fs.mkdir(path.join(bundle, "dist/resources"), { recursive: true });
@@ -44,7 +59,7 @@ async function fixture(t) {
     HOME: directory,
     USERPROFILE: directory,
     LOCALAPPDATA: path.join(directory, "local"),
-    APPDATA: path.join(directory, "roaming"),
+    APPDATA: path.join(directory, "OneDrive - Test Company", "Roaming"),
     AXIS_SANDBOX_ROOT: directory,
   };
   const dataRoot =
@@ -107,6 +122,7 @@ async function fixture(t) {
     );
   };
   return {
+    port,
     directory,
     bundle,
     destination,
@@ -564,4 +580,119 @@ test("sandbox bootstrap fails closed for missing overrides and real bridge paths
       }),
     );
   }
+});
+
+test("standalone bootstrap works without system CLIs and uninstall retains legacy conversations", async (t) => {
+  const f = await fixture(t);
+  const installRoot = path.join(f.directory, "Programs/Axis");
+  const runtime = path.join(installRoot, "app-fixture");
+  await fs.mkdir(path.join(runtime, "scripts"), { recursive: true });
+  await fs.mkdir(path.join(runtime, "node"), { recursive: true });
+  await fs.mkdir(path.join(runtime, "apps/server/dist"), { recursive: true });
+  await fs.copyFile(process.execPath, path.join(runtime, "node/node.exe"));
+  await fs.writeFile(path.join(runtime, "apps/server/dist/bin.mjs"), "// fixture backend");
+  await fs.writeFile(path.join(runtime, "release.json"), JSON.stringify({ buildId: "fixture" }));
+  await fs.cp(path.join(root, "extensions/premiere"), path.join(runtime, "extensions/premiere"), {
+    recursive: true,
+  });
+  await fs.cp(f.bundle, path.join(runtime, "connector"), { recursive: true });
+  for (const name of [
+    "axis-install.mjs",
+    "axis-install-port.mjs",
+    "axis-adobe-settings.mjs",
+    "axis-sandbox-paths.mjs",
+    "premiere-extension.mjs",
+    "premiere-connector.mjs",
+  ])
+    await fs.copyFile(path.join(root, "scripts", name), path.join(runtime, "scripts", name));
+  const data = path.join(f.directory, "Local/PremiereAssistant");
+  await fs.mkdir(data, { recursive: true });
+  const sentinel = path.join(data, "conversations.sqlite");
+  await fs.writeFile(sentinel, "keep user data");
+  const env = {
+    ...process.env,
+    PATH: "",
+    Path: "",
+    HOME: path.join(f.directory, "User"),
+    USERPROFILE: path.join(f.directory, "User"),
+    LOCALAPPDATA: path.join(f.directory, "Local"),
+    APPDATA: path.join(f.directory, "OneDrive - Test Company/Roaming"),
+    AXIS_SANDBOX_ROOT: f.directory,
+    AXIS_RUNTIME_DIR: installRoot,
+    AXIS_CEP_DIR: f.axisExtension,
+    AXIS_DATA_DIR: data,
+    AXIS_WORKSPACE_DIR: path.join(data, "workspace"),
+    AXIS_BRIDGE_DIR: f.bridge,
+    AXIS_SKIP_REGISTRY: "1",
+  };
+  const command = path.join(runtime, "node/node.exe");
+  const args = [
+    path.join(runtime, "scripts/axis-install.mjs"),
+    "--install-root",
+    installRoot,
+    "--sandbox-root",
+    f.directory,
+    "--port",
+    String(f.port),
+  ];
+  await execFile(command, args, { env, windowsHide: true });
+  const config = JSON.parse(await fs.readFile(path.join(f.axisExtension, "config.json"), "utf8"));
+  assert.equal(config.nodePath, command);
+  assert.equal(config.homeDir, path.join(data, "backend"));
+  assert.equal(existsSync(path.join(config.workspacePath, ".mcp.json")), true);
+  const retained = path.join(config.homeDir, "conversations.sqlite");
+  await fs.mkdir(config.homeDir, { recursive: true });
+  await fs.writeFile(retained, "retained across upgrade");
+  // The private bootstrap lives outside the installed runtime, as it does in NSIS.
+  const bootstrap = path.join(f.directory, "bootstrap");
+  await fs.cp(path.join(runtime, "scripts"), bootstrap, { recursive: true });
+  await fs.writeFile(
+    config.serverPath,
+    'process.stdout.write("ready"); setInterval(() => {}, 1000);',
+  );
+  const backend = spawn(command, [config.serverPath], { env, windowsHide: true });
+  t.after(() => {
+    if (backend.exitCode === null && backend.signalCode === null) backend.kill();
+  });
+  await once(backend.stdout, "data");
+  const exited = once(backend, "exit");
+  await fs.writeFile(
+    path.join(runtime, "backend-process.json"),
+    JSON.stringify({
+      pid: backend.pid,
+      nodePath: command,
+      serverPath: config.serverPath,
+    }),
+  );
+  await execFile(
+    command,
+    [
+      path.join(bootstrap, "axis-install.mjs"),
+      "--install-root",
+      installRoot,
+      "--prepare-upgrade",
+      "--port",
+      String(f.port),
+    ],
+    { env, windowsHide: true },
+  );
+  await exited;
+  await execFile(command, args, { env, windowsHide: true });
+  assert.equal(await fs.readFile(retained, "utf8"), "retained across upgrade");
+  await fs.rm(command);
+  await execFile(
+    process.execPath,
+    [
+      path.join(bootstrap, "axis-install.mjs"),
+      "--install-root",
+      installRoot,
+      "--runtime-root",
+      runtime,
+      "--uninstall",
+    ],
+    { env, windowsHide: true },
+  );
+  assert.equal(existsSync(f.axisExtension), false);
+  assert.equal(await fs.readFile(sentinel, "utf8"), "keep user data");
+  assert.equal(await fs.readFile(retained, "utf8"), "retained across upgrade");
 });

@@ -114,3 +114,40 @@ iframe {
   min-height: 0;
   background: #1e1e1e;
 }
+.host-menu {
+  position: relative;
+  font-size: 12px;
+}
+.host-menu summary {
+  cursor: pointer;
+}
+.host-menu button {
+  position: absolute;
+  right: 0;
+  top: 24px;
+  z-index: 10;
+}
+.startup {
+  overflow: auto;
+}
+.startup li,
+.startup summary {
+  font-size: 12px;
+  line-height: 1.6;
+}
+#host-diagnostics {
+  margin: 0 auto;
+  max-height: 65vh;
+  flex-shrink: 0;
+  padding: 16px;
+}
+#diagnostics-report {
+  width: 100%;
+  min-height: 180px;
+  margin-top: 12px;
+  resize: vertical;
+  background: #252525;
+  color: #e3e3e3;
+  border: 1px solid #555;
+  font-size: 11px;
+}
