@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import { defaultCleanupSettings, type CleanupSettings } from "./transcriptCleanup";
+import { validateMusicPlan, type MusicPlan } from "./music";
 
 const seconds = Schema.Number.check(
   Schema.isFinite(),
@@ -95,6 +96,7 @@ export function parseSuggestionTime(value: string | number, fps: number): number
 }
 
 export type ParsedSuggestion =
+  | { readonly kind: "music"; readonly plan: MusicPlan }
   | { readonly kind: "cleanup"; readonly settings: CleanupSettings }
   | { readonly kind: "markers"; readonly markers: readonly MarkerSuggestion[] }
   | { readonly kind: "shots"; readonly shots: readonly PlanShot[] }
@@ -104,6 +106,7 @@ export function parseSuggestion(kind: string, source: string, fps: number): Pars
   try {
     if (source.length > 600000) throw new Error("Suggestion block is too large.");
     const value: unknown = JSON.parse(source);
+    if (kind === "axis-music") return { kind: "music", plan: validateMusicPlan(value) };
     if (kind === "axis-cleanup") {
       const settings = Option.getOrNull(decodeCleanup(value, { onExcessProperty: "error" }));
       if (!settings)
@@ -207,7 +210,8 @@ export function suggestionKind(
   fence: string,
   source: string,
   fps: number,
-): "axis-markers" | "axis-shots" | "axis-cleanup" | null {
+): "axis-markers" | "axis-shots" | "axis-cleanup" | "axis-music" | null {
+  if (fence === "axis-music") return fence;
   if (fence === "axis-cleanup") return fence;
   if (fence === "axis-markers" || fence === "axis-shots") return fence;
   if (fence !== "json" && fence !== "") return null;

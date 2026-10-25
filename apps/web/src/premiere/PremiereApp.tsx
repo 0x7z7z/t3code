@@ -11,6 +11,7 @@ import {
   type RuntimeMode,
   type ThreadId,
   type UsageLimitsReport,
+  type ChatFileAttachment,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import { derivePendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
@@ -26,7 +27,9 @@ import { newMessageId, newThreadId } from "../lib/utils";
 import { useProjects, useServerConfigs, useThreadShellsForProjectRefs } from "../state/entities";
 import { useEnvironmentProviders, useEnvironments } from "../state/environments";
 import { useEnvironmentShellStatus } from "../state/shell";
-import { useEnvironmentScope } from "../state/session";
+import { useEnvironmentScope, readPreparedConnection } from "../state/session";
+import { attachmentEnvironment } from "../state/attachments";
+import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
 import { threadEnvironment, useEnvironmentThread } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
@@ -63,6 +66,8 @@ import type { TurnChangeRecord } from "./turnChanges";
 import { QuestionCard } from "./QuestionCard";
 import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
 import type { CleanupSettings } from "./transcriptCleanup";
+import type { MusicPlan } from "./music";
+import type { MusicAudioAttachment } from "./MusicPanel";
 import { ComposerUsage } from "./ComposerUsage";
 import {
   deriveLatestContextWindowSnapshot,
@@ -119,11 +124,19 @@ export function PremiereApp() {
     scope: string;
     settings: CleanupSettings;
   } | null>(null);
+  const [musicRequest, setMusicRequest] = useState<{ scope: string; plan: MusicPlan } | null>(null);
   const timelineActions = baseTimelineActions
     ? {
         ...baseTimelineActions,
+        reviewMusic: (plan: MusicPlan) => {
+          if (!host.context) return;
+          setCleanupRequest(null);
+          setMusicRequest({ scope: transcriptStorageKey(host.context), plan });
+          setPanelView("transcript");
+        },
         reviewCleanup: (settings: CleanupSettings) => {
           if (!host.context) return;
+          setMusicRequest(null);
           setCleanupRequest({ scope: transcriptStorageKey(host.context), settings });
           setPanelView("transcript");
         },
@@ -180,6 +193,7 @@ export function PremiereApp() {
         : null;
   const connect = useAtomCommand(connectPairing, { reportFailure: false });
   const startTurn = useOrchestrationCommand(threadEnvironment.startTurn);
+  const createUploadUrl = useAtomCommand(attachmentEnvironment.createUploadUrl);
   const stopTurn = useOrchestrationCommand(threadEnvironment.interruptTurn);
   const approve = useOrchestrationCommand(threadEnvironment.respondToApproval);
   const paired = useRef(false);
@@ -413,7 +427,11 @@ export function PremiereApp() {
     }
   }
 
-  async function send(event?: FormEvent, transcriptionPrompt?: string) {
+  async function send(
+    event?: FormEvent,
+    transcriptionPrompt?: string,
+    musicAudio: MusicAudioAttachment[] = [],
+  ) {
     event?.preventDefault();
     const action = transcriptionPrompt || images.length ? null : panelActionFor(draft);
     if (action && runPanelAction(action)) {
@@ -455,6 +473,41 @@ export function PremiereApp() {
     const options = editingModelOptions(model, optionValues);
     const selection = createModelSelection(provider.instanceId, model.slug, options);
     try {
+      const audioAttachments: ChatFileAttachment[] = [];
+      for (const audio of musicAudio) {
+        const minted = await createUploadUrl({
+          environmentId: project.environmentId,
+          input: {
+            type: "file",
+            name: audio.name,
+            mimeType: audio.mimeType,
+            sizeBytes: audio.sizeBytes,
+          },
+        });
+        if (minted._tag !== "Success")
+          throw new Error("Could not upload the music excerpt to the current provider.");
+        const connection = readPreparedConnection(project.environmentId);
+        const url = connection
+          ? resolveAssetUrl(connection.httpBaseUrl, minted.value.relativeUrl)
+          : null;
+        if (!url) throw new Error("The agent environment disconnected.");
+        const bytes = Uint8Array.from(atob(audio.dataUrl.split(",")[1] ?? ""), (c) =>
+          c.charCodeAt(0),
+        );
+        const uploaded = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": audio.mimeType },
+          body: bytes,
+        });
+        if (!uploaded.ok) throw new Error("Music excerpt upload failed.");
+        audioAttachments.push({
+          type: "file",
+          id: minted.value.attachmentId,
+          name: audio.name,
+          mimeType: audio.mimeType,
+          sizeBytes: audio.sizeBytes,
+        });
+      }
       const context = await requestPremiereContext();
       if (mode === "default" && context === null)
         throw new Error("Open a Premiere sequence before starting an edit.");
@@ -478,13 +531,16 @@ export function PremiereApp() {
             messageId,
             role: "user",
             text: formatPremierePrompt(prompt, context),
-            attachments: sentImages.map((image) => ({
-              type: "image" as const,
-              name: image.name,
-              mimeType: image.mimeType,
-              sizeBytes: image.sizeBytes,
-              dataUrl: image.dataUrl,
-            })),
+            attachments: [
+              ...audioAttachments,
+              ...sentImages.map((image) => ({
+                type: "image" as const,
+                name: image.name,
+                mimeType: image.mimeType,
+                sizeBytes: image.sizeBytes,
+                dataUrl: image.dataUrl,
+              })),
+            ],
           },
           modelSelection: selection,
           runtimeMode,
@@ -525,7 +581,7 @@ export function PremiereApp() {
       }
       setSelectedThread(targetId);
       if (transcriptionPrompt) {
-        setTranscriptionTurn({ threadId: targetId, messageId });
+        if (!musicAudio.length) setTranscriptionTurn({ threadId: targetId, messageId });
         const destination = `premiere-draft:${environmentId}:${project.id}:${targetId}`;
         setDraftState({ key: destination, value: draft });
         try {
@@ -801,6 +857,17 @@ export function PremiereApp() {
           <TranscriptView
             key={transcriptStorageKey(host.context)}
             context={host.context}
+            musicRequest={
+              musicRequest?.scope === transcriptStorageKey(host.context) ? musicRequest : null
+            }
+            onDescribeMusic={
+              provider?.driver === "antigravity" && /gemini/i.test(model?.slug ?? "")
+                ? async (prompt, audio) => {
+                    await send(undefined, prompt, audio);
+                    setPanelView("conversation");
+                  }
+                : undefined
+            }
             cleanupRequest={
               cleanupRequest?.scope === transcriptStorageKey(host.context) ? cleanupRequest : null
             }

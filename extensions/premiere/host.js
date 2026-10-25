@@ -152,6 +152,8 @@
     var script =
       "if(typeof $ !== 'undefined' && !$.global.axisCaptionOperation){$.global.axisCaptionOperation=" +
       captionScript() +
+      ";}if(typeof $ !== 'undefined' && !$.global.axisMusicOperation){$.global.axisMusicOperation=" +
+      musicScript() +
       ";}\n(" +
       timelineContext.toString() +
       ")()";
@@ -915,6 +917,410 @@
   }
   /* eslint-enable no-unused-vars */
 
+  function musicScript() {
+    return (
+      "(function(r){return (" +
+      musicOperation.toString() +
+      ")(r," +
+      window.AxisTimeline.operation.toString() +
+      ");})"
+    );
+  }
+  function musicOperation(request, timeline) {
+    var checkpoint = null;
+    var bin = null;
+    function time(seconds) {
+      var t = new Time();
+      t.seconds = seconds;
+      return t;
+    }
+    function number(n) {
+      return typeof n === "number" && isFinite(n);
+    }
+    function failure(message) {
+      throw new Error(message);
+    }
+    function checked(result, label) {
+      if (result !== 0) failure("Premiere refused " + label + ".");
+    }
+    function response(status, signature, message, sequenceId) {
+      return (
+        "axis:music|" +
+        status +
+        "|" +
+        encodeURIComponent(checkpoint ? checkpoint.checkpointId : "") +
+        "|" +
+        encodeURIComponent(checkpoint ? checkpoint.checkpointSignature : "") +
+        "|" +
+        encodeURIComponent(signature || "") +
+        "|" +
+        encodeURIComponent(message || "") +
+        "|" +
+        encodeURIComponent(sequenceId || "")
+      );
+    }
+    try {
+      if (
+        !request ||
+        typeof request.projectId !== "string" ||
+        typeof request.sequenceId !== "string"
+      )
+        failure("Invalid music scope.");
+      var p = app.project;
+      var s = p && p.activeSequence;
+      if (
+        !s ||
+        String(s.sequenceID) !== request.sequenceId ||
+        String(p.documentID || p.path) !== request.projectId
+      )
+        failure("The project or sequence changed. Reopen Music.");
+      if (request.action === "undo") {
+        if (
+          !request.checkpointId ||
+          typeof request.checkpointSignature !== "string" ||
+          typeof request.expectedSignature !== "string"
+        )
+          failure("Missing music checkpoint.");
+        var restored = timeline(
+          "restore",
+          request.checkpointSignature,
+          request.sequenceId,
+          request.checkpointId,
+          request.expectedSignature,
+          "music",
+          null,
+          null,
+          true,
+          "music"
+        );
+        if (!restored.ok) failure(restored.error);
+        return response("undone", "", "", restored.sequenceId);
+      }
+      if (
+        request.action !== "apply" ||
+        request.confirmed !== true ||
+        !request.expectedSignature ||
+        !request.cues ||
+        !request.cues.length ||
+        request.cues.length > 200
+      )
+        failure("Preview and confirm the music plan first.");
+      var current = timeline(
+        "snapshot",
+        false,
+        request.sequenceId,
+        "",
+        "",
+        0,
+        null,
+        null,
+        true,
+        "music"
+      );
+      if (!current.ok || current.signature !== request.expectedSignature)
+        failure("The timeline changed after preview. Rebuild the music plan.");
+      var cues = request.cues;
+      var used = {};
+      var previousEnd = -1;
+      var i, j, k, c, key, candidate;
+      for (i = 0; i < cues.length; i++) {
+        c = cues[i];
+        if (
+          !c ||
+          typeof c.track !== "string" ||
+          !/\.(wav|mp3|m4a|aac|flac|ogg|opus|aif|aiff|wma)$/i.test(c.track) ||
+          !new File(c.track).exists ||
+          !number(c.start) ||
+          c.start < 0 ||
+          c.start < previousEnd ||
+          !number(c.end) ||
+          c.end <= c.start ||
+          !number(c.sourceOffset) ||
+          c.sourceOffset < 0 ||
+          !c.keys ||
+          c.keys.length < 2 ||
+          c.keys.length > 20000
+        )
+          failure("Invalid or overlapping music cue.");
+        var pathKey = "p:" + c.track.toLowerCase().replace(/\\/g, "/");
+        if (used[pathKey]) failure("Repeating music tracks are not allowed.");
+        used[pathKey] = true;
+        previousEnd = c.end;
+        var previousTime = -1;
+        for (k = 0; k < c.keys.length; k++) {
+          key = c.keys[k];
+          if (
+            !number(key.time) ||
+            key.time < 0 ||
+            key.time <= previousTime ||
+            key.time > c.end - c.start + 0.00001 ||
+            !number(key.value) ||
+            key.value < 0 ||
+            key.value > 1
+          )
+            failure("Invalid music keyframes.");
+          previousTime = key.time;
+        }
+        if (c.keys[0].time !== 0 || Math.abs(previousTime - (c.end - c.start)) > 0.00001)
+          failure("Keyframes must cover the cue.");
+      }
+      if (request.silence) {
+        if (request.silence.length > 500) failure("Too many silence ranges.");
+        for (i = 0; i < request.silence.length; i++) {
+          var silence = request.silence[i];
+          if (
+            !silence ||
+            !number(silence.start) ||
+            !number(silence.end) ||
+            silence.start < 0 ||
+            silence.end <= silence.start
+          )
+            failure("Invalid sponsor or silence range.");
+          for (j = 0; j < cues.length; j++)
+            if (cues[j].start < silence.end && cues[j].end > silence.start)
+              failure("Music crosses a sponsor or silence range.");
+        }
+      }
+      checkpoint = timeline(
+        "snapshot",
+        true,
+        request.sequenceId,
+        "",
+        "",
+        0,
+        null,
+        null,
+        true,
+        "music"
+      );
+      if (!checkpoint.ok || !checkpoint.checkpointId || !checkpoint.checkpointSignature) {
+        checkpoint = null;
+        failure("Could not save a music undo checkpoint.");
+      }
+      var track = null;
+      var spare = null;
+      var oldIds = {};
+      for (i = 0; i < s.audioTracks.numTracks; i++) {
+        candidate = s.audioTracks[i];
+        oldIds["t:" + String(candidate.id)] = true;
+        if (!candidate.isLocked() && candidate.clips.numItems === 0) {
+          if (String(candidate.name) === "Music") {
+            track = candidate;
+            break;
+          }
+          if (!spare && /^Audio \d+$/.test(String(candidate.name))) spare = candidate;
+        }
+      }
+      if (!track) track = spare;
+      if (!track) {
+        var beforeCount = s.audioTracks.numTracks;
+        app.enableQE();
+        if (typeof qe === "undefined" || !qe.project.getActiveSequence())
+          failure("No empty audio track. Add an empty Music track in Premiere.");
+        // QE is undocumented. Identify the new track by stable ID, never an assumed index.
+        qe.project.getActiveSequence().addTracks(0, 0, 1);
+        if (s.audioTracks.numTracks !== beforeCount + 1)
+          failure(
+            "Premiere could not create exactly one audio track. Undo and add an empty Music track manually."
+          );
+        for (i = 0; i < s.audioTracks.numTracks; i++) {
+          candidate = s.audioTracks[i];
+          if (
+            !oldIds["t:" + String(candidate.id)] &&
+            !candidate.isLocked() &&
+            candidate.clips.numItems === 0
+          )
+            track = candidate;
+        }
+        if (!track) failure("Could not identify the new Music track safely.");
+      }
+      track.name = "Music";
+      bin = p.rootItem.createBin("Music");
+      if (!bin) failure("Could not create the Music bin.");
+      for (i = 0; i < cues.length; i++) {
+        c = cues[i];
+        if (p.importFiles([c.track], true, bin, false) !== true)
+          failure("Could not import music: " + c.track);
+        var item = null;
+        for (j = 0; j < bin.children.numItems; j++) {
+          var child = bin.children[j];
+          if (
+            child.getMediaPath &&
+            String(child.getMediaPath()).toLowerCase().replace(/\\/g, "/") ===
+              c.track.toLowerCase().replace(/\\/g, "/")
+          )
+            item = child;
+        }
+        if (!item) failure("Imported music was not found in its bin.");
+        var oldIn = item.getInPoint(2);
+        var oldOut = item.getOutPoint(2);
+        if (c.sourceOffset + c.end - c.start > Number(oldOut.seconds) + 0.001)
+          failure("The music source is shorter than its planned range.");
+        try {
+          item.setInPoint(c.sourceOffset, 2);
+          item.setOutPoint(c.sourceOffset + c.end - c.start, 2);
+          // overwriteClip acts on this empty dedicated audio track only; no ripple.
+          track.overwriteClip(item, String(c.start));
+        } finally {
+          item.setInPoint(oldIn.seconds, 2);
+          item.setOutPoint(oldOut.seconds, 2);
+        }
+        var clip = null;
+        for (j = 0; j < track.clips.numItems; j++)
+          if (
+            String(track.clips[j].projectItem.nodeId) === String(item.nodeId) &&
+            Math.abs(track.clips[j].start.seconds - c.start) < 0.02
+          )
+            clip = track.clips[j];
+        if (
+          !clip ||
+          Math.abs(clip.end.seconds - c.end) > 0.05 ||
+          Math.abs(clip.inPoint.seconds - c.sourceOffset) > 0.02
+        )
+          failure("Premiere did not place the expected music range.");
+        var level = null;
+        for (j = 0; j < clip.components.numItems; j++) {
+          var component = clip.components[j];
+          if (
+            component.matchName === "AE.ADBE Volume" ||
+            component.matchName === "ADBE Volume" ||
+            component.matchName === "audioVolume" ||
+            component.displayName === "Volume"
+          ) {
+            for (k = 0; k < component.properties.numItems; k++) {
+              var property = component.properties[k];
+              if (property.displayName === "Level" || property.matchName === "ADBE Volume-0001")
+                level = property;
+            }
+          }
+        }
+        if (!level || !level.areKeyframesSupported())
+          failure(
+            "The audio Volume / Level keyframe API is unavailable on this Premiere build or locale."
+          );
+        // Level is normalized: displayed 0 dB = 10^(-15/20). Values in the plan are linear gain.
+        // https://ppro-scripting.docsforadobe.dev/sequence/componentparam/
+        checked(level.setTimeVarying(true), "volume automation");
+        for (k = 0; k < c.keys.length; k++) {
+          key = c.keys[k];
+          var at = time(c.sourceOffset + key.time);
+          checked(level.addKey(at), "a volume keyframe");
+          checked(
+            level.setValueAtKey(at, key.value * Math.pow(10, -15 / 20), k === c.keys.length - 1),
+            "a keyframe level"
+          );
+          checked(level.setInterpolationTypeAtKey(at, 0, false), "linear volume interpolation");
+        }
+      }
+      current = timeline(
+        "snapshot",
+        false,
+        request.sequenceId,
+        "",
+        "",
+        0,
+        null,
+        null,
+        true,
+        "music"
+      );
+      if (!current.ok) failure("Could not verify the completed music timeline.");
+      return response("applied", current.signature);
+    } catch (error) {
+      if (checkpoint) {
+        var after = timeline(
+          "snapshot",
+          false,
+          request.sequenceId,
+          "",
+          "",
+          0,
+          null,
+          null,
+          true,
+          "music"
+        );
+        return response("partial", after.ok ? after.signature : "", String(error).slice(0, 800));
+      }
+      return "axis:error|" + encodeURIComponent(String(error).slice(0, 800));
+    }
+  }
+  var musicBusy = false;
+  function musicMessage(data, origin) {
+    if (data.type !== "premiere.music.request") return;
+    if (typeof data.requestId !== "string" || data.requestId.length > 128) return;
+    function reply(result) {
+      if (backendOrigin === origin && frame.contentWindow)
+        frame.contentWindow.postMessage(
+          Object.assign({ type: "premiere.music", protocol: 1, requestId: data.requestId }, result),
+          origin
+        );
+    }
+    if (musicBusy) return reply({ ok: false, error: "A music operation is running." });
+    if (!window.__adobe_cep__)
+      return reply({ ok: false, error: "Premiere scripting is unavailable." });
+    musicBusy = true;
+    function done(result) {
+      musicBusy = false;
+      reply(result);
+    }
+    if (data.action === "index" || data.action === "audition") {
+      try {
+        nodeRequire(nodeRequire("path").join(extensionDirectory, "music-library.cjs"))
+          .operation(data, extensionDirectory)
+          .then(done, function (error) {
+            done({ ok: false, error: String(error.message).slice(0, 1024) });
+          });
+      } catch (error) {
+        done({ ok: false, error: String(error.message).slice(0, 1024) });
+      }
+      return;
+    }
+    if (data.action === "pick") {
+      window.__adobe_cep__.evalScript(
+        "(function(){var f=Folder.selectDialog('Choose music library');return f?encodeURIComponent(f.fsName):'';})()",
+        function (raw) {
+          try {
+            done({ ok: true, root: decodeURIComponent(raw || "") });
+          } catch (error) {
+            done({ ok: false, error: String(error.message).slice(0, 1024) });
+          }
+        }
+      );
+      return;
+    }
+    if (data.action !== "apply" && data.action !== "undo")
+      return done({ ok: false, error: "Invalid music action." });
+    try {
+      var encoded = JSON.stringify(data);
+      if (encoded.length > 4000000) throw new Error("Music plan is too large.");
+      encoded = encoded.replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
+      window.__adobe_cep__.evalScript("(" + musicScript() + ")(" + encoded + ")", function (raw) {
+        try {
+          var fields = String(raw).split("|").map(decodeURIComponent);
+          if (fields[0] !== "axis:music")
+            return done({
+              ok: false,
+              error: fields[1] || "Music scripting failed. Inspect the timeline before retrying."
+            });
+          done({
+            ok: true,
+            status: fields[1],
+            checkpointId: fields[2],
+            checkpointSignature: fields[3],
+            expectedSignature: fields[4],
+            message: fields[5],
+            sequenceId: fields[6]
+          });
+        } catch (error) {
+          done({ ok: false, error: String(error.message).slice(0, 1024) });
+        }
+      });
+    } catch (error) {
+      done({ ok: false, error: String(error.message).slice(0, 1024) });
+    }
+  }
+
   var captionsBusy = false;
   function captionsMessage(data, origin) {
     if (data.type !== "premiere.captions.request") return;
@@ -1023,6 +1429,7 @@
     )
       return;
     captionsMessage(event.data, event.origin);
+    musicMessage(event.data, event.origin);
     if (event.data.type === "premiere.transcript.load.request") {
       var transcriptRequest = event.data;
       if (

@@ -3,6 +3,7 @@ import { isPremierePanel, seekPremiere, type PremiereContext } from "./host";
 import { parseClipIndex, type TimelineClip } from "./clipLinks";
 import type { MarkerSuggestion } from "./suggestionBlocks";
 import type { CleanupSettings } from "./transcriptCleanup";
+import type { MusicPlan } from "./music";
 
 let nextRequestId = 0;
 
@@ -26,6 +27,7 @@ export function requestTimelineAction(
     | "premiere.select"
     | "premiere.markers.add"
     | "premiere.captions.request"
+    | "premiere.music.request"
     | "premiere.transcript.load.request"
     | "premiere.diagnostics.request",
   payload: object,
@@ -64,11 +66,13 @@ export function requestTimelineAction(
     const timeout = setTimeout(
       () => finish("Premiere did not respond. Check the timeline before trying again.", {}),
       // Native caption import and Save dialogs can remain open for a while.
-      type === "premiere.captions.request"
-        ? 120000
-        : type === "premiere.diagnostics.request"
-          ? 35000
-          : 10000,
+      type === "premiere.music.request"
+        ? 660000
+        : type === "premiere.captions.request"
+          ? 120000
+          : type === "premiere.diagnostics.request"
+            ? 35000
+            : 10000,
     );
     window.addEventListener("message", receive);
     try {
@@ -80,6 +84,7 @@ export function requestTimelineAction(
 }
 
 export interface TimelineActions {
+  readonly reviewMusic?: (plan: MusicPlan) => void;
   readonly reviewCleanup?: (settings: CleanupSettings) => void;
   readonly sequenceId: string;
   readonly fps: number;

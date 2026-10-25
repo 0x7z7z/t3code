@@ -33,6 +33,8 @@ import {
 } from "./transcriptSync";
 import { usePlayheadClock } from "./usePlayheadClock";
 import { CaptionsPanel } from "./CaptionsPanel";
+import { MusicPanel, type MusicAudioAttachment } from "./MusicPanel";
+import type { MusicPlan } from "./music";
 import { CleanupReview } from "./CleanupReview";
 import {
   defaultCleanupSettings,
@@ -265,6 +267,8 @@ export function TranscriptView({
   agentOutcome = null,
   active = true,
   cleanupRequest,
+  musicRequest,
+  onDescribeMusic,
 }: {
   context: PremiereContext;
   disabled: boolean;
@@ -277,6 +281,8 @@ export function TranscriptView({
   /** The tab is visible; only then does the view follow the playhead and timeline. */
   active?: boolean;
   cleanupRequest?: { settings: CleanupSettings } | null;
+  musicRequest?: { plan: MusicPlan } | null;
+  onDescribeMusic?: ((prompt: string, audio: MusicAudioAttachment[]) => Promise<void>) | undefined;
 }) {
   const key = transcriptStorageKey(context);
   const [stored, setStored] = useState(() => readStored(key));
@@ -290,6 +296,7 @@ export function TranscriptView({
   const [fixScript, setFixScript] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [captionsOpen, setCaptionsOpen] = useState(false);
+  const [musicOpen, setMusicOpen] = useState(false);
   const [cleanup, setCleanup] = useState<{ signature: string } | null>(null);
   const [cleanupSettings, setCleanupSettings] = useState(defaultCleanupSettings);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
@@ -689,6 +696,8 @@ export function TranscriptView({
     }
     setMenuOpen(false);
     operation.current = true;
+    setMusicOpen(false);
+    setCaptionsOpen(false);
     setBusy(true);
     setError(null);
     try {
@@ -724,6 +733,15 @@ export function TranscriptView({
     // oxlint-disable-next-line react/set-state-in-effect -- A suggestion starts a Premiere snapshot request, which must mark the view busy before awaiting the host.
     if (cleanupRequest) requestedCleanup(cleanupRequest.settings);
   }, [cleanupRequest]);
+  const requestedMusic = useEffectEvent(() => {
+    setMusicOpen(true);
+    setCaptionsOpen(false);
+    setCleanup(null);
+  });
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- A new agent suggestion opens its review UI.
+    if (musicRequest) requestedMusic();
+  }, [musicRequest]);
 
   function toggleCleanup(id: string) {
     const cut = cleanupCuts.find((candidate) => candidate.id === id);
@@ -1007,10 +1025,23 @@ export function TranscriptView({
                       onClick={() => {
                         setMenuOpen(false);
                         setCleanup(null);
+                        setMusicOpen(false);
                         setCaptionsOpen(true);
                       }}
                     >
                       Captions
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || !words.length}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setCaptionsOpen(false);
+                        setCleanup(null);
+                        setMusicOpen(true);
+                      }}
+                    >
+                      Music
                     </button>
                     <button type="button" disabled={busy} onClick={() => input.current?.click()}>
                       Replace transcript
@@ -1105,6 +1136,28 @@ export function TranscriptView({
             ) : null}
           </div>
         </header>
+      ) : null}
+      {doc && musicOpen ? (
+        <MusicPanel
+          key={`${key}:music`}
+          context={context}
+          words={words}
+          disabled={disabled || busy || stored.uncertain}
+          onBusy={(value) => {
+            setBusy(value);
+            onBusy(value);
+          }}
+          onClose={() => setMusicOpen(false)}
+          onAsk={onAsk}
+          initialPlan={musicRequest?.plan}
+          onDescribe={onDescribeMusic}
+          onRestored={(sequenceId) => {
+            localStorage.setItem(
+              transcriptStorageKey(context, sequenceId),
+              JSON.stringify({ ...storedRef.current, undo: null }),
+            );
+          }}
+        />
       ) : null}
       {doc && captionsOpen ? (
         <CaptionsPanel
