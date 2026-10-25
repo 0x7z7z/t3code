@@ -86,6 +86,7 @@ export function useTimelineClips(context: PremiereContext | null): readonly Time
     null,
   );
   const sequenceId = context?.sequenceId ?? "";
+  const projectId = context?.projectDocumentId || context?.projectPath || "";
   const scope = JSON.stringify([context?.projectPath, context?.projectDocumentId, sequenceId]);
   useEffect(() => {
     if (!sequenceId || !isPremierePanel()) return;
@@ -95,7 +96,10 @@ export function useTimelineClips(context: PremiereContext | null): readonly Time
       if (reading) return;
       reading = true;
       try {
-        const packet = await requestTimelineAction("premiere.clips.request", { sequenceId });
+        const packet = await requestTimelineAction("premiere.clips.request", {
+          sequenceId,
+          projectId,
+        });
         if (
           disposed ||
           !("sequenceId" in packet) ||
@@ -117,7 +121,7 @@ export function useTimelineClips(context: PremiereContext | null): readonly Time
       disposed = true;
       clearInterval(timer);
     };
-  }, [sequenceId, scope]);
+  }, [sequenceId, projectId, scope]);
   return index?.scope === scope ? index.clips : [];
 }
 
@@ -128,6 +132,7 @@ export function createTimelineActions(
 ): TimelineActions | undefined {
   if (!context) return undefined;
   const sequenceId = context.sequenceId;
+  const projectId = context.projectDocumentId || context.projectPath;
   return {
     sequenceId,
     fps: context.fps,
@@ -136,6 +141,7 @@ export function createTimelineActions(
     select: async (clip) => {
       await requestTimelineAction("premiere.select", {
         sequenceId,
+        projectId,
         nodeId: clip.nodeId,
         trackType: clip.trackType,
         trackIndex: clip.trackIndex,
@@ -144,7 +150,7 @@ export function createTimelineActions(
     },
     addMarkers: async (markers) => {
       if (!canOperate) throw new Error("This connection does not have editing permission.");
-      await requestTimelineAction("premiere.markers.add", { sequenceId, markers });
+      await requestTimelineAction("premiere.markers.add", { sequenceId, projectId, markers });
     },
     seek: (seconds) => {
       seekPremiere(seconds, sequenceId);

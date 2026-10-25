@@ -561,6 +561,29 @@ function runTimeline(fixture, context) {
   return raw;
 }
 
+test("rejects timeline actions after switching to a project with the same sequence ID", async () => {
+  for (const action of [
+    { type: "premiere.clips.request" },
+    { type: "premiere.select", nodeId: "video-1" },
+    { type: "premiere.markers.add", markers: [{ time: 1, name: "Beat" }] },
+  ]) {
+    const f = await panelFixture();
+    const host = timelineFixture();
+    host.app.project.documentID = "other-project";
+    f.send({
+      ...action,
+      requestId: "project-race",
+      sequenceId: "seq-1",
+      projectId: "original-project",
+    });
+    runTimeline(f, host);
+    assert.equal(f.messages.at(-1).packet.ok, false);
+    assert.match(f.messages.at(-1).packet.error, /project changed/i);
+    assert.equal(host.calls.length, 0);
+    assert.equal(host.created.length, 0);
+  }
+});
+
 test("publishes a bounded clip index without native JSON and preserves encoded names", async () => {
   const fixture = await panelFixture();
   fixture.send({ type: "premiere.clips.request", requestId: "clips", sequenceId: "seq-1" });

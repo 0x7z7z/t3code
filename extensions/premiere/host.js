@@ -450,11 +450,13 @@
 
   // These functions are serialized into ExtendScript. No native JSON is required there.
   // prettier-ignore
-  function timelineClips(sequenceId) {
+  function timelineClips(request) {
     try {
       var s = app.project && app.project.activeSequence;
-      if (!s || String(s.sequenceID) !== sequenceId)
+      if (!s || String(s.sequenceID) !== request.sequenceId)
         return "axis:error|Sequence changed. Refresh the timeline.";
+      if (request.projectId && String(app.project.documentID || app.project.path) !== request.projectId)
+        return "axis:error|Project changed. Refresh the timeline.";
       var rows = [];
       var groups = [s.videoTracks, s.audioTracks];
       for (var g = 0; g < groups.length; g++) {
@@ -489,6 +491,8 @@
       var s = app.project && app.project.activeSequence;
       if (!s || String(s.sequenceID) !== request.sequenceId)
         return "axis:error|Sequence changed. Refresh the timeline.";
+      if (request.projectId && String(app.project.documentID || app.project.path) !== request.projectId)
+        return "axis:error|Project changed. Refresh the timeline.";
       var target = null;
       var groups = [s.videoTracks, s.audioTracks];
       for (var g = 0; g < groups.length && !target; g++) {
@@ -532,6 +536,8 @@
       var s = app.project && app.project.activeSequence;
       if (!s || String(s.sequenceID) !== request.sequenceId)
         return "axis:error|Sequence changed. Refresh the timeline.";
+      if (request.projectId && String(app.project.documentID || app.project.path) !== request.projectId)
+        return "axis:error|Project changed. Refresh the timeline.";
       markers = s.markers;
       if (!markers || typeof markers.createMarker !== "function")
         return "axis:error|Sequence markers are unavailable.";
@@ -609,8 +615,10 @@
       return typeof value === "number" && isFinite(value) && value >= 0 && value <= 8640000;
     }
     if (!text(data.sequenceId, 32768)) return reply({ ok: false, error: "Invalid sequence ID." });
+    if (data.projectId !== undefined && !text(data.projectId, 32768))
+      return reply({ ok: false, error: "Invalid project ID." });
     var operation = timelineClips;
-    var argument = data.sequenceId;
+    var argument = { sequenceId: data.sequenceId, projectId: data.projectId };
     if (data.type === "premiere.select") {
       if (
         !(
@@ -626,9 +634,10 @@
         return reply({ ok: false, error: "Invalid clip selection." });
       operation = timelineSelect;
       argument = text(data.nodeId, 512)
-        ? { sequenceId: data.sequenceId, nodeId: data.nodeId }
+        ? { sequenceId: data.sequenceId, projectId: data.projectId, nodeId: data.nodeId }
         : {
             sequenceId: data.sequenceId,
+            projectId: data.projectId,
             trackType: data.trackType,
             trackIndex: data.trackIndex,
             start: data.start,
@@ -658,6 +667,7 @@
       operation = timelineMarkers;
       argument = {
         sequenceId: data.sequenceId,
+        projectId: data.projectId,
         markers: data.markers.map(function (row) {
           return {
             time: row.time,

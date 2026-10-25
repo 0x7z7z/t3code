@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vite-plus/test";
-import { requestTimelineAction } from "./interactiveHost";
+import { createTimelineActions, requestTimelineAction } from "./interactiveHost";
 
 function bridge() {
   const parent = { postMessage: vi.fn() };
@@ -25,6 +25,37 @@ function bridge() {
     },
   };
 }
+
+it("binds clip selection and marker writes to the project that created the action", async () => {
+  using host = bridge();
+  const actions = createTimelineActions(
+    {
+      projectName: "Project",
+      projectPath: "D:/cut.prproj",
+      projectDocumentId: "project-a",
+      sequenceName: "Main",
+      sequenceId: "seq",
+      fps: 25,
+      playheadSeconds: 0,
+    },
+    [],
+    true,
+  )!;
+  const clip = {
+    name: "Shot",
+    nodeId: "clip",
+    trackType: "V" as const,
+    trackIndex: 0,
+    start: 1,
+    end: 2,
+  };
+  for (const pending of [actions.select(clip), actions.addMarkers([{ time: 1, name: "Beat" }])]) {
+    const packet = host.parent.postMessage.mock.calls.shift()![0];
+    expect(packet.projectId).toBe("project-a");
+    host.reply({ type: packet.type, requestId: packet.requestId, ok: true });
+    await pending;
+  }
+});
 
 it("correlates simultaneous timeline requests and rejects untrusted or malformed responses", async () => {
   using host = bridge();
