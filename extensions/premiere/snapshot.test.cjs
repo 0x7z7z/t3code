@@ -274,7 +274,13 @@ for (const change of ["source", "speed", "reverse"]) {
     if (change === "source") f.clip.projectItem = { name: "Source", nodeId: "source-b" };
     if (change === "speed") speed = 2;
     if (change === "reverse") reverse = true;
-    const restored = f.run("restore", checkpoint.checkpointSignature, "sequence-a", "checkpoint-a", after.signature);
+    const restored = f.run(
+      "restore",
+      checkpoint.checkpointSignature,
+      "sequence-a",
+      "checkpoint-a",
+      after.signature,
+    );
     assert.equal(restored.ok, false, change);
     assert.match(restored.error, /timeline changed/, change);
     assert.equal(f.project.activeSequence, f.original);
@@ -328,19 +334,31 @@ test("failed restore rolls back both bin moves and names before reopening the or
   const saved = f.project.sequences[1];
   const savedName = saved.name;
   const home = { name: "Edits", type: 2, children: { numItems: 1, 0: f.original.projectItem } };
-  const checkpoints = { name: "Axis checkpoints", type: 2, children: { numItems: 1, 0: saved.projectItem } };
+  const checkpoints = {
+    name: "Axis checkpoints",
+    type: 2,
+    children: { numItems: 1, 0: saved.projectItem },
+  };
   f.original.projectItem.nodeId = "original-item";
   saved.projectItem.nodeId = "saved-item";
   f.project.rootItem.children = { numItems: 2, 0: home, 1: checkpoints };
   let originalBin = home;
   let savedBin = checkpoints;
-  f.original.projectItem.moveBin = (value) => { originalBin = value; };
+  f.original.projectItem.moveBin = (value) => {
+    originalBin = value;
+  };
   saved.projectItem.moveBin = (value) => {
     savedBin = value;
     if (value === home) throw new Error("checkpoint bin move failed");
   };
   const after = f.run();
-  const result = f.run("restore", checkpoint.checkpointSignature, "sequence-a", "checkpoint-a", after.signature);
+  const result = f.run(
+    "restore",
+    checkpoint.checkpointSignature,
+    "sequence-a",
+    "checkpoint-a",
+    after.signature,
+  );
   assert.match(result.error, /checkpoint bin move failed/);
   assert.equal(originalBin, home);
   assert.equal(savedBin, checkpoints);
@@ -354,10 +372,60 @@ test("a silently refused bin move cannot report a successful restore", () => {
   const checkpoint = f.run("snapshot", true);
   const after = f.run();
   f.original.projectItem.moveBin = () => false;
-  const result = f.run("restore", checkpoint.checkpointSignature, "sequence-a", "checkpoint-a", after.signature);
+  const result = f.run(
+    "restore",
+    checkpoint.checkpointSignature,
+    "sequence-a",
+    "checkpoint-a",
+    after.signature,
+  );
   assert.equal(result.ok, false);
   assert.match(result.error, /move/);
   assert.equal(f.project.activeSequence, f.original);
+});
+
+test("refuses a checkpoint swap when the edited sequence is nested in another sequence", () => {
+  const f = fixture();
+  f.original.projectItem.nodeId = "main-sequence-item";
+  const checkpoint = f.run("snapshot", true);
+  f.project.sequences[f.project.sequences.numSequences++] = {
+    sequenceID: "parent-sequence",
+    videoTracks: {
+      numTracks: 1,
+      0: { clips: { numItems: 1, 0: { projectItem: f.original.projectItem } } },
+    },
+    audioTracks: { numTracks: 0 },
+  };
+  const after = f.run();
+  const movesBefore = f.moves.length;
+  const result = f.run(
+    "restore",
+    checkpoint.checkpointSignature,
+    "sequence-a",
+    "checkpoint-a",
+    after.signature,
+  );
+  assert.equal(result.ok, false);
+  assert.match(result.error, /nested/);
+  assert.equal(f.project.activeSequence, f.original);
+  assert.equal(f.moves.length, movesBefore);
+});
+
+test("refuses a checkpoint for a nested sequence before dispatching an edit", () => {
+  const f = fixture();
+  f.original.projectItem.nodeId = "nested-item";
+  f.project.sequences[f.project.sequences.numSequences++] = {
+    sequenceID: "parent",
+    videoTracks: { numTracks: 0 },
+    audioTracks: {
+      numTracks: 1,
+      0: { clips: { numItems: 1, 0: { projectItem: { nodeId: "nested-item" } } } },
+    },
+  };
+  const result = f.run("snapshot", true);
+  assert.equal(result.checkpointId, null);
+  assert.match(result.checkpointError, /nested/);
+  assert.equal(f.project.sequences.numSequences, 2);
 });
 
 test("validates message arguments and parses malformed ExtendScript replies defensively", () => {
