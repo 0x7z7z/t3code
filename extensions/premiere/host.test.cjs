@@ -133,6 +133,16 @@ function musicHost() {
     isLocked: () => false,
     clips: { numItems: 0 },
     overwriteClip(item, start) {
+      const fps = 254016000000 / Number(sequence.timebase) || 30;
+      const duration = Math.floor((item.out - item.in) * fps + 0.000001) / fps;
+      for (let i = 0; i < this.clips.numItems; i++) {
+        const previous = this.clips[i];
+        if (previous.start.seconds < Number(start) && previous.end.seconds > Number(start)) {
+          previous.end.seconds = Number(start);
+          previous.outPoint.seconds =
+            previous.inPoint.seconds + Number(start) - previous.start.seconds;
+        }
+      }
       const level = {
         displayName: "Level",
         areKeyframesSupported: () => true,
@@ -149,12 +159,25 @@ function musicHost() {
       };
       this.clips[this.clips.numItems++] = {
         name: "Music",
-        nodeId: "music-clip",
+        nodeId: "music-clip-" + host.imports.length,
         projectItem: item,
         start: { seconds: Number(start) },
-        end: { seconds: Number(start) + item.out - item.in },
+        end: { seconds: Number(start) + duration },
         inPoint: { seconds: item.in },
         outPoint: { seconds: item.out },
+        remove() {
+          const collection = sequence.audioTracks[2].clips;
+          const entries = Array.from(
+            { length: collection.numItems },
+            (_, i) => collection[i],
+          ).filter((c) => c !== this);
+          for (let i = 0; i < collection.numItems; i++) delete collection[i];
+          collection.numItems = entries.length;
+          entries.forEach((c, i) => {
+            collection[i] = c;
+          });
+          return 0;
+        },
         components: {
           0: { displayName: "Volume", properties: { 0: level, numItems: 1 } },
           numItems: 1,
@@ -180,10 +203,17 @@ function musicHost() {
     },
     numItems: 1,
   };
+  sequence.audioTracks[1].clips = {
+    0: { ...sequence.audioTracks[0].clips[0], nodeId: "sfx" },
+    numItems: 1,
+  };
   sequence.clone = function () {
     const clone = {
       ...this,
-      sequenceID: "checkpoint-a",
+      sequenceID:
+        host.project.sequences.numSequences === 1
+          ? "checkpoint-a"
+          : "checkpoint-" + host.project.sequences.numSequences,
       projectItem: { nodeId: "checkpoint-item", moveBin() {} },
       audioTracks: { ...this.audioTracks },
     };
@@ -211,8 +241,16 @@ function musicHost() {
         marks.push(n);
       },
       setOutPoint(n) {
-        this.out = n;
+        this.out = host.sampleSnap ? Math.round(n * 48000) / 48000 : n;
         marks.push(n);
+      },
+      clearInPoint() {
+        this.in = 0;
+        marks.push(0);
+      },
+      clearOutPoint() {
+        this.out = 120;
+        marks.push(120);
       },
     };
     bin.children[bin.children.numItems++] = item;
@@ -237,7 +275,7 @@ function musicHost() {
       }),
     },
   };
-  return { ...host, writes, marks, sequence };
+  return Object.assign(host, { writes, marks, sequence });
 }
 function musicRequest(signature, extra = {}) {
   return {
@@ -291,7 +329,9 @@ test("music apply is ES3, uses source offsets and normalized Level keys, preserv
   assert.equal(host.sequence.audioTracks[2].clips[0].inPoint.seconds, 12);
   assert.equal(host.writes[1].time, 13);
   assert.ok(Math.abs(host.writes[1].value - 0.1 * Math.pow(10, -15 / 20)) < 1e-10);
-  assert.deepEqual(host.marks, [12, 32, 0, 120]);
+  assert.equal(host.marks[0], 12);
+  assert.ok(Math.abs(host.marks[1] - 32) < 1 / 30);
+  assert.deepEqual(host.marks.slice(2), [0, 120]);
   const undone = runMusic(
     panel,
     host,
@@ -306,15 +346,15 @@ test("music apply is ES3, uses source offsets and normalized Level keys, preserv
   assert.equal(host.project.activeSequence.audioTracks[2].clips.numItems, 0);
   assert.equal(host.project.sequences[0].audioTracks[2].clips.numItems, 1);
 });
-test("music identifies a QE-created track by ID even when Premiere prepends it", async () => {
+test("music refuses a full timeline without creating tracks or overwriting media", async () => {
   const panel = await panelFixture();
   const host = musicHost();
   host.sequence.audioTracks.numTracks = 2;
   const result = runMusic(panel, host, musicRequest(musicSignature(panel, host)));
-  assert.equal(result.status, "applied");
-  assert.equal(host.sequence.audioTracks[0].id, "new");
-  assert.equal(host.sequence.audioTracks[1].id, "voice");
-  assert.equal(host.sequence.audioTracks[2].id, "fx");
+  assert.equal(result.ok, false);
+  assert.match(result.error, /empty audio track/);
+  assert.equal(host.imports.length, 0);
+  assert.equal(host.project.sequences.numSequences, 1);
 });
 test("music refuses stale previews, unconfirmed requests and malformed keyframes before mutations", async () => {
   const panel = await panelFixture();
@@ -1455,4 +1495,300 @@ test("agent command bridge can call the same registered captions operation", asy
   const refused = globals.axisCaptionOperation({ ...captionRequest(), id: "../bad" });
   assert.match(decodeURIComponent(refused), /Invalid captions request/);
   assert.equal(host.placements.length, 1);
+});
+
+test("music reuses the populated library track, fills only gaps and rejects overlap before checkpointing", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const first = runMusic(panel, host, musicRequest(musicSignature(panel, host)));
+  assert.equal(first.status, "applied");
+  host.sequence.audioTracks[2].name = "Audio 5";
+  // An earlier empty track must not win over a populated library music track.
+  host.sequence.audioTracks[1].clips = { numItems: 0 };
+  const cue = { ...musicRequest("").cues[0], track: "D:/Music/other.wav", start: 30, end: 50 };
+  const before = musicSignature(panel, host);
+  const result = runMusic(
+    panel,
+    host,
+    musicRequest(before, {
+      cues: [cue],
+      libraryPaths: ["D:/Music/test.wav", cue.track],
+      targetTrackIndex: 2,
+    }),
+  );
+  assert.equal(result.status, "applied", JSON.stringify(result));
+  assert.equal(host.sequence.audioTracks[2].name, "Audio 5");
+  assert.equal(host.sequence.audioTracks[2].clips.numItems, 2);
+  assert.equal(host.sequence.audioTracks[1].clips.numItems, 0);
+  const clones = host.project.sequences.numSequences;
+  const refused = runMusic(
+    panel,
+    host,
+    musicRequest(musicSignature(panel, host), { libraryPaths: ["D:/Music/test.wav"] }),
+  );
+  assert.equal(refused.ok, false);
+  assert.match(refused.error, /overwrite/);
+  assert.equal(host.project.sequences.numSequences, clones);
+});
+
+test("music permits the same song in separated gaps around a different existing song", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const first = runMusic(
+    panel,
+    host,
+    musicRequest(musicSignature(panel, host), {
+      cues: [{ ...musicRequest("").cues[0], track: "D:/Music/existing.wav", start: 20, end: 40 }],
+    }),
+  );
+  assert.equal(first.status, "applied");
+  const template = musicRequest("").cues[0];
+  const result = runMusic(
+    panel,
+    host,
+    musicRequest(first.expectedSignature, {
+      libraryPaths: ["D:/Music/existing.wav", template.track],
+      cues: [
+        { ...template, start: 0, end: 20 },
+        { ...template, start: 40, end: 60 },
+      ],
+    }),
+  );
+  assert.equal(result.status, "applied", JSON.stringify(result));
+  assert.equal(host.sequence.audioTracks[2].clips.numItems, 3);
+});
+
+test("music adds QE Constant Power joins and retains only the outer Volume fades", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const transitions = [];
+  host.sequence.timebase = 254016000000 / 30;
+  host.context.qe.project.getAudioTransitionByName = (name) => ({ name });
+  host.context.qe.project.getActiveSequence = () => ({
+    getAudioTrackAt: (index) => {
+      assert.equal(index, 2);
+      return {
+        numItems: 3,
+        getItemAt: (i) =>
+          i === 0
+            ? { type: "Empty" }
+            : {
+                type: "Clip",
+                start: { secs: i === 1 ? 0 : 20 },
+                addTransition(...args) {
+                  transitions.push(args);
+                  return true;
+                },
+              },
+      };
+    },
+  });
+  const cues = ["a", "b"].map((id, i) => ({
+    track: `D:/Music/${id}.wav`,
+    start: i * 20,
+    end: (i + 1) * 20,
+    sourceOffset: 0,
+    baseDb: -30,
+    fadeIn: 0.75,
+    fadeOut: 0.75,
+    keys: [
+      { time: 0, value: 0 },
+      { time: 0.75, value: 0.0316227766 },
+      { time: 19.25, value: 0.0316227766 },
+      { time: 20, value: 0 },
+    ],
+  }));
+  const result = runMusic(
+    panel,
+    host,
+    musicRequest(musicSignature(panel, host), { cues, crossfade: 1.5 }),
+  );
+  assert.equal(result.status, "applied");
+  assert.equal(transitions.length, 1);
+  assert.deepEqual(transitions[0].slice(0, 3), [{ name: "Constant Power" }, false, "0:00:01:15"]);
+  assert.ok(host.writes[3].value > 0);
+  assert.ok(host.writes[4].value > 0);
+  assert.equal(host.writes.at(-1).value, 0);
+});
+
+test("music falls back to source-time Volume fades when QE is absent, rejects, or throws", async () => {
+  for (const response of [undefined, false, "throw"]) {
+    const panel = await panelFixture();
+    const host = musicHost();
+    if (response === undefined) delete host.context.qe;
+    else
+      host.context.qe.project.getActiveSequence = () => {
+        if (response === "throw") throw new Error("QE unavailable");
+        return null;
+      };
+    const result = runMusic(
+      panel,
+      host,
+      musicRequest(musicSignature(panel, host), { crossfade: 1.5 }),
+    );
+    assert.equal(result.status, "applied");
+    assert.equal(host.writes[0].time, 12);
+    assert.equal(host.writes[0].value, 0);
+    assert.equal(host.writes.at(-1).value, 0);
+  }
+});
+
+test("music swap replaces only the identified clip and Undo all retains the original checkpoint", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const applied = runMusic(panel, host, musicRequest(musicSignature(panel, host)));
+  const original = host.sequence.audioTracks[2].clips[0];
+  const swapped = runMusic(
+    panel,
+    host,
+    musicRequest(applied.expectedSignature, {
+      action: "swap",
+      checkpointId: applied.checkpointId,
+      checkpointSignature: applied.checkpointSignature,
+      libraryPaths: ["D:/Music/test.wav", "D:/Music/new.wav"],
+      targetTrackIndex: 2,
+      replace: { nodeId: original.nodeId, track: "D:/Music/test.wav", start: 10, end: 30 },
+      cues: [{ ...musicRequest("").cues[0], track: "D:/Music/new.wav" }],
+    }),
+  );
+  assert.equal(swapped.status, "applied", JSON.stringify(swapped));
+  assert.equal(swapped.checkpointId, applied.checkpointId);
+  assert.equal(host.project.sequences.numSequences, 2);
+  assert.equal(host.sequence.audioTracks[2].clips.numItems, 1);
+  assert.equal(
+    host.sequence.audioTracks[2].clips[0].projectItem.getMediaPath(),
+    "D:/Music/new.wav",
+  );
+  const undone = runMusic(
+    panel,
+    host,
+    musicRequest("", {
+      ...swapped,
+      action: "undo",
+      type: "premiere.music.request",
+      sequenceId: "sequence-a",
+    }),
+  );
+  assert.equal(undone.status, "undone");
+  assert.equal(host.project.activeSequence.audioTracks[2].clips.numItems, 0);
+});
+
+test("music refuses adjacent repeats, duplicate-review files and changed swap identities without mutation", async () => {
+  for (const bad of ["D:/Music/00. duplicate copies - review/copy.wav", "D:/Music/test.wav"]) {
+    const panel = await panelFixture();
+    const host = musicHost();
+    const first = musicRequest("").cues[0];
+    const cues = bad.includes("duplicate")
+      ? [{ ...first, track: bad }]
+      : [first, { ...first, start: 30, end: 50 }];
+    const result = runMusic(panel, host, musicRequest(musicSignature(panel, host), { cues }));
+    assert.equal(result.ok, false);
+    assert.equal(host.imports.length, 0);
+  }
+});
+
+test("music floors sample-snapped sources to 60fps, fills joins and stops exactly before existing music", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  host.sequence.timebase = 254016000000 / 60;
+  // The fixture emulates 26.x audio-sample readback and frame-flooring overwrite.
+  host.sampleSnap = true;
+  const occupied = {
+    ...host.sequence.audioTracks[0].clips[0],
+    nodeId: "existing-music",
+    projectItem: {
+      name: "existing.wav",
+      nodeId: "existing-item",
+      getMediaPath: () => "D:/Music/existing.wav",
+    },
+    start: { seconds: 40 },
+    end: { seconds: 60 },
+    inPoint: { seconds: 0 },
+    outPoint: { seconds: 20 },
+  };
+  host.sequence.audioTracks[2].clips = { 0: occupied, numItems: 1 };
+  const template = musicRequest("").cues[0];
+  const cut = 20 + 1 / 60;
+  const cues = [
+    {
+      ...template,
+      track: "D:/Music/a.wav",
+      start: 0,
+      end: cut,
+      sourceOffset: 0,
+      keys: [
+        { time: 0, value: 0 },
+        { time: cut, value: 0 },
+      ],
+    },
+    {
+      ...template,
+      track: "D:/Music/b.wav",
+      start: cut,
+      end: 40,
+      sourceOffset: 0,
+      keys: [
+        { time: 0, value: 0 },
+        { time: 40 - cut, value: 0 },
+      ],
+    },
+  ];
+  const result = runMusic(
+    panel,
+    host,
+    musicRequest(musicSignature(panel, host), {
+      cues,
+      libraryPaths: ["D:/Music/existing.wav"],
+      targetTrackIndex: 2,
+      crossfade: 1.5,
+    }),
+  );
+  assert.equal(result.status, "applied", JSON.stringify(result));
+  const clips = Array.from({ length: 3 }, (_, i) => host.sequence.audioTracks[2].clips[i]).sort(
+    (a, b) => a.start.seconds - b.start.seconds,
+  );
+  assert.equal(clips[0].end.seconds, clips[1].start.seconds);
+  assert.equal(clips[1].end.seconds, occupied.start.seconds);
+  assert.equal(occupied.end.seconds, 60);
+  assert.equal(host.marks[0], 0);
+  assert.ok(host.marks[1] > cut + 0.019);
+  assert.ok(host.marks[5] - (40 - cut) < 1 / 60);
+  for (const clip of clips.slice(0, 2)) {
+    assert.equal(clip.projectItem.in, 0);
+    assert.equal(clip.projectItem.out, 120);
+  }
+  assert.match(result.message, /Volume fades/);
+});
+
+test("music rejects off-frame boundaries and failed source-point readback without overwriting", async () => {
+  for (const scenario of ["off-frame", "bad-readback"]) {
+    const panel = await panelFixture();
+    const host = musicHost();
+    const template = musicRequest("").cues[0];
+    if (scenario === "bad-readback") {
+      const importFiles = host.project.importFiles;
+      host.project.importFiles = (...args) => {
+        const result = importFiles(...args);
+        const item = args[2].children[0];
+        item.setOutPoint = () => {};
+        return result;
+      };
+    }
+    const result = runMusic(
+      panel,
+      host,
+      musicRequest(musicSignature(panel, host), {
+        cues: [{ ...template, start: scenario === "off-frame" ? 10.01 : 10 }],
+      }),
+    );
+    assert.equal(host.sequence.audioTracks[2].clips.numItems, 0);
+    if (scenario === "bad-readback") {
+      assert.equal(result.status, "partial");
+      assert.ok(result.checkpointId);
+      assert.match(result.message, /source range/);
+    } else {
+      assert.equal(result.ok, false);
+      assert.equal(host.imports.length, 0);
+    }
+  }
 });

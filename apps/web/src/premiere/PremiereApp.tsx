@@ -68,6 +68,7 @@ import { TranscriptView, transcriptStorageKey } from "./TranscriptView";
 import type { CleanupSettings } from "./transcriptCleanup";
 import type { MusicPlan } from "./music";
 import type { MusicAudioAttachment } from "./MusicPanel";
+import { parseSuggestion } from "./suggestionBlocks";
 import { ComposerUsage } from "./ComposerUsage";
 import {
   deriveLatestContextWindowSnapshot,
@@ -157,6 +158,10 @@ export function PremiereApp() {
     threadId: ThreadId;
     messageId: ReturnType<typeof newMessageId>;
   } | null>(null);
+  const [musicTurn, setMusicTurn] = useState<{
+    threadId: ThreadId;
+    messageId: ReturnType<typeof newMessageId>;
+  } | null>(null);
   const transcriptVisible = panelView === "transcript" && host.connected && host.context !== null;
   useEffect(() => {
     setPremiereTranscriptActive(transcriptVisible);
@@ -220,6 +225,21 @@ export function PremiereApp() {
       ? projection?.runs.find((run) => run.userMessageId === transcriptionTurn.messageId)
       : undefined;
   const transcriptionFinished = transcriptionRun && SETTLED.has(transcriptionRun.status);
+  const musicRun =
+    musicTurn?.threadId === selectedThread
+      ? projection?.runs.find((run) => run.userMessageId === musicTurn.messageId)
+      : undefined;
+  const musicFinished = !!musicRun && SETTLED.has(musicRun.status);
+  let automaticMusicPlan: MusicPlan | undefined;
+  if (musicFinished)
+    for (const item of projection?.turnItems ?? []) {
+      if (item.type !== "assistant_message" || item.streaming || item.runId !== musicRun.id)
+        continue;
+      for (const match of item.text.matchAll(/```axis-music\s*\n([\s\S]*?)```/g)) {
+        const suggestion = parseSuggestion("axis-music", match[1]!, host.context?.fps ?? 30);
+        if (suggestion.kind === "music") automaticMusicPlan = suggestion.plan;
+      }
+    }
   const transcriptionThread = threads.find(
     (candidate) => candidate.id === transcriptionTurn?.threadId,
   );
@@ -441,6 +461,7 @@ export function PremiereApp() {
     event?: FormEvent,
     transcriptionPrompt?: string,
     musicAudio: MusicAudioAttachment[] = [],
+    musicPlanning = false,
   ) {
     event?.preventDefault();
     const action = transcriptionPrompt || images.length ? null : panelActionFor(draft);
@@ -591,7 +612,8 @@ export function PremiereApp() {
       }
       setSelectedThread(targetId);
       if (transcriptionPrompt) {
-        if (!musicAudio.length) setTranscriptionTurn({ threadId: targetId, messageId });
+        if (musicPlanning) setMusicTurn({ threadId: targetId, messageId });
+        else if (!musicAudio.length) setTranscriptionTurn({ threadId: targetId, messageId });
         const destination = `premiere-draft:${environmentId}:${project.id}:${targetId}`;
         setDraftState({ key: destination, value: draft });
         try {
@@ -872,17 +894,17 @@ export function PremiereApp() {
               key={transcriptStorageKey(transcriptContext)}
               context={transcriptContext}
               musicRequest={
-                musicRequest?.scope === transcriptStorageKey(transcriptContext)
-                  ? musicRequest
-                  : null
+                automaticMusicPlan
+                  ? { plan: automaticMusicPlan }
+                  : musicRequest?.scope === transcriptStorageKey(transcriptContext)
+                    ? musicRequest
+                    : null
               }
-              onDescribeMusic={
-                provider?.driver === "antigravity" && /gemini/i.test(model?.slug ?? "")
-                  ? async (prompt, audio) => {
-                      await send(undefined, prompt, audio);
-                    }
-                  : undefined
-              }
+              onPlaceMusic={async (prompt) => {
+                setMusicTurn(null);
+                await send(undefined, prompt, [], true);
+              }}
+              musicAgentFinished={musicFinished}
               cleanupRequest={
                 cleanupRequest?.scope === transcriptStorageKey(transcriptContext)
                   ? cleanupRequest

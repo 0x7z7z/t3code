@@ -1,4 +1,4 @@
-interface:
+﻿interface:
   display_name: "Axis Music Placement"
-  short_description: "Review and place chapter music under voice-over"
-  default_prompt: "Use $axis-music-placement to score this video from the indexed local library, review the cues, and apply through Axis."
+  short_description: "Place mood-matched music per script section with Undo"
+  default_prompt: "Use $axis-music-placement to place one catalogue-matched song per script section, back to back with crossfades and peak-normalized -33 dBFS levels. No ducking by default."

@@ -3,212 +3,221 @@ import { page } from "vite-plus/test/browser";
 import { render } from "../../test/render";
 import { MusicPanel } from "./MusicPanel";
 import type { PremiereContext } from "./host";
-import type { MusicTrack } from "./music";
+import type { MusicPlan, MusicTrack } from "./music";
+import type { TimelineSnapshot } from "./turnChanges";
 import "./styles.css";
 
-const host = vi.hoisted(() => ({ request: vi.fn(), snapshot: vi.fn(), seek: vi.fn() }));
+const host = vi.hoisted(() => ({ request: vi.fn(), snapshot: vi.fn() }));
 vi.mock("./interactiveHost", () => ({ requestTimelineAction: host.request }));
 vi.mock("./timelineHost", () => ({ requestTimelineSnapshot: host.snapshot }));
-vi.mock("./host", () => ({ seekPremiere: host.seek }));
 function setup(id: string) {
-  localStorage.removeItem(`axis-music:${JSON.stringify("music-film")}`);
-  localStorage.removeItem(`axis-music:${JSON.stringify("music-film")}:${id}:undo`);
+  localStorage.setItem(`axis-music:${JSON.stringify(id)}`, JSON.stringify({ root: "D:/Music" }));
+  localStorage.removeItem(`axis-music:${JSON.stringify(id)}:main:result`);
   const context: PremiereContext = {
-    projectName: "AnimeAddicts",
-    projectDocumentId: "music-film",
+    projectName: "Film",
+    projectDocumentId: id,
     projectPath: "D:/film.prproj",
-    sequenceId: id,
-    sequenceName: "Main",
-    fps: 25,
+    sequenceId: "main",
+    sequenceName: "Final forms",
+    fps: 30,
     playheadSeconds: 0,
   };
   const tracks: MusicTrack[] = [
-    "Heroic strings.wav",
-    "Low tension.wav",
-    "Quiet piano.wav",
-    "Epic drums.wav",
-  ].map((filename, i) => ({
+    "hype music/fight.wav",
+    "sad music/loss.wav",
+    "hype music/power.wav",
+  ].map((filename) => ({
     path: `D:/Music/${filename}`,
     filename,
-    category: i ? "Emotional" : "Action",
-    duration: 180,
+    category: filename.split("/")[0]!,
+    duration: 200,
+    peakDbfs: -3,
     loudnessDbfs: -18,
     energy: [],
-    rises: [{ start: 12, end: 18, db: 8 }],
-    loudWindows: [{ start: 10, end: 19 }],
+    rises: [],
+    loudWindows: [],
     quietRanges: [],
-    phraseBoundaries: [0, 8],
-    description:
-      i === 2
-        ? ""
-        : i
-          ? "Sparse instrumental bed; audition mood."
-          : "Orchestral momentum, wide strings and light percussion. Heard in a 30-second excerpt.",
+    phraseBoundaries: [],
+    tempo: 120,
+    description: "",
     tags: [],
-    tempo: null,
   }));
-  host.seek.mockReset();
-  host.snapshot
-    .mockReset()
-    .mockResolvedValue({ signature: "before", snapshot: { projectId: "music-film" } });
+  const snapshot: TimelineSnapshot = {
+    projectId: id,
+    sequenceId: "main",
+    name: "Final forms",
+    videoTrackCount: 0,
+    audioTrackCount: 1,
+    videoTracks: [],
+    audioTracks: [{ index: 0, name: "Audio 5", clips: [] }],
+    markers: [],
+    inPoint: null,
+    outPoint: null,
+    truncated: false,
+  };
+  host.snapshot.mockReset().mockResolvedValue({ signature: "before", snapshot });
   host.request.mockReset().mockImplementation(async (_type, request) => {
-    if (request.action === "index")
-      return { tracks, pending: 0, failures: [], tool: "D:/Axis/tools/axis_music.py" };
-    if (request.action === "audition")
-      return { dataUrl: "data:audio/wav;base64,UklGRg==", sizeBytes: 6 };
+    if (request.action === "index") return { tracks, pending: 0, failures: [] };
     if (request.action === "undo") return { status: "undone", sequenceId: "restored" };
     return {
       status: "applied",
       checkpointId: "checkpoint",
       checkpointSignature: "saved",
       expectedSignature: "after",
+      sequenceId: "",
+      message: "1 Constant Power joins; remaining edges use Volume fades.",
     };
   });
-  const words = "The action begins. But this reveal changes everything about our hero."
-    .split(" ")
-    .map((text, i) => ({ text, start: i * 2, end: i * 2 + 1.8 }));
-  return {
+  const props = {
     context,
-    words,
+    words: [
+      { text: "Goku fights.", start: 0, end: 59 },
+      { text: "Next, Vegeta mourns his loss.", start: 60, end: 120 },
+    ],
     disabled: false,
     onBusy: vi.fn(),
     onClose: vi.fn(),
-    onAsk: vi.fn(),
+    onPlace: vi.fn().mockResolvedValue(undefined),
     onRestored: vi.fn(),
-    onDescribe: vi.fn().mockResolvedValue(undefined),
   };
-}
-it("reviews at 440px, auditions measured offsets, swaps alternatives and nudges starts", async () => {
-  await page.viewport(440, 920);
-  const props = setup("music-review");
-  await using screen = await render(<MusicPanel {...props} />);
-  screen.container.style.width = "440px";
-  await screen.getByRole("button", { name: "Index library", exact: true }).click();
-  await screen.getByRole("button", { name: "Build music plan" }).click();
-  await expect
-    .element(screen.getByRole("checkbox", { name: "I reviewed cues", exact: false }))
-    .toBeEnabled();
-  const cue = screen.container.querySelector("li")!;
-  const chapter = cue.querySelector("strong")!.textContent!;
-  await screen.getByRole("button", { name: "Audition" }).click();
-  await expect.element(screen.getByLabelText("Music source preview")).toBeVisible();
-  expect(host.seek).toHaveBeenCalledWith(0, "music-review");
-  await screen
-    .getByRole("combobox", { name: `Track for ${chapter}` })
-    .selectOptions("D:/Music/Low tension.wav");
-  await screen.getByRole("spinbutton", { name: `Start for ${chapter}` }).fill("0.5");
-  await screen.getByRole("checkbox", { name: `Include ${chapter}` }).click();
-  await expect.element(screen.getByRole("button", { name: "Apply 0 cues" })).toBeDisabled();
-  await screen.getByRole("checkbox", { name: `Include ${chapter}` }).click();
-  expect(screen.container.scrollWidth).toBeLessThanOrEqual(440);
-  await page.screenshot({ path: "./__screenshots__/axis-music-review-440.png" });
-});
-it("requires confirmation, applies speech automation and retains undo after remount", async () => {
-  const props = setup("music-apply");
-  await using screen = await render(<MusicPanel {...props} />);
-  await screen.getByRole("button", { name: "Index library", exact: true }).click();
-  await screen.getByRole("button", { name: "Build music plan" }).click();
-  await expect.element(screen.getByRole("button", { name: "Apply 1 cues" })).toBeDisabled();
-  await screen.getByRole("checkbox", { name: "I reviewed cues", exact: false }).click();
-  await screen.getByLabelText("Music levels and exclusions").click();
-  await page.screenshot({ path: "./__screenshots__/axis-music-confirm-440.png" });
-  await screen.getByRole("button", { name: "Apply 1 cues" }).click();
-  await expect.element(screen.getByRole("button", { name: "Undo music" })).toBeEnabled();
-  expect(host.request).toHaveBeenLastCalledWith(
-    "premiere.music.request",
-    expect.objectContaining({
-      action: "apply",
-      confirmed: true,
-      expectedSignature: "before",
-      cues: [
-        expect.objectContaining({
-          keys: expect.arrayContaining([expect.objectContaining({ time: 0, value: 0 })]),
-        }),
-      ],
-    }),
-  );
-  await screen.rerender(<MusicPanel {...props} key="remount" />);
-  await screen.getByRole("button", { name: "Undo music" }).click();
-  expect(props.onRestored).toHaveBeenCalledWith("restored");
-  await expect.element(screen.getByRole("button", { name: "Undo music" })).not.toBeInTheDocument();
-});
-it("prevents apply after failed operations and respects editing permissions", async () => {
-  const props = setup("music-disabled");
-  await using screen = await render(<MusicPanel {...props} disabled />);
-  await expect
-    .element(screen.getByRole("button", { name: "Index library", exact: true }))
-    .toBeDisabled();
-  await screen.rerender(<MusicPanel {...props} />);
-  host.request.mockRejectedValue(new Error("Library not found"));
-  await screen.getByRole("button", { name: "Index library", exact: true }).click();
-  await expect.element(screen.getByRole("alert")).toBeVisible();
-  expect(screen.container.querySelector("[role=alert]")?.textContent).toBe("Library not found");
-  expect(host.snapshot).not.toHaveBeenCalled();
-});
-it("describes actual attached audio excerpts with the current audio-capable agent", async () => {
-  const props = setup("music-describe");
-  await using screen = await render(<MusicPanel {...props} />);
-  await screen.getByRole("button", { name: "Index library", exact: true }).click();
-  await screen.getByRole("button", { name: "Describe library" }).click();
-  await vi.waitFor(() => expect(props.onDescribe).toHaveBeenCalledOnce());
-  expect(props.onDescribe).toHaveBeenCalledWith(
-    expect.stringContaining("listen to each"),
-    expect.arrayContaining([
-      expect.objectContaining({
-        type: "file",
-        mimeType: "audio/wav",
-        dataUrl: "data:audio/wav;base64,UklGRg==",
-      }),
-    ]),
-  );
-});
-
-it("keeps an agent plan while indexing and rejects a later source overrun", async () => {
-  const props = setup("music-agent-plan");
-  const initialPlan = {
-    version: 1 as const,
-    cues: [
-      {
-        id: "agent-1",
-        chapter: "Agent chapter",
-        start: 0,
-        end: 20,
-        track: "D:\\Music\\Heroic strings.wav",
-        sourceOffset: 12,
-        reason: "Measured rise",
-        fadeIn: 1,
-        fadeOut: 1,
-        baseDb: -22,
+  const plan = (): MusicPlan => {
+    const prompt = String(props.onPlace.mock.calls[0]![0]);
+    const requestId = JSON.parse(prompt.match(/requestId:("[^"]+")/)![1]!) as string;
+    return {
+      version: 1,
+      requestId,
+      cues: tracks.slice(0, 2).map((t, i) => ({
+        id: `section-${i}`,
+        chapter: i ? "Vegeta's loss" : "Goku's final form",
+        mood: i ? "sad" : "hype",
+        energy: i ? 0.2 : 0.9,
+        start: i * 60,
+        end: (i + 1) * 60,
+        track: t.path,
+        sourceOffset: 0,
+        reason: "Folder mood matches the script.",
+        fadeIn: 0.75,
+        fadeOut: 0.75,
+        baseDb: 0,
         enabled: true,
         alternatives: [],
-      },
-    ],
-    silence: [],
+      })),
+      silence: [],
+    };
   };
-  await using screen = await render(<MusicPanel {...props} initialPlan={initialPlan} />);
-  await screen.getByRole("button", { name: "Index library", exact: true }).click();
-  await screen.getByRole("button", { name: "Validate plan against timeline" }).click();
+  return { props, plan, tracks, snapshot };
+}
+
+it.each([440, 1000])(
+  "places from one click, shows results and Undo all at %i px",
+  async (width) => {
+    await page.viewport(width, 840);
+    const f = setup(`music-single-${width}`);
+    await using screen = await render(<MusicPanel {...f.props} />);
+    screen.container.style.cssText = `width:${width}px;max-width:100%;box-sizing:border-box;padding:12px;`;
+    await expect
+      .element(screen.getByRole("button", { name: "Place music", exact: true }))
+      .toBeEnabled();
+    expect(screen.container.querySelector("details")?.open).toBe(false);
+    await expect
+      .element(screen.getByRole("checkbox", { name: "Lower music during speech" }))
+      .not.toBeChecked();
+    await page.screenshot({ path: `../../../../.t3/music-simple/before-${width}.png` });
+    await screen.getByRole("button", { name: "Place music", exact: true }).click();
+    await vi.waitFor(() => expect(f.props.onPlace).toHaveBeenCalledOnce());
+    expect(f.props.onPlace.mock.calls[0]![0]).toContain("requestId:");
+    await screen.rerender(<MusicPanel {...f.props} initialPlan={f.plan()} agentFinished />);
+    await expect.element(screen.getByRole("button", { name: "Undo all" })).toBeEnabled();
+    expect(screen.container.querySelectorAll("[data-music-cues] li")).toHaveLength(2);
+    const apply = host.request.mock.calls.find(([, r]) => r.action === "apply")![1];
+    expect(apply.crossfade).toBe(1.5);
+    expect(apply.ducking).toBe(false);
+    expect(apply.cues[0].baseDb).toBe(-30);
+    expect(apply.cues[0].keys[1].value).toBeCloseTo(Math.pow(10, -30 / 20));
+    expect(screen.container.querySelector("[data-music-panel]")!.scrollWidth).toBeLessThanOrEqual(
+      width,
+    );
+    await page.screenshot({ path: `../../../../.t3/music-simple/after-${width}.png` });
+    await screen.getByRole("button", { name: "Undo all" }).click();
+    expect(host.request).toHaveBeenLastCalledWith(
+      "premiere.music.request",
+      expect.objectContaining({
+        action: "undo",
+        sequenceId: "main",
+        checkpointId: "checkpoint",
+        expectedSignature: "after",
+      }),
+    );
+    await expect
+      .element(screen.getByRole("button", { name: "Place music", exact: true }))
+      .toBeEnabled();
+    expect(f.props.onRestored).toHaveBeenCalledWith("restored");
+  },
+);
+
+it("ignores stale plans and refuses a timeline that changed during agent planning", async () => {
+  const f = setup("music-stale");
+  await using screen = await render(<MusicPanel {...f.props} />);
   await expect
-    .element(screen.getByRole("checkbox", { name: "Include Agent chapter" }))
-    .toBeVisible();
-  await screen.getByRole("spinbutton", { name: "Source offset for Agent chapter" }).fill("179");
+    .element(screen.getByRole("button", { name: "Place music", exact: true }))
+    .toBeEnabled();
+  await screen.getByRole("button", { name: "Place music", exact: true }).click();
+  await vi.waitFor(() => expect(f.props.onPlace).toHaveBeenCalledOnce());
+  const plan = f.plan();
+  await screen.rerender(<MusicPanel {...f.props} initialPlan={{ ...plan, requestId: "old" }} />);
+  expect(host.request.mock.calls.some(([, r]) => r.action === "apply")).toBe(false);
+  host.snapshot.mockResolvedValue({ signature: "changed", snapshot: f.snapshot });
+  await screen.rerender(<MusicPanel {...f.props} initialPlan={plan} agentFinished />);
   await expect.element(screen.getByRole("alert")).toBeVisible();
-  await expect.element(screen.getByRole("button", { name: "Apply 1 cues" })).toBeDisabled();
+  expect(screen.container.querySelector("[role=alert]")?.textContent).toContain("timeline changed");
+  expect(host.request.mock.calls.some(([, r]) => r.action === "apply")).toBe(false);
 });
 
-it("enforces sponsor exclusions added after planning", async () => {
-  const props = setup("music-exclusions");
-  await using screen = await render(<MusicPanel {...props} />);
-  await screen.getByRole("button", { name: "Index library", exact: true }).click();
-  await screen.getByRole("button", { name: "Build music plan" }).click();
-  await screen.getByLabelText("Music levels and exclusions").click();
-  await screen.getByRole("textbox", { name: "Sponsor and silence ranges" }).fill("2-4");
-  await screen.getByRole("button", { name: "Validate plan against timeline" }).click();
-  await expect.element(screen.getByRole("alert")).toBeVisible();
-  expect(screen.container.querySelector("[role=alert]")?.textContent).toContain(
-    "silence or sponsor",
-  );
+it("swaps a matching song while preserving the original undo receipt across remount", async () => {
+  const f = setup("music-swap");
+  await using screen = await render(<MusicPanel {...f.props} />);
   await expect
-    .element(screen.getByRole("checkbox", { name: "I reviewed cues", exact: false }))
-    .toBeDisabled();
+    .element(screen.getByRole("button", { name: "Place music", exact: true }))
+    .toBeEnabled();
+  await screen.getByRole("button", { name: "Place music", exact: true }).click();
+  await vi.waitFor(() => expect(f.props.onPlace).toHaveBeenCalledOnce());
+  const plan = f.plan();
+  await screen.rerender(<MusicPanel {...f.props} initialPlan={plan} />);
+  await expect.element(screen.getByRole("button", { name: "Undo all" })).toBeEnabled();
+  f.snapshot.audioTracks[0]!.clips = plan.cues.map((c) => ({
+    name: c.chapter,
+    nodeId: c.id,
+    projectItemName: c.track,
+    mediaPath: c.track,
+    start: c.start,
+    end: c.end,
+    inPoint: 0,
+    outPoint: 60,
+    enabled: true,
+  }));
+  host.snapshot.mockResolvedValue({ signature: "after", snapshot: f.snapshot });
+  await screen.getByRole("button", { name: "Swap Goku's final form" }).click();
+  await vi.waitFor(() =>
+    expect(host.request.mock.calls.some(([, r]) => r.action === "swap")).toBe(true),
+  );
+  const swap = host.request.mock.calls.find(([, r]) => r.action === "swap")![1];
+  expect(swap.cues[0].track).toBe(f.tracks[2]!.path);
+  expect(swap.checkpointId).toBe("checkpoint");
+  await screen.rerender(<MusicPanel {...f.props} key="remount" />);
+  await expect.element(screen.getByRole("button", { name: "Undo all" })).toBeEnabled();
+});
+
+it("reports failed agent requests and keeps background indexing automatic", async () => {
+  const f = setup("music-failure");
+  f.props.onPlace.mockRejectedValue(new Error("Agent disconnected"));
+  await using screen = await render(<MusicPanel {...f.props} />);
+  await expect
+    .element(screen.getByRole("button", { name: "Place music", exact: true }))
+    .toBeEnabled();
+  await screen.getByRole("button", { name: "Place music", exact: true }).click();
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  expect(host.request.mock.calls.filter(([, r]) => r.action === "index")).toHaveLength(1);
+  expect(screen.container.querySelector("[role=alert]")?.textContent).toContain(
+    "Agent disconnected",
+  );
 });

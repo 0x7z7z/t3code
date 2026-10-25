@@ -12,13 +12,56 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 
 AUDIO = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".aif", ".aiff", ".wma"}
-VERSION = 1
+VERSION = 2
+
+
+def peak_dbfs(path, ffmpeg="ffmpeg"):
+    """Full-source, all-channel sample peak, before mono/resampled structure analysis."""
+    result = subprocess.run([ffmpeg, "-hide_banner", "-nostats", "-i", str(path), "-vn", "-af",
+        "astats=measure_perchannel=Peak_level:measure_overall=Peak_level", "-f", "null", "-"],
+        check=True, capture_output=True, text=True, timeout=600)
+    values = [float(v) for v in re.findall(r"Peak level dB:\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|-?inf)(?=\s|$)", result.stderr)]
+    if not values or not all(math.isfinite(v) for v in values):
+        raise ValueError("Cannot measure a finite source peak (silent or unreadable audio)")
+    return max(values)
+
+
+def catalogue_hints(root):
+    """Read owner-maintained references; never write inside the library."""
+    hints = {}
+    folder = root / "AGENTS.md"
+    document = folder / "MUSIC_LIBRARY_CATALOGUE_AND_ANALYSIS.md"
+    if document.is_file():
+        category = ""
+        for line in document.read_text(encoding="utf-8").splitlines():
+            if line.startswith("###"):
+                match = re.search(r"`([^`]+)`", line)
+                category = match.group(1) if match else ""
+            match = re.search(r"\|\s*\d+\s*\|\s*`([^`]+)`\s*\|\s*(\d+):(\d+)\s*\|\s*(\d+)\s*\|.*energy (\d+)%; brightness (\d+)%", line)
+            if match:
+                filename, minutes, seconds, bpm, energy, brightness = match.groups()
+                hints[(category.lower(), filename.lower())] = {"catalogueDuration": int(minutes)*60+int(seconds),
+                    "tempo": float(bpm), "catalogueEnergy": int(energy)/100, "brightness": int(brightness)/100}
+    analysis = folder / "audio_mood_analysis.json"
+    if analysis.is_file():
+        try:
+            for row in json.loads(analysis.read_text(encoding="utf-8")).get("results", []):
+                # Catalogue folder is authoritative; analysis can refer to pre-sort locations.
+                for key, value in hints.items():
+                    if key[1] == str(row.get("name", "")).lower():
+                        value["analysisBpm"] = row.get("low_level", {}).get("bpm")
+                        value["catalogueEnergy"] = row.get("audio_summary", {}).get("energy", value["catalogueEnergy"])
+                        value["brightness"] = row.get("audio_summary", {}).get("brightness", value["brightness"])
+        except (ValueError, TypeError, AttributeError):
+            pass
+    return hints
 
 
 def cache_path():
@@ -71,6 +114,7 @@ def estimate_tempo(envelope):
 
 
 def analyze(path, root, ffmpeg="ffmpeg", ffprobe="ffprobe"):
+    peak = peak_dbfs(path, ffmpeg)
     duration = float(subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], check=True, capture_output=True, text=True, timeout=30).stdout.strip())
     if not math.isfinite(duration) or duration <= 0 or duration > 14400:
         raise ValueError("Require audio between zero and four hours")
@@ -109,7 +153,7 @@ def analyze(path, root, ffmpeg="ffmpeg", ffprobe="ffprobe"):
     changes = [abs(smooth[i] - smooth[max(0, i-3)]) for i in range(len(smooth))]
     boundaries = [i for i in separated(changes, count=24, spacing=8) if changes[i] >= 3]
     return {"path": str(path.resolve()), "filename": path.name, "category": str(path.parent.relative_to(root)),
-            "duration": round(duration, 3), "loudnessDbfs": round(10 * math.log10(max(squares/max(1, count)/32768**2, 1e-12)), 2),
+            "duration": round(duration, 3), "peakDbfs": round(peak, 4), "loudnessDbfs": round(10 * math.log10(max(squares/max(1, count)/32768**2, 1e-12)), 2),
             "energy": [round(x, 2) for x in smooth],
             "rises": [{"start": i, "end": i+6, "db": round(rises[i], 2)} for i in separated(rises, 3, 15) if rises[i] >= 3],
             "loudWindows": [{"start": max(0, i-4), "end": min(duration, i+5)} for i in separated(smooth)],
@@ -125,9 +169,10 @@ def index_library(root, cache=None, limit=100, ffmpeg="ffmpeg", ffprobe="ffprobe
     if not 1 <= limit <= 10000:
         raise ValueError("Batch limit must be 1-10000")
     tracks, failures, pending, analyzed = [], [], 0, 0
+    hints = catalogue_hints(root)
     with connect(cache or cache_path()) as db:
         for folder, dirs, files in os.walk(root, followlinks=False):
-            dirs[:] = sorted(d for d in dirs if not (Path(folder) / d).is_symlink() and not getattr(os.path, "isjunction", lambda _: False)(Path(folder) / d))
+            dirs[:] = sorted(d for d in dirs if d.lower() != "00. duplicate copies - review" and not (Path(folder) / d).is_symlink() and not getattr(os.path, "isjunction", lambda _: False)(Path(folder) / d))
             for name in sorted(files):
                 path = Path(folder) / name
                 if path.suffix.lower() not in AUDIO or path.is_symlink():
@@ -149,6 +194,7 @@ def index_library(root, cache=None, limit=100, ffmpeg="ffmpeg", ffprobe="ffprobe
                         item["fingerprint"] = key
                         db.execute("INSERT OR REPLACE INTO tracks VALUES (?, ?, ?)", (item["path"], key, json.dumps(item)))
                         db.commit()
+                    item = {**item, **hints.get((path.parent.name.lower(), path.name.lower()), {})}
                     tracks.append({**item, "energy": []} if compact else item)
                 except (OSError, ValueError, subprocess.SubprocessError) as error:
                     failure = {"path": str(path), "error": str(error)[:300]}
@@ -161,7 +207,7 @@ def index_library(root, cache=None, limit=100, ffmpeg="ffmpeg", ffprobe="ffprobe
                     except OSError:
                         pass
     return {"version": VERSION, "root": str(root), "tracks": tracks, "analyzed": analyzed, "pending": pending, "failures": failures,
-            "moodPath": "Optional audio-capable Antigravity agent descriptions; otherwise categories, energy and user tags. Energy does not determine mood."}
+            "moodPath": "Mood folder is primary. Catalogue BPM, energy and brightness are secondary. Unsorted is last resort; duplicate-review copies are excluded."}
 
 
 def describe(path, description, tags, cache=None, expected=None):

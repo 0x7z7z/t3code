@@ -33,7 +33,7 @@ import {
 } from "./transcriptSync";
 import { usePlayheadClock } from "./usePlayheadClock";
 import { CaptionsPanel } from "./CaptionsPanel";
-import { MusicPanel, type MusicAudioAttachment } from "./MusicPanel";
+import { MusicPanel } from "./MusicPanel";
 import type { MusicPlan } from "./music";
 import { CleanupReview } from "./CleanupReview";
 import {
@@ -268,7 +268,8 @@ export function TranscriptView({
   active = true,
   cleanupRequest,
   musicRequest,
-  onDescribeMusic,
+  onPlaceMusic,
+  musicAgentFinished,
 }: {
   context: PremiereContext;
   disabled: boolean;
@@ -282,7 +283,8 @@ export function TranscriptView({
   active?: boolean;
   cleanupRequest?: { settings: CleanupSettings } | null;
   musicRequest?: { plan: MusicPlan } | null;
-  onDescribeMusic?: ((prompt: string, audio: MusicAudioAttachment[]) => Promise<void>) | undefined;
+  onPlaceMusic?: ((prompt: string) => Promise<void>) | undefined;
+  musicAgentFinished?: boolean;
 }) {
   const key = transcriptStorageKey(context);
   const [stored, setStored] = useState(() => readStored(key));
@@ -1147,9 +1149,11 @@ export function TranscriptView({
               onBusy(value);
             }}
             onClose={() => setToolView(null)}
-            onAsk={onAsk}
+            onPlace={onPlaceMusic}
             initialPlan={musicRequest?.plan}
-            onDescribe={onDescribeMusic}
+            selection={range}
+            active={toolView === "music"}
+            agentFinished={!!musicAgentFinished}
             onRestored={(sequenceId) => {
               localStorage.setItem(
                 transcriptStorageKey(context, sequenceId),

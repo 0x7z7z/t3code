@@ -53,6 +53,8 @@ export function parseTimelineSnapshot(value: unknown): TimelineSnapshot | null {
       if (
         !object(track) ||
         !count(track.index) ||
+        (track.name !== undefined && !text(track.name)) ||
+        (track.locked !== undefined && typeof track.locked !== "boolean") ||
         !finite(track.index) ||
         indices.has(track.index) ||
         track.index >= tracks.length ||
@@ -69,6 +71,7 @@ export function parseTimelineSnapshot(value: unknown): TimelineSnapshot | null {
           !text(clip.nodeId) ||
           !text(clip.projectItemName) ||
           (clip.projectItemId !== undefined && !text(clip.projectItemId)) ||
+          (clip.mediaPath !== undefined && !text(clip.mediaPath)) ||
           (clip.speed !== undefined && clip.speed !== null && !finite(clip.speed)) ||
           (clip.reversed !== undefined &&
             clip.reversed !== null &&

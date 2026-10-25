@@ -943,6 +943,14 @@
     function checked(result, label) {
       if (result !== 0) failure("Premiere refused " + label + ".");
     }
+    function pathKey(path) {
+      return String(path).toLowerCase().replace(/\\/g, "/");
+    }
+    function mediaPath(clip) {
+      return clip.projectItem && clip.projectItem.getMediaPath
+        ? pathKey(clip.projectItem.getMediaPath())
+        : "";
+    }
     function response(status, signature, message, sequenceId) {
       return (
         "axis:music|" +
@@ -997,7 +1005,7 @@
         return response("undone", "", "", restored.sequenceId);
       }
       if (
-        request.action !== "apply" ||
+        (request.action !== "apply" && request.action !== "swap") ||
         request.confirmed !== true ||
         !request.expectedSignature ||
         !request.cues ||
@@ -1019,10 +1027,16 @@
       );
       if (!current.ok || current.signature !== request.expectedSignature)
         failure("The timeline changed after preview. Rebuild the music plan.");
+      if (current.snapshot && current.snapshot.truncated)
+        failure("The timeline is too large to inspect safely.");
+      var fps = 254016000000 / Number(s.timebase);
+      if (!number(fps) || fps <= 0) fps = 30;
+      var frameDuration = 1 / fps;
       var cues = request.cues;
-      var used = {};
+      var previousPath = "";
+      var previousSection = "";
       var previousEnd = -1;
-      var i, j, k, c, key, candidate;
+      var i, j, k, c, key, candidate, clip;
       for (i = 0; i < cues.length; i++) {
         c = cues[i];
         if (
@@ -1042,9 +1056,22 @@
           c.keys.length > 20000
         )
           failure("Invalid or overlapping music cue.");
-        var pathKey = "p:" + c.track.toLowerCase().replace(/\\/g, "/");
-        if (used[pathKey]) failure("Repeating music tracks are not allowed.");
-        used[pathKey] = true;
+        if (
+          Math.abs(c.start * fps - Math.round(c.start * fps)) > 0.0001 ||
+          Math.abs(c.end * fps - Math.round(c.end * fps)) > 0.0001
+        )
+          failure("Music section boundaries must land on sequence frames.");
+        var cuePath = pathKey(c.track);
+        if (/\/00\. duplicate copies - review\//i.test(cuePath))
+          failure("Duplicate-review music is excluded.");
+        if (
+          cuePath === previousPath &&
+          Math.abs(c.start - previousEnd) < frameDuration / 2 &&
+          (!c.sectionId || c.sectionId !== previousSection)
+        )
+          failure("Neighbouring sections need different songs.");
+        previousPath = cuePath;
+        previousSection = c.sectionId || "";
         previousEnd = c.end;
         var previousTime = -1;
         for (k = 0; k < c.keys.length; k++) {
@@ -1056,7 +1083,7 @@
             key.time > c.end - c.start + 0.00001 ||
             !number(key.value) ||
             key.value < 0 ||
-            key.value > 1
+            key.value > Math.pow(10, 15 / 20)
           )
             failure("Invalid music keyframes.");
           previousTime = key.time;
@@ -1081,60 +1108,107 @@
               failure("Music crosses a sponsor or silence range.");
         }
       }
-      checkpoint = timeline(
-        "snapshot",
-        true,
-        request.sequenceId,
-        "",
-        "",
-        0,
-        null,
-        null,
-        true,
-        "music"
-      );
+      // Choose using actual source paths, not a track name or a guessed clip name.
+      var track = null;
+      var spare = null;
+      var trackIndex = -1;
+      var spareIndex = -1;
+      var library = {};
+      if (request.libraryPaths)
+        for (i = 0; i < request.libraryPaths.length; i++)
+          library["p:" + pathKey(request.libraryPaths[i])] = true;
+      for (i = 0; i < cues.length; i++) library["p:" + pathKey(cues[i].track)] = true;
+      for (i = 0; i < s.audioTracks.numTracks; i++) {
+        candidate = s.audioTracks[i];
+        var hasMusic = false;
+        for (j = 0; j < candidate.clips.numItems; j++)
+          if (library["p:" + mediaPath(candidate.clips[j])]) hasMusic = true;
+        if (hasMusic && !track) {
+          track = candidate;
+          trackIndex = i;
+        }
+        if (!spare && !candidate.isLocked() && candidate.clips.numItems === 0) {
+          spare = candidate;
+          spareIndex = i;
+        }
+      }
+      if (!track) {
+        track = spare;
+        trackIndex = spareIndex;
+      }
+      if (!track) failure("Add an empty audio track for music first.");
+      if (track.isLocked()) failure("Unlock the existing music track first.");
+      if (request.targetTrackIndex !== undefined && request.targetTrackIndex !== trackIndex)
+        failure("The target music track changed.");
+      var replaced = null;
+      if (request.action === "swap") {
+        var replacement = request.replace;
+        if (
+          !replacement ||
+          cues.length !== 1 ||
+          !request.checkpointId ||
+          !request.checkpointSignature ||
+          replacement.start !== cues[0].start ||
+          replacement.end !== cues[0].end
+        )
+          failure("Invalid music swap.");
+        for (i = 0; i < track.clips.numItems; i++) {
+          candidate = track.clips[i];
+          if (
+            String(candidate.nodeId) === replacement.nodeId &&
+            mediaPath(candidate) === pathKey(replacement.track) &&
+            Math.abs(candidate.start.seconds - replacement.start) < 0.02 &&
+            Math.abs(candidate.end.seconds - replacement.end) < 0.05
+          )
+            replaced = candidate;
+        }
+        if (!replaced) failure("The placed song changed. Refusing to swap.");
+      }
+      for (i = 0; i < cues.length; i++)
+        for (j = 0; j < track.clips.numItems; j++) {
+          candidate = track.clips[j];
+          if (candidate === replaced) continue;
+          if (
+            candidate.start.seconds < cues[i].end - 0.00001 &&
+            candidate.end.seconds > cues[i].start + 0.00001
+          )
+            failure("Music would overwrite an existing clip. Fill empty stretches only.");
+          if (
+            mediaPath(candidate) === pathKey(cues[i].track) &&
+            (Math.abs(candidate.end.seconds - cues[i].start) < 0.05 ||
+              Math.abs(candidate.start.seconds - cues[i].end) < 0.05)
+          )
+            failure("Neighbouring sections need different songs.");
+        }
+      if (replaced)
+        checkpoint = {
+          ok: true,
+          checkpointId: request.checkpointId,
+          checkpointSignature: request.checkpointSignature
+        };
+      else
+        checkpoint = timeline(
+          "snapshot",
+          true,
+          request.sequenceId,
+          "",
+          "",
+          0,
+          null,
+          null,
+          true,
+          "music"
+        );
       if (!checkpoint.ok || !checkpoint.checkpointId || !checkpoint.checkpointSignature) {
         checkpoint = null;
         failure("Could not save a music undo checkpoint.");
       }
-      var track = null;
-      var spare = null;
-      var oldIds = {};
-      for (i = 0; i < s.audioTracks.numTracks; i++) {
-        candidate = s.audioTracks[i];
-        oldIds["t:" + String(candidate.id)] = true;
-        if (!candidate.isLocked() && candidate.clips.numItems === 0) {
-          if (String(candidate.name) === "Music") {
-            track = candidate;
-            break;
-          }
-          if (!spare && /^Audio \d+$/.test(String(candidate.name))) spare = candidate;
-        }
-      }
-      if (!track) track = spare;
-      if (!track) {
-        var beforeCount = s.audioTracks.numTracks;
-        app.enableQE();
-        if (typeof qe === "undefined" || !qe.project.getActiveSequence())
-          failure("No empty audio track. Add an empty Music track in Premiere.");
-        // QE is undocumented. Identify the new track by stable ID, never an assumed index.
-        qe.project.getActiveSequence().addTracks(0, 0, 1);
-        if (s.audioTracks.numTracks !== beforeCount + 1)
-          failure(
-            "Premiere could not create exactly one audio track. Undo and add an empty Music track manually."
-          );
-        for (i = 0; i < s.audioTracks.numTracks; i++) {
-          candidate = s.audioTracks[i];
-          if (
-            !oldIds["t:" + String(candidate.id)] &&
-            !candidate.isLocked() &&
-            candidate.clips.numItems === 0
-          )
-            track = candidate;
-        }
-        if (!track) failure("Could not identify the new Music track safely.");
-      }
-      track.name = "Music";
+      if (
+        track.clips.numItems === 0 &&
+        (!String(track.name || "") || /^Audio \d+$/.test(String(track.name)))
+      )
+        track.name = "Music";
+      var placed = [];
       bin = p.rootItem.createBin("Music");
       if (!bin) failure("Could not create the Music bin.");
       for (i = 0; i < cues.length; i++) {
@@ -1154,18 +1228,51 @@
         if (!item) failure("Imported music was not found in its bin.");
         var oldIn = item.getInPoint(2);
         var oldOut = item.getOutPoint(2);
-        if (c.sourceOffset + c.end - c.start > Number(oldOut.seconds) + 0.001)
+        var durationSeconds = (Math.round(c.end * fps) - Math.round(c.start * fps)) / fps;
+        var sourceEnd = c.sourceOffset + durationSeconds;
+        if (sourceEnd > Number(oldOut.seconds) + 0.000001)
           failure("The music source is shorter than its planned range.");
+        var followedByNew = i + 1 < cues.length && Math.abs(cues[i + 1].start - c.end) < 0.000001;
+        // 26.x floors placed durations to frames. A following new overwrite trims
+        // the small margin; a terminal edge gets only a few audio samples so it
+        // cannot reach the next frame or overwrite existing music.
+        var margin = followedByNew
+          ? Math.min(Math.max(0.02, frameDuration), cues[i + 1].end - cues[i + 1].start)
+          : 2 / 48000;
+        var requestedOut = Math.min(Number(oldOut.seconds), sourceEnd + margin);
         try {
           item.setInPoint(c.sourceOffset, 2);
-          item.setOutPoint(c.sourceOffset + c.end - c.start, 2);
-          // overwriteClip acts on this empty dedicated audio track only; no ripple.
+          item.setOutPoint(requestedOut, 2);
+          var actualIn = Number(item.getInPoint(2).seconds);
+          var actualOut = Number(item.getOutPoint(2).seconds);
+          // Audio source points snap to samples, not exactly to the requested seconds.
+          if (
+            Math.abs(actualIn - c.sourceOffset) >= frameDuration ||
+            Math.abs(actualOut - requestedOut) >= frameDuration
+          )
+            failure("Premiere did not accept the music source range.");
+          var placedDuration = Math.floor((actualOut - actualIn) * fps + 0.000001) / fps;
+          if (
+            placedDuration < durationSeconds - 0.000001 ||
+            (!followedByNew && placedDuration > durationSeconds + 0.000001)
+          )
+            failure("The source range cannot land safely on the section boundary.");
+          // The exact target range was checked above. Swap removes only its identified clip.
+          if (replaced) {
+            checked(replaced.remove(false, false), "music swap removal");
+            replaced = null;
+          }
           track.overwriteClip(item, String(c.start));
         } finally {
-          item.setInPoint(oldIn.seconds, 2);
-          item.setOutPoint(oldOut.seconds, 2);
+          if (item.clearInPoint && item.clearOutPoint) {
+            item.clearInPoint();
+            item.clearOutPoint();
+          } else {
+            item.setInPoint(oldIn.seconds, 2);
+            item.setOutPoint(oldOut.seconds, 2);
+          }
         }
-        var clip = null;
+        clip = null;
         for (j = 0; j < track.clips.numItems; j++)
           if (
             String(track.clips[j].projectItem.nodeId) === String(item.nodeId) &&
@@ -1174,10 +1281,83 @@
             clip = track.clips[j];
         if (
           !clip ||
-          Math.abs(clip.end.seconds - c.end) > 0.05 ||
-          Math.abs(clip.inPoint.seconds - c.sourceOffset) > 0.02
+          clip.end.seconds < c.end - frameDuration / 2 ||
+          clip.end.seconds > c.end + (followedByNew ? margin + frameDuration : frameDuration / 2) ||
+          Math.abs(clip.inPoint.seconds - c.sourceOffset) >= frameDuration
         )
           failure("Premiere did not place the expected music range.");
+        placed.push({ clip: clip, cue: c, startTransition: false, endTransition: false });
+      }
+      // Read back after all overwrites, which remove the temporary source margin.
+      for (i = 0; i < placed.length; i++) {
+        if (Math.abs(placed[i].clip.end.seconds - placed[i].cue.end) > frameDuration / 2)
+          failure("Premiere left a music gap or overrun at a section boundary.");
+      }
+      // QE items include gaps and transitions, so match by timing rather than DOM clip index.
+      var transitionCount = 0;
+      if (number(request.crossfade) && request.crossfade > 0 && request.crossfade <= 4) {
+        try {
+          app.enableQE();
+          var qseq = qe.project.getActiveSequence();
+          var qtrack = qseq.getAudioTrackAt(trackIndex);
+          var transition = qe.project.getAudioTransitionByName("Constant Power");
+          for (i = 0; i < placed.length; i++) {
+            var left = placed[i];
+            var right = null;
+            for (j = 0; j < placed.length; j++)
+              if (Math.abs(placed[j].cue.start - left.cue.end) < 0.02) right = placed[j];
+            // Existing clips are never given new effects or automation.
+            if (!right || pathKey(left.cue.track) === pathKey(right.cue.track)) continue;
+            var seconds = Math.min(
+              request.crossfade,
+              (left.cue.end - left.cue.start) / 2,
+              (right.cue.end - right.cue.start) / 2
+            );
+            var frames = Math.max(1, Math.round(seconds * fps));
+            var whole = Math.floor(frames / Math.round(fps));
+            var remainder = frames % Math.round(fps);
+            var duration =
+              "0:00:" +
+              (whole < 10 ? "0" : "") +
+              whole +
+              ":" +
+              (remainder < 10 ? "0" : "") +
+              remainder;
+            for (j = 0; j < qtrack.numItems; j++) {
+              var qitem = qtrack.getItemAt(j);
+              if (
+                qitem &&
+                qitem.type === "Clip" &&
+                qitem.start &&
+                Math.abs(Number(qitem.start.secs) - left.cue.start) < 0.02 &&
+                qitem.addTransition &&
+                transition
+              ) {
+                var added = qitem.addTransition(
+                  transition,
+                  false,
+                  duration,
+                  "0:00:00:00",
+                  0.5,
+                  false,
+                  false
+                );
+                if (added === true) {
+                  left.endTransition = true;
+                  right.startTransition = true;
+                  transitionCount++;
+                }
+                break;
+              }
+            }
+          }
+        } catch (_ignoredTransition) {
+          /* Deterministic Volume keyframe fades below are the fallback. */
+        }
+      }
+      for (i = 0; i < placed.length; i++) {
+        clip = placed[i].clip;
+        c = placed[i].cue;
         var level = null;
         for (j = 0; j < clip.components.numItems; j++) {
           var component = clip.components[j];
@@ -1204,9 +1384,18 @@
         for (k = 0; k < c.keys.length; k++) {
           key = c.keys[k];
           var at = time(c.sourceOffset + key.time);
+          var gain = key.value;
+          // Do not double-fade a successful Constant Power transition. Ducking stays explicit.
+          if (
+            !request.ducking &&
+            number(c.baseDb) &&
+            ((placed[i].startTransition && key.time <= c.fadeIn) ||
+              (placed[i].endTransition && key.time >= c.end - c.start - c.fadeOut))
+          )
+            gain = Math.pow(10, c.baseDb / 20);
           checked(level.addKey(at), "a volume keyframe");
           checked(
-            level.setValueAtKey(at, key.value * Math.pow(10, -15 / 20), k === c.keys.length - 1),
+            level.setValueAtKey(at, gain * Math.pow(10, -15 / 20), k === c.keys.length - 1),
             "a keyframe level"
           );
           checked(level.setInterpolationTypeAtKey(at, 0, false), "linear volume interpolation");
@@ -1225,7 +1414,11 @@
         "music"
       );
       if (!current.ok) failure("Could not verify the completed music timeline.");
-      return response("applied", current.signature);
+      return response(
+        "applied",
+        current.signature,
+        transitionCount + " Constant Power joins; remaining edges use Volume fades."
+      );
     } catch (error) {
       if (checkpoint) {
         var after = timeline(
@@ -1289,7 +1482,7 @@
       );
       return;
     }
-    if (data.action !== "apply" && data.action !== "undo")
+    if (data.action !== "apply" && data.action !== "swap" && data.action !== "undo")
       return done({ ok: false, error: "Invalid music action." });
     try {
       var encoded = JSON.stringify(data);

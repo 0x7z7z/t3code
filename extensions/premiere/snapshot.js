@@ -92,6 +92,7 @@
               nodeId: identities ? text(clip.nodeId) : "",
               projectItemName: clip.projectItem ? text(clip.projectItem.name) : "",
               projectItemId: clip.projectItem ? text(clip.projectItem.nodeId) : "",
+              mediaPath: clip.projectItem && clip.projectItem.getMediaPath ? text(clip.projectItem.getMediaPath()) : "",
               speed: speed,
               reversed: reversed,
               start: seconds(clip.start),
@@ -102,7 +103,9 @@
             });
           }
           if (items.length < clips.numItems) truncated = true;
-          list.push({ index: t, clips: items });
+          var locked = false;
+          try { locked = collection[t].isLocked(); } catch (ignoredLock) {}
+          list.push({ index: t, name: text(collection[t].name), locked: locked, clips: items });
         }
         return list;
       }
