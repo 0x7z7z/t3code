@@ -8,9 +8,11 @@
   var connecting = false;
   var contextCallbacks = [];
   var readingContext = false;
+  var contextReadTimeout = null;
   var timer = null;
   var playheadTimer = null;
   var readingPlayhead = false;
+  var playheadReadTimeout = null;
   var nextPlayheadReadId = 0;
   var nodeRequire =
     typeof require === "function" ? require : window.cep_node && window.cep_node.require;
@@ -146,7 +148,15 @@
     readingContext = true;
     var script = "(" + timelineContext.toString() + ")()";
     var readId = ++nextPlayheadReadId;
+    var completed = false;
+    contextReadTimeout = setTimeout(function () {
+      finish("premiere:error");
+    }, 5000);
     function finish(raw) {
+      if (completed) return;
+      completed = true;
+      clearTimeout(contextReadTimeout);
+      contextReadTimeout = null;
       var next = null;
       try {
         if (String(raw).indexOf("premiere:") === 0 && raw !== "premiere:none") {
@@ -258,35 +268,44 @@
   function publishPlayhead() {
     if (readingPlayhead || !playheadTimer || !window.__adobe_cep__) return;
     readingPlayhead = true;
+    var completed = false;
+    var readId = ++nextPlayheadReadId;
+    playheadReadTimeout = setTimeout(function () {
+      finish("");
+    }, 5000);
     try {
-      var readId = ++nextPlayheadReadId;
-      window.__adobe_cep__.evalScript("(" + playheadContext.toString() + ")()", function (raw) {
-        readingPlayhead = false;
-        if (!playheadTimer || !backendOrigin || !frame.contentWindow) return;
-        var fields = String(raw).split("|");
-        if (
-          fields.length !== 3 ||
-          !fields[2] ||
-          !isFinite(Number(fields[2])) ||
-          Number(fields[2]) < 0
-        )
-          return;
-        try {
-          frame.contentWindow.postMessage(
-            {
-              type: "premiere.playhead",
-              protocol: 1,
-              projectId: decodeURIComponent(fields[0]),
-              sequenceId: decodeURIComponent(fields[1]),
-              seconds: Number(fields[2]),
-              readId: readId,
-            },
-            backendOrigin,
-          );
-        } catch {}
-      });
+      window.__adobe_cep__.evalScript("(" + playheadContext.toString() + ")()", finish);
     } catch {
+      finish("");
+    }
+    function finish(raw) {
+      if (completed) return;
+      completed = true;
+      clearTimeout(playheadReadTimeout);
+      playheadReadTimeout = null;
       readingPlayhead = false;
+      if (!playheadTimer || !backendOrigin || !frame.contentWindow) return;
+      var fields = String(raw).split("|");
+      if (
+        fields.length !== 3 ||
+        !fields[2] ||
+        !isFinite(Number(fields[2])) ||
+        Number(fields[2]) < 0
+      )
+        return;
+      try {
+        frame.contentWindow.postMessage(
+          {
+            type: "premiere.playhead",
+            protocol: 1,
+            projectId: decodeURIComponent(fields[0]),
+            sequenceId: decodeURIComponent(fields[1]),
+            seconds: Number(fields[2]),
+            readId: readId,
+          },
+          backendOrigin,
+        );
+      } catch {}
     }
   }
 
@@ -881,6 +900,8 @@
   window.addEventListener("unload", function () {
     if (timer) clearInterval(timer);
     if (playheadTimer) clearInterval(playheadTimer);
+    clearTimeout(contextReadTimeout);
+    clearTimeout(playheadReadTimeout);
   });
   readContext(function () {});
   connect();
