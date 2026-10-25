@@ -2,6 +2,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import {
   NodeId,
+  MessageId,
   ProviderSessionId,
   RuntimeRequestId,
   TurnItemId,
@@ -12,6 +13,7 @@ import { render } from "../../test/render";
 import { AppAtomRegistryProvider } from "../rpc/atomRegistry";
 import { makeThreadProjectionFixture } from "../test-fixtures";
 import type { PremiereContext } from "./host";
+import type { MusicPlan, MusicTrack } from "./music";
 import { transcriptStorageKey } from "./TranscriptView";
 import "./styles.css";
 
@@ -25,6 +27,10 @@ const state = vi.hoisted(() => ({
   host: { connected: true, context: null as PremiereContext | null },
   frame: vi.fn(),
   handoff: vi.fn(),
+  music: vi.fn(),
+  snapshot: vi.fn(),
+  audioProvider: false,
+  upload: vi.fn(),
 }));
 
 vi.mock("../connection/runtime", () => ({ connectionAtomRuntime: {} }));
@@ -46,7 +52,18 @@ vi.mock("@t3tools/client-runtime/state/session", async () => {
 vi.mock("../connection/onboarding", () => ({ connectPairing: {} }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: { label?: string }) =>
-    command.label === "dismiss-user-input" ? state.dismiss : state.run,
+    command.label === "dismiss-user-input"
+      ? state.dismiss
+      : command.label === "music-upload"
+        ? state.upload
+        : state.run,
+}));
+vi.mock("../state/attachments", () => ({
+  attachmentEnvironment: { createUploadUrl: { label: "music-upload" } },
+}));
+vi.mock("../state/session", async (original) => ({
+  ...(await original()),
+  readPreparedConnection: () => ({ httpBaseUrl: "http://axis-test.invalid" }),
 }));
 vi.mock("../state/entities", () => ({
   useProjects: () => [{ id: "editing", environmentId: state.environmentId, name: "Editing" }],
@@ -65,6 +82,7 @@ vi.mock("../state/environments", () => ({
         [
           {
             instanceId: "codex",
+            driver: state.audioProvider ? "antigravity" : "codex",
             enabled: true,
             installed: true,
             auth: { status: state.signedIn ? "authenticated" : "unauthenticated", email: "" },
@@ -72,7 +90,7 @@ vi.mock("../state/environments", () => ({
             skills: [],
             models: [
               {
-                slug: "gpt-6-luna",
+                slug: state.audioProvider ? "gemini-test" : "gpt-6-luna",
                 name: "Luna",
                 isCustom: false,
                 capabilities: {
@@ -134,9 +152,11 @@ vi.mock("./host", async (original) => ({
 
 vi.mock("./timelineHost", async (original) => ({
   ...(await original()),
-  requestTimelineSnapshot: async () => {
-    throw new Error("No timeline in tests.");
-  },
+  requestTimelineSnapshot: state.snapshot,
+}));
+vi.mock("./interactiveHost", async (original) => ({
+  ...(await original()),
+  requestTimelineAction: state.music,
 }));
 vi.mock("./whisperTranscription", async (original) => ({
   ...(await original()),
@@ -154,6 +174,12 @@ function setup(name: string, allowed: boolean) {
   state.environmentId = `premiere-permission-${name}`;
   state.allowed = allowed;
   state.signedIn = true;
+  state.audioProvider = false;
+  state.upload
+    .mockReset()
+    .mockResolvedValue({ _tag: "Success", value: { relativeUrl: "/api/assets/music" } });
+  state.music.mockReset();
+  state.snapshot.mockReset().mockRejectedValue(new Error("No timeline in tests."));
   state.run.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
   state.dismiss.mockReset().mockResolvedValue({ _tag: "Success", value: undefined });
   state.projection = null;
@@ -697,3 +723,352 @@ it("starts a dedicated WhisperX artifact turn while the composer stays in Plan a
     .element(screen.getByRole("radio", { name: "Plan", exact: true }))
     .toHaveAttribute("aria-checked", "true");
 });
+
+function setupMusic(name: string) {
+  setup(name, true);
+  state.audioProvider = true;
+  const context: PremiereContext = {
+    projectName: "Film",
+    projectPath: "D:/Film.prproj",
+    projectDocumentId: `film-${name}`,
+    sequenceId: "main",
+    sequenceName: "Main edit",
+    fps: 25,
+    playheadSeconds: 0,
+  };
+  state.host = { connected: true, context };
+  localStorage.setItem(
+    transcriptStorageKey(context),
+    JSON.stringify({
+      transcript: {
+        source: "WhisperX (Axis)",
+        timing: "word",
+        offset: 0,
+        words: Array.from({ length: 600 }, (_, i) => ({
+          text: ["Um,", "Every", "frame", "matters."][i % 4],
+          start: i,
+          end: i + 0.4,
+        })),
+      },
+      link: null,
+      undo: null,
+      uncertain: false,
+    }),
+  );
+  localStorage.removeItem(`axis-music:${JSON.stringify(context.projectDocumentId)}`);
+  const track: MusicTrack = {
+    path: "D:/Music/Strings.wav",
+    filename: "Strings.wav",
+    category: "Action",
+    duration: 1200,
+    loudnessDbfs: -18,
+    energy: [],
+    rises: [],
+    loudWindows: [{ start: 10, end: 40 }],
+    quietRanges: [],
+    phraseBoundaries: [0, 8],
+    description: "",
+    tags: [],
+    tempo: null,
+  };
+  const plan: MusicPlan = {
+    version: 1,
+    cues: [
+      {
+        id: "agent-cue",
+        chapter: "Agent chapter",
+        start: 0,
+        end: 20,
+        track: track.path,
+        sourceOffset: 12,
+        reason: "A measured opening bed.",
+        fadeIn: 1,
+        fadeOut: 1,
+        baseDb: -22,
+        enabled: true,
+        alternatives: [],
+      },
+    ],
+    silence: [],
+  };
+  state.music.mockImplementation(async (_type, request) => {
+    if (request.action === "index")
+      return { tracks: [track], pending: 2, failures: [], tool: "D:/Axis/tools/axis_music.py" };
+    if (request.action === "audition")
+      return { dataUrl: "data:audio/wav;base64,UklGRg==", sizeBytes: 6 };
+    return {};
+  });
+  state.snapshot.mockResolvedValue({
+    signature: "before",
+    snapshot: { projectId: context.projectDocumentId },
+  });
+  const projection = makeThreadProjectionFixture();
+  state.projection = {
+    ...projection,
+    thread: {
+      ...projection.thread,
+      modelSelection: { instanceId: projection.thread.providerInstanceId, model: "gemini-test" },
+    },
+    turnItems: [
+      {
+        id: TurnItemId.make("music-reply"),
+        threadId: projection.thread.id,
+        runId: null,
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        ordinal: 0,
+        status: "completed",
+        title: null,
+        startedAt: projection.updatedAt,
+        completedAt: projection.updatedAt,
+        updatedAt: projection.updatedAt,
+        type: "assistant_message",
+        messageId: MessageId.make("music-reply"),
+        streaming: false,
+        text: `${"A long conversation about the edit.\n\n".repeat(100)}\n\`\`\`axis-music\n${JSON.stringify(plan)}\n\`\`\``,
+      },
+    ],
+  };
+  return { context, plan, track, threadId: projection.thread.id };
+}
+
+function musicApp() {
+  return (
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>
+  );
+}
+
+it("keeps the Music draft through tabs, stable polling, agent delivery, describe and a missing context poll", async () => {
+  const f = setupMusic("music-lifetime");
+  using _upload = vi
+    .spyOn(globalThis, "fetch")
+    .mockResolvedValue(new Response(null, { status: 200 }));
+  // The CEP panel has no router navigation.
+  await using screen = await render(musicApp(), { router: false });
+  await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(f.threadId);
+  await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Music", exact: true }).click();
+  await screen.getByRole("textbox", { name: "Music library folder" }).fill("D:/Music");
+  await screen.getByRole("button", { name: "Index library", exact: true }).click();
+  await screen.getByLabelText("Music levels and exclusions").click();
+  await screen.getByRole("textbox", { name: "Sponsor and silence ranges" }).fill("60-90");
+  await screen.getByRole("button", { name: "Conversation", exact: true }).click();
+  state.host = {
+    connected: true,
+    context: {
+      ...f.context,
+      projectPath: "d:\\Film.prproj",
+      sequenceName: "Renamed edit",
+      playheadSeconds: 25,
+    },
+  };
+  expect(transcriptStorageKey(state.host.context!)).toBe(transcriptStorageKey(f.context));
+  await screen.rerender(musicApp());
+  await screen.getByRole("button", { name: "Review music", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "Music", exact: true })).toBeVisible();
+  await screen.getByRole("spinbutton", { name: "Source offset for Agent chapter" }).fill("17");
+  await screen.getByRole("checkbox", { name: "Include Agent chapter" }).click();
+  await screen.getByRole("button", { name: "Describe library", exact: true }).click();
+  await vi.waitFor(() =>
+    expect(state.run).toHaveBeenCalledWith(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          message: expect.objectContaining({ attachments: expect.any(Array) }),
+        }),
+      }),
+    ),
+  );
+  await expect.element(screen.getByRole("region", { name: "Music", exact: true })).toBeVisible();
+  await screen.getByRole("button", { name: "Conversation", exact: true }).click();
+  await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+  state.host = { connected: true, context: null };
+  await screen.rerender(musicApp());
+  state.host = { connected: true, context: f.context };
+  await screen.rerender(musicApp());
+  await expect
+    .element(screen.getByRole("textbox", { name: "Music library folder" }))
+    .toHaveValue("D:/Music");
+  await expect
+    .element(screen.getByRole("textbox", { name: "Sponsor and silence ranges" }))
+    .toHaveValue("60-90");
+  await expect
+    .element(screen.getByRole("spinbutton", { name: "Source offset for Agent chapter" }))
+    .toHaveValue(17);
+  await expect
+    .element(screen.getByRole("checkbox", { name: "Include Agent chapter" }))
+    .not.toBeChecked();
+  await expect.element(screen.getByRole("button", { name: "Resume index (2)" })).toBeEnabled();
+  expect(state.music.mock.calls.filter(([, r]) => r.action === "index")).toHaveLength(1);
+  expect(screen.container.querySelector("[data-music-panel] [role=status]")?.textContent).toContain(
+    "Library description sent.",
+  );
+  state.host = { connected: true, context: { ...f.context, sequenceId: "another-sequence" } };
+  await screen.rerender(musicApp());
+  await expect
+    .element(screen.getByRole("button", { name: "Import transcript", exact: true }))
+    .toBeVisible();
+  expect(screen.container.querySelector("[data-music-panel]")).toBeNull();
+});
+
+it("retains an indexing job and tool drafts when switching away, closing and reopening tools", async () => {
+  const f = setupMusic("music-index-lifetime");
+  let finishIndex!: (value: object) => void;
+  const indexed = new Promise<object>((resolve) => {
+    finishIndex = resolve;
+  });
+  state.music.mockImplementationOnce(() => indexed);
+  // The CEP panel has no router navigation.
+  await using screen = await render(musicApp(), { router: false });
+  await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Music", exact: true }).click();
+  await screen.getByRole("textbox", { name: "Music library folder" }).fill("D:/Music");
+  await screen.getByRole("button", { name: "Index library", exact: true }).click();
+  await screen.getByRole("button", { name: "Conversation", exact: true }).click();
+  state.host = { connected: true, context: null };
+  await screen.rerender(musicApp());
+  state.host = { connected: true, context: f.context };
+  await screen.rerender(musicApp());
+  finishIndex({ tracks: [f.track], pending: 2, failures: [] });
+  await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Resume index (2)" })).toBeEnabled();
+  await screen.getByRole("button", { name: "Build music plan" }).click();
+  await screen.getByRole("button", { name: "Close Music" }).click();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Captions", exact: true }).click();
+  await screen.getByRole("combobox", { name: "Caption case" }).selectOptions("upper");
+  await screen.getByRole("button", { name: "Close captions" }).click();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Music", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Resume index (2)" })).toBeEnabled();
+  expect(screen.container.querySelector("[data-music-cues] li")).not.toBeNull();
+  await screen.getByRole("button", { name: "Close Music" }).click();
+  await screen.getByRole("button", { name: "Transcript options" }).click();
+  await screen.getByRole("button", { name: "Captions", exact: true }).click();
+  await expect.element(screen.getByRole("combobox", { name: "Caption case" })).toHaveValue("upper");
+  expect(state.music.mock.calls.filter(([, r]) => r.action === "index")).toHaveLength(1);
+});
+
+it.each(["Captions", "Clean up"])(
+  "keeps %s edits through Conversation and context polling",
+  async (tool) => {
+    const f = setupMusic(`tool-lifetime-${tool}`);
+    // The CEP panel has no router navigation.
+    await using screen = await render(musicApp(), { router: false });
+    await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+    await screen.getByRole("button", { name: "Transcript options" }).click();
+    await screen.getByRole("button", { name: tool, exact: true }).click();
+    if (tool === "Captions") {
+      await screen.getByRole("combobox", { name: "Caption case" }).selectOptions("upper");
+      await screen.getByRole("checkbox", { name: "Strip punctuation" }).click();
+    } else {
+      await screen.getByRole("spinbutton", { name: "Pause threshold (s)" }).fill("2");
+      await page
+        .elementLocator(screen.container.querySelectorAll("[data-cleanup-groups] summary")[1]!)
+        .click();
+      await screen.getByRole("checkbox", { name: /Include Um,/ }).click();
+    }
+    await screen.getByRole("button", { name: "Conversation", exact: true }).click();
+    state.host = { connected: true, context: { ...f.context, playheadSeconds: 30 } };
+    await screen.rerender(musicApp());
+    state.host = { connected: true, context: null };
+    await screen.rerender(musicApp());
+    state.host = { connected: true, context: f.context };
+    await screen.rerender(musicApp());
+    await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+    if (tool === "Captions") {
+      await expect
+        .element(screen.getByRole("combobox", { name: "Caption case" }))
+        .toHaveValue("upper");
+      await expect
+        .element(screen.getByRole("checkbox", { name: "Strip punctuation" }))
+        .toBeChecked();
+    } else {
+      await expect
+        .element(screen.getByRole("spinbutton", { name: "Pause threshold (s)" }))
+        .toHaveValue(2);
+      await expect.element(screen.getByRole("checkbox", { name: /Include Um,/ })).not.toBeChecked();
+      await screen.getByRole("button", { name: "Transcript options" }).click();
+      await screen.getByRole("button", { name: "Music", exact: true }).click();
+      await screen.getByRole("button", { name: "Close Music" }).click();
+      await screen.getByRole("button", { name: "Um, at 00:00:00.000" }).click();
+      await expect
+        .element(screen.getByRole("group", { name: "Transcript selection actions" }))
+        .toBeVisible();
+    }
+  },
+);
+
+it.each(
+  [
+    { width: 440, height: 720 },
+    { width: 1400, height: 900 },
+  ].flatMap((size) => ["Music", "Captions", "Clean up"].map((tool) => ({ ...size, tool }))),
+)(
+  "contains $tool with long transcript and chat at $width x $height",
+  async ({ width, height, tool }) => {
+    const f = setupMusic(`contain-${tool}-${width}`);
+    await page.viewport(width, height);
+    // The CEP panel has no router navigation.
+    await using screen = await render(musicApp(), { router: false });
+    screen.container.style.cssText = `width:${width}px;height:${height}px;position:fixed;inset:0;`;
+    await screen.getByRole("combobox", { name: "Editing conversation" }).selectOptions(f.threadId);
+    await screen.getByRole("button", { name: "Transcript", exact: true }).click();
+    await screen.getByRole("button", { name: "Transcript options" }).click();
+    await screen.getByRole("button", { name: tool, exact: true }).click();
+    if (tool === "Music") {
+      await screen.getByRole("textbox", { name: "Music library folder" }).fill("D:/Music");
+      await screen.getByRole("button", { name: "Index library", exact: true }).click();
+      await screen.getByRole("button", { name: "Build music plan" }).click();
+    }
+    const selector =
+      tool === "Music"
+        ? "[data-music-panel]"
+        : tool === "Captions"
+          ? "[data-captions-panel]"
+          : "[data-cleanup-review]";
+    await expect
+      .element(page.elementLocator(screen.container.querySelector(selector)!))
+      .toBeVisible();
+    const panel = screen.container.querySelector<HTMLElement>(selector)!;
+    if (tool === "Music") {
+      expect(
+        panel.querySelector("[data-music-cues] li")!.getBoundingClientRect().height,
+      ).toBeGreaterThan(48);
+      expect(
+        panel.querySelector("[data-music-bands]")!.getBoundingClientRect().height,
+      ).toBeGreaterThan(0);
+    }
+    const shot = `../../../../.t3/music-panel/${tool.toLowerCase().replaceAll(" ", "-")}-${width}x${height}.png`;
+    await page.screenshot({ path: shot });
+    const rect = panel.getBoundingClientRect();
+    const composer = screen.container.querySelector("[data-composer]")!.getBoundingClientRect();
+    expect(rect.bottom).toBeLessThanOrEqual(composer.top);
+    expect(rect.left).toBeGreaterThanOrEqual(0);
+    expect(rect.right).toBeLessThanOrEqual(width);
+    expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth);
+    expect(getComputedStyle(panel).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
+    expect(
+      screen.container.querySelector("[data-transcript]")!.getBoundingClientRect().height,
+    ).toBe(0);
+    const words = screen.container.querySelector("[data-transcript-body]")!.getBoundingClientRect();
+    if (tool === "Clean up") {
+      expect(rect.bottom).toBeLessThanOrEqual(words.top);
+      expect(words.height).toBeGreaterThan(50);
+    } else expect(words.height).toBe(0);
+    for (const x of [rect.left + 4, rect.right - 4]) {
+      const painted = document.elementFromPoint(x, Math.min(rect.bottom - 4, rect.top + 80));
+      expect(panel.contains(painted)).toBe(true);
+    }
+    panel.scrollTop = panel.scrollHeight;
+    for (const x of [rect.left + 4, rect.right - 4]) {
+      expect(panel.contains(document.elementFromPoint(x, rect.bottom - 4))).toBe(true);
+    }
+  },
+);

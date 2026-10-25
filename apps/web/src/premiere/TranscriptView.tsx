@@ -295,8 +295,7 @@ export function TranscriptView({
   const [confirmCut, setConfirmCut] = useState(false);
   const [fixScript, setFixScript] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [captionsOpen, setCaptionsOpen] = useState(false);
-  const [musicOpen, setMusicOpen] = useState(false);
+  const [toolView, setToolView] = useState<"music" | "captions" | "cleanup" | null>(null);
   const [cleanup, setCleanup] = useState<{ signature: string } | null>(null);
   const [cleanupSettings, setCleanupSettings] = useState(defaultCleanupSettings);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
@@ -342,9 +341,10 @@ export function TranscriptView({
   const current = wordAtTime(words, playhead, fps);
   const anchorWord = current >= 0 ? current : lastWordBefore(words, playhead, fps);
   const range = selection ? selectionRange(words, selection.anchor, selection.focus, fps) : null;
-  const cleanupCuts = cleanup
-    ? detectTranscriptCleanup(words, cleanupSettings, fps, link?.segments)
-    : [];
+  const cleanupCuts =
+    cleanup && toolView === "cleanup"
+      ? detectTranscriptCleanup(words, cleanupSettings, fps, link?.segments)
+      : [];
   const cleanupWords = Array.from<CleanupCut | undefined>({ length: words.length });
   const cleanupPauses = new Map<number, CleanupCut[]>();
   let cleanupCursor = 0;
@@ -387,7 +387,7 @@ export function TranscriptView({
   }, []);
 
   function persist(next: StoredTranscript, destination = key) {
-    if (storedRef.current.transcript !== next.transcript) setCleanup(null);
+    if (storedRef.current.transcript !== next.transcript) clearCleanup();
     storedRef.current = next;
     setStored(next);
     try {
@@ -397,6 +397,11 @@ export function TranscriptView({
         "Browser storage is full or unavailable. Keep this panel open; the transcript and undo could not be saved.",
       );
     }
+  }
+
+  function clearCleanup() {
+    setCleanup(null);
+    setToolView((current) => (current === "cleanup" ? null : current));
   }
 
   async function snapshot() {
@@ -443,7 +448,7 @@ export function TranscriptView({
     setNotice(null);
     if (JSON.stringify(fresh.segments) !== JSON.stringify(saved.link.segments)) {
       persist({ ...saved, link: fresh });
-      setCleanup(null);
+      clearCleanup();
       setSelection(null);
       setConfirmCut(false);
     }
@@ -696,8 +701,6 @@ export function TranscriptView({
     }
     setMenuOpen(false);
     operation.current = true;
-    setMusicOpen(false);
-    setCaptionsOpen(false);
     setBusy(true);
     setError(null);
     try {
@@ -718,6 +721,7 @@ export function TranscriptView({
       setConfirmCut(false);
       setFollowing(false);
       setCleanup({ signature: reply.signature });
+      setToolView("cleanup");
     } catch (problem) {
       setError(problem instanceof Error ? problem.message : "Could not open cleanup review.");
     } finally {
@@ -734,9 +738,7 @@ export function TranscriptView({
     if (cleanupRequest) requestedCleanup(cleanupRequest.settings);
   }, [cleanupRequest]);
   const requestedMusic = useEffectEvent(() => {
-    setMusicOpen(true);
-    setCaptionsOpen(false);
-    setCleanup(null);
+    setToolView("music");
   });
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- A new agent suggestion opens its review UI.
@@ -790,7 +792,7 @@ export function TranscriptView({
           expectedSignature: result.expectedSignature,
         },
       });
-      setCleanup(null);
+      clearCleanup();
       setSelection(null);
       await pruneCheckpoints(context.sequenceId, result.checkpointId).catch(() => {});
       if (result.cutError)
@@ -798,7 +800,7 @@ export function TranscriptView({
     } catch (problem) {
       const unchanged = problem instanceof TimelineRequestError && problem.unchanged;
       persist({ ...storedRef.current, uncertain: !unchanged });
-      setCleanup(null);
+      clearCleanup();
       setError(
         `${problem instanceof Error ? problem.message : "Cleanup failed."} ${unchanged ? "Open Clean up to review again." : "Inspect the timeline and Axis checkpoints before retrying."}`,
       );
@@ -1013,7 +1015,6 @@ export function TranscriptView({
                       type="button"
                       disabled={busy || stored.uncertain || !words.length}
                       onClick={() => {
-                        setCaptionsOpen(false);
                         void openCleanup();
                       }}
                     >
@@ -1024,9 +1025,7 @@ export function TranscriptView({
                       disabled={busy || !words.length}
                       onClick={() => {
                         setMenuOpen(false);
-                        setCleanup(null);
-                        setMusicOpen(false);
-                        setCaptionsOpen(true);
+                        setToolView("captions");
                       }}
                     >
                       Captions
@@ -1036,9 +1035,7 @@ export function TranscriptView({
                       disabled={busy || !words.length}
                       onClick={() => {
                         setMenuOpen(false);
-                        setCaptionsOpen(false);
-                        setCleanup(null);
-                        setMusicOpen(true);
+                        setToolView("music");
                       }}
                     >
                       Music
@@ -1137,48 +1134,53 @@ export function TranscriptView({
           </div>
         </header>
       ) : null}
-      {doc && musicOpen ? (
-        <MusicPanel
-          key={`${key}:music`}
-          context={context}
-          words={words}
-          disabled={disabled || busy || stored.uncertain}
-          onBusy={(value) => {
-            setBusy(value);
-            onBusy(value);
-          }}
-          onClose={() => setMusicOpen(false)}
-          onAsk={onAsk}
-          initialPlan={musicRequest?.plan}
-          onDescribe={onDescribeMusic}
-          onRestored={(sequenceId) => {
-            localStorage.setItem(
-              transcriptStorageKey(context, sequenceId),
-              JSON.stringify({ ...storedRef.current, undo: null }),
-            );
-          }}
-        />
-      ) : null}
-      {doc && captionsOpen ? (
-        <CaptionsPanel
-          key={key}
-          context={context}
-          words={words}
-          disabled={disabled || busy || stored.uncertain}
-          onBusy={(value) => {
-            setBusy(value);
-            onBusy(value);
-          }}
-          onClose={() => setCaptionsOpen(false)}
-          onRestored={(sequenceId) => {
-            localStorage.setItem(
-              transcriptStorageKey(context, sequenceId),
-              JSON.stringify({ ...storedRef.current, undo: null }),
-            );
-          }}
-        />
+      {/* Tools stay mounted for this sequence so drafts and in-flight jobs outlive navigation. */}
+      {doc ? (
+        <div data-transcript-tool="music" hidden={toolView !== "music"}>
+          <MusicPanel
+            key={`${key}:music`}
+            context={context}
+            words={words}
+            disabled={disabled || busy || stored.uncertain}
+            onBusy={(value) => {
+              setBusy(value);
+              onBusy(value);
+            }}
+            onClose={() => setToolView(null)}
+            onAsk={onAsk}
+            initialPlan={musicRequest?.plan}
+            onDescribe={onDescribeMusic}
+            onRestored={(sequenceId) => {
+              localStorage.setItem(
+                transcriptStorageKey(context, sequenceId),
+                JSON.stringify({ ...storedRef.current, undo: null }),
+              );
+            }}
+          />
+        </div>
       ) : null}
       {doc ? (
+        <div data-transcript-tool="captions" hidden={toolView !== "captions"}>
+          <CaptionsPanel
+            key={key}
+            context={context}
+            words={words}
+            disabled={disabled || busy || stored.uncertain}
+            onBusy={(value) => {
+              setBusy(value);
+              onBusy(value);
+            }}
+            onClose={() => setToolView(null)}
+            onRestored={(sequenceId) => {
+              localStorage.setItem(
+                transcriptStorageKey(context, sequenceId),
+                JSON.stringify({ ...storedRef.current, undo: null }),
+              );
+            }}
+          />
+        </div>
+      ) : null}
+      {doc && toolView !== "music" && toolView !== "captions" ? (
         <p data-transcript-meta="">
           <span data-synced={link ? "" : undefined} aria-hidden="true" />
           <span data-transcript-source="">
@@ -1258,8 +1260,8 @@ export function TranscriptView({
           {scriptToggle}
         </div>
       ) : (
-        <>
-          {cleanup ? (
+        <div data-transcript-editor="" hidden={toolView === "music" || toolView === "captions"}>
+          {cleanup && toolView === "cleanup" ? (
             <CleanupReview
               cuts={cleanupCuts}
               excluded={excluded}
@@ -1270,7 +1272,7 @@ export function TranscriptView({
               onToggle={toggleCleanup}
               onSeek={(seconds) => seekPremiere(Math.max(0, seconds - 0.3), context.sequenceId)}
               onApply={() => void applyCleanup()}
-              onClose={() => setCleanup(null)}
+              onClose={clearCleanup}
             />
           ) : null}
           <div data-transcript-body="">
@@ -1282,7 +1284,7 @@ export function TranscriptView({
               onWheel={() => setFollowing(false)}
               onTouchMove={() => setFollowing(false)}
               onPointerDown={(event) => {
-                if (cleanup) return;
+                if (toolView === "cleanup") return;
                 if (event.target === event.currentTarget) setFollowing(false);
                 const index = wordIndex(event.target);
                 if (event.button !== 0 || index < 0) return;
@@ -1305,7 +1307,7 @@ export function TranscriptView({
               }}
               onClick={(event) => {
                 const cut = (event.target as HTMLElement).closest?.("[data-cut-id]");
-                if (cleanup && cut) {
+                if (toolView === "cleanup" && cut) {
                   toggleCleanup(cut.getAttribute("data-cut-id")!);
                   return;
                 }
@@ -1369,9 +1371,9 @@ export function TranscriptView({
               </button>
             ) : null}
           </div>
-        </>
+        </div>
       )}
-      {range ? (
+      {range && toolView === null ? (
         <div data-transcript-actions="" role="group" aria-label="Transcript selection actions">
           {confirmCut ? (
             <>
