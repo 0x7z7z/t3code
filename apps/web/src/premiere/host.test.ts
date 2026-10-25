@@ -286,6 +286,17 @@ it("settles stale explicit context requests without reviving a previous sequence
 });
 
 describe("Premiere frame requests", () => {
+  it("settles outstanding context reads and releases their timers when the bridge closes", async () => {
+    using bridge = frameBridge();
+    const first = requestPremiereContext();
+    const second = requestPremiereContext();
+    expect(vi.getTimerCount()).toBe(2);
+    bridge.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    await expect(first).resolves.toBeNull();
+    await expect(second).resolves.toBeNull();
+  });
+
   it("correlates concurrent requests and ignores untrusted messages", async () => {
     using bridge = frameBridge();
     const first = requestPremiereFrame();

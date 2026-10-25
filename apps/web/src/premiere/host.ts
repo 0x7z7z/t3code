@@ -172,6 +172,7 @@ export function installPremiereHostBridge(): () => void {
   window.parent.postMessage({ type: "premiere.ready", protocol: 1 }, "*");
   return () => {
     window.removeEventListener("message", onMessage);
+    for (const callback of pending.values()) callback(null);
     for (const callback of pendingFrames.values())
       callback({
         ok: false,
