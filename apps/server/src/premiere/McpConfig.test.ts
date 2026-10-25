@@ -39,6 +39,16 @@ const runtimePolicy = (cwd: string) =>
   });
 
 describe("installed Premiere connector", () => {
+  it("matches Windows UNC workspaces and normalized drive paths", () => {
+    for (const [workspacePath, cwd] of [
+      ["\\\\NAS\\Media\\Axis Workspace", "//nas/media/axis workspace/"],
+      ["C:/Editing/workspace", "c:\\Editing\\temp\\..\\workspace\\"],
+      ["C:/", "c:/"],
+    ]) {
+      const configured = { T3CODE_PREMIERE_MCP: JSON.stringify({ workspacePath, ...server }) };
+      expect(premiereMcpServer(configured, cwd)).toEqual(server);
+    }
+  });
   it("attaches only inside the dedicated workspace, preserving case-sensitive Unix paths", () => {
     expect(premiereMcpServer(environment, "c:\\editing\\workspace\\")).toEqual(server);
     expect(premiereMcpServer(environment, "C:/Editing/workspace/other")).toBeUndefined();
