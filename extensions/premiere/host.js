@@ -929,6 +929,7 @@
   function musicOperation(request, timeline) {
     var checkpoint = null;
     var bin = null;
+    var effectRows = [];
     function time(seconds) {
       var t = new Time();
       t.seconds = seconds;
@@ -964,8 +965,74 @@
         "|" +
         encodeURIComponent(message || "") +
         "|" +
-        encodeURIComponent(sequenceId || "")
+        encodeURIComponent(sequenceId || "") +
+        "|" +
+        encodeURIComponent(effectRows.join("\n"))
       );
+    }
+    function applyMusicEffect(targetClip, cue, effectName, audioTrackIndex, tolerance) {
+      try {
+        app.enableQE();
+        var audioTrack = qe.project.getActiveSequence().getAudioTrackAt(audioTrackIndex);
+        var effect = qe.project.getAudioEffectByName(effectName);
+        if (!effect) throw new Error("effect unavailable");
+        var qeClip = null;
+        for (var qi = 0; qi < audioTrack.numItems; qi++) {
+          var entry = audioTrack.getItemAt(qi);
+          if (
+            entry &&
+            entry.type === "Clip" &&
+            entry.start &&
+            Math.abs(Number(entry.start.secs) - cue.start) < tolerance
+          )
+            qeClip = entry;
+        }
+        if (!qeClip || !qeClip.addAudioEffect) throw new Error("QE clip unavailable");
+        var beforeCount = targetClip.components.numItems;
+        qeClip.addAudioEffect(effect);
+        var addedEffect = null;
+        for (var ci = beforeCount; ci < targetClip.components.numItems; ci++) {
+          if (targetClip.components[ci].displayName === effectName)
+            addedEffect = targetClip.components[ci];
+        }
+        if (!addedEffect) throw new Error("insertion not verified");
+        var preset =
+          effectName === "Lowpass"
+            ? [["Cutoff", 0.25]]
+            : [
+                ["Maximum Amplitude", 0.72],
+                ["Input Boost", 0.6667],
+                ["Look-Ahead|Look-Ahead Time", 0.1333],
+                ["Release|Release Time", 0.375],
+                ["Link Channels", 1],
+                ["Decay to Ceiling", 1],
+                ["Limit True Peak", 0]
+              ];
+        for (var pi = 0; pi < preset.length; pi++) {
+          var param = null;
+          var aliases = preset[pi][0]
+            .toLowerCase()
+            .replace(/[^a-z|]/g, "")
+            .split("|");
+          for (var pj = 0; pj < addedEffect.properties.numItems; pj++) {
+            var prop = addedEffect.properties[pj];
+            var propName = String(prop.displayName || "")
+              .toLowerCase()
+              .replace(/[^a-z]/g, "");
+            for (var pa = 0; pa < aliases.length; pa++) if (propName === aliases[pa]) param = prop;
+          }
+          if (!param) throw new Error("preset parameter unavailable: " + preset[pi][0]);
+          checked(param.setValue(preset[pi][1], true), effectName + " preset");
+          if (param.getValue) {
+            var actualValue = Number(param.getValue());
+            if (!number(actualValue) || Math.abs(actualValue - preset[pi][1]) > 0.0002)
+              throw new Error("preset readback failed");
+          }
+        }
+        return effectName;
+      } catch (effectError) {
+        return effectName + " failed (" + String(effectError).slice(0, 160) + ")";
+      }
     }
     try {
       if (
@@ -1074,6 +1141,10 @@
         previousSection = c.sectionId || "";
         previousEnd = c.end;
         var previousTime = -1;
+        if (c.effects && c.effects.length > 2) failure("Invalid music effects.");
+        for (k = 0; c.effects && k < c.effects.length; k++)
+          if (c.effects[k] !== "Hard Limiter" && c.effects[k] !== "Lowpass")
+            failure("Invalid music effect.");
         for (k = 0; k < c.keys.length; k++) {
           key = c.keys[k];
           if (
@@ -1083,7 +1154,11 @@
             key.time > c.end - c.start + 0.00001 ||
             !number(key.value) ||
             key.value < 0 ||
-            key.value > Math.pow(10, 15 / 20)
+            key.value > Math.pow(10, 15 / 20) ||
+            (key.envelopeValue !== undefined &&
+              (!number(key.envelopeValue) ||
+                key.envelopeValue < 0 ||
+                key.envelopeValue > Math.pow(10, 15 / 20)))
           )
             failure("Invalid music keyframes.");
           previousTime = key.time;
@@ -1295,7 +1370,8 @@
       }
       // QE items include gaps and transitions, so match by timing rather than DOM clip index.
       var transitionCount = 0;
-      if (number(request.crossfade) && request.crossfade > 0 && request.crossfade <= 4) {
+      var crossfadeSeconds = request.crossfade === undefined ? 3 : request.crossfade;
+      if (number(crossfadeSeconds) && crossfadeSeconds > 0 && crossfadeSeconds <= 30) {
         try {
           app.enableQE();
           var qseq = qe.project.getActiveSequence();
@@ -1309,7 +1385,7 @@
             // Existing clips are never given new effects or automation.
             if (!right || pathKey(left.cue.track) === pathKey(right.cue.track)) continue;
             var seconds = Math.min(
-              request.crossfade,
+              crossfadeSeconds,
               (left.cue.end - left.cue.start) / 2,
               (right.cue.end - right.cue.start) / 2
             );
@@ -1358,6 +1434,14 @@
       for (i = 0; i < placed.length; i++) {
         clip = placed[i].clip;
         c = placed[i].cue;
+        var effectRow = [encodeURIComponent(c.id || "")];
+        for (j = 0; c.effects && j < c.effects.length; j++)
+          effectRow.push(
+            encodeURIComponent(
+              applyMusicEffect(clip, c, c.effects[j], trackIndex, frameDuration / 2)
+            )
+          );
+        effectRows.push(effectRow.join("\t"));
         var level = null;
         for (j = 0; j < clip.components.numItems; j++) {
           var component = clip.components[j];
@@ -1392,7 +1476,7 @@
             ((placed[i].startTransition && key.time <= c.fadeIn) ||
               (placed[i].endTransition && key.time >= c.end - c.start - c.fadeOut))
           )
-            gain = Math.pow(10, c.baseDb / 20);
+            gain = number(key.envelopeValue) ? key.envelopeValue : Math.pow(10, c.baseDb / 20);
           checked(level.addKey(at), "a volume keyframe");
           checked(
             level.setValueAtKey(at, gain * Math.pow(10, -15 / 20), k === c.keys.length - 1),
@@ -1503,7 +1587,13 @@
             checkpointSignature: fields[3],
             expectedSignature: fields[4],
             message: fields[5],
-            sequenceId: fields[6]
+            sequenceId: fields[6],
+            effectReports: fields[7]
+              ? fields[7].split("\n").map(function (row) {
+                  var values = row.split("\t").map(decodeURIComponent);
+                  return { id: values[0], results: values.slice(1) };
+                })
+              : []
           });
         } catch (error) {
           done({ ok: false, error: String(error.message).slice(0, 1024) });

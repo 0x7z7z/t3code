@@ -13,6 +13,14 @@ export interface MusicTrack {
   duration: number;
   loudnessDbfs: number;
   peakDbfs?: number;
+  integratedLufs?: number;
+  firstAudible?: number;
+  loudPartStart?: number;
+  biggestDrop?: number | null;
+  loudnessCurve?: number[];
+  curveStep?: number;
+  loudnessSpread?: number;
+  vocals?: boolean;
   catalogueEnergy?: number;
   brightness?: number;
   energy: number[];
@@ -44,6 +52,14 @@ export interface MusicCue extends MusicRange {
   fadeIn: number;
   fadeOut: number;
   baseDb: number;
+  keyTime?: number | undefined;
+  vocals?: boolean | undefined;
+  swell?: boolean;
+  swellSeconds?: number;
+  swellDb?: number;
+  effects?: MusicEffect[];
+  effectResults?: string[] | undefined;
+  levelAdjustments?: Array<{ time: number; db: number }>;
   enabled: boolean;
   alternatives: Array<{ track: string; sourceOffset: number; reason: string }>;
 }
@@ -67,11 +83,83 @@ export const defaultMusicMix: MusicMix = {
   release: 0.6,
   mergeGap: 0.85,
 };
-export const musicPeakTargetDbfs = -33;
+export const musicBedTargetLufs = -38;
+export const musicCrossfadeSeconds = 3;
+export const musicUnevenSpreadDb = 12;
+export const musicQuietLufs = -18;
+export type MusicEffect = "Hard Limiter" | "Lowpass";
+const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
 export function musicLevel(track: MusicTrack): number {
-  if (track.peakDbfs === undefined || !Number.isFinite(track.peakDbfs))
-    throw new Error("Reindex the library to measure each song's peak before placing music.");
-  return Math.min(15, musicPeakTargetDbfs - track.peakDbfs);
+  if (!Number.isFinite(track.integratedLufs) || !Number.isFinite(track.peakDbfs))
+    throw new Error(
+      "Reindex the library to measure each song's LUFS and peak before placing music.",
+    );
+  return clamp(musicBedTargetLufs - track.integratedLufs!, -35, -25);
+}
+
+export function musicEffects(track: MusicTrack, vocals?: boolean): MusicEffect[] {
+  const hasVocals =
+    vocals ??
+    track.vocals ??
+    track.tags.some((tag) => /^(?:vocals?|with vocals|vocal music)$/i.test(tag));
+  return [
+    ...(track.integratedLufs! <= musicQuietLufs || (track.loudnessSpread ?? 0) > musicUnevenSpreadDb
+      ? ["Hard Limiter" as const]
+      : []),
+    ...(hasVocals ? ["Lowpass" as const] : []),
+  ];
+}
+
+/** Recomputed for both placement and Swap; agent levels and offsets are only hints. */
+export function prepareMusicCue(cue: MusicCue, track: MusicTrack): MusicCue {
+  const measuredBed = musicLevel(track);
+  const effects = musicEffects(track, cue.vocals);
+  const baseDb = effects.includes("Lowpass") ? clamp(measuredBed, -30, -28) : measuredBed;
+  const duration = cue.end - cue.start;
+  const keyOffset =
+    cue.keyTime !== undefined && cue.keyTime >= cue.start && cue.keyTime < cue.end
+      ? cue.keyTime - cue.start
+      : undefined;
+  const sourceOffset = musicOffset(track, duration, keyOffset);
+  const loudAt = (track.loudPartStart ?? sourceOffset) - sourceOffset;
+  const dropAt = track.biggestDrop == null ? undefined : track.biggestDrop - sourceOffset;
+  const aligned =
+    keyOffset !== undefined && dropAt !== undefined && Math.abs(dropAt - keyOffset) < 0.01;
+  const swellSeconds =
+    cue.swell === false
+      ? 0
+      : Math.min(
+          duration - cue.fadeOut,
+          aligned ? clamp(dropAt!, 0, 28) : loudAt > cue.fadeIn ? clamp(loudAt, 0, 28) : 8,
+        );
+  // Keep even the intro below a -1 dBFS sample peak. Typical beds still get +12 dB.
+  const swellDb = Math.max(0, Math.min(12, -1 - track.peakDbfs! - baseDb));
+  const curve = track.loudnessCurve ?? [];
+  const step = track.curveStep ?? 0.5;
+  const levelAdjustments: Array<{ time: number; db: number }> = [];
+  if (effects.includes("Hard Limiter") && (track.loudnessSpread ?? 0) > musicUnevenSpreadDb) {
+    const audible = curve.filter((db) => db >= -50).sort((a, b) => a - b);
+    const body = audible[Math.floor((audible.length - 1) * 0.8)];
+    if (body !== undefined) {
+      // Coarse 2s compensation avoids chasing individual beats or boosting silence.
+      levelAdjustments.push({ time: swellSeconds, db: 0 });
+      for (let time = swellSeconds + 2; time < duration - cue.fadeOut; time += 2) {
+        const db = curve[Math.floor((sourceOffset + time) / step)];
+        if (db !== undefined)
+          levelAdjustments.push({ time, db: db < -50 ? 0 : clamp(body - db, -3, 6) });
+      }
+    }
+  }
+  return {
+    ...cue,
+    sourceOffset,
+    baseDb,
+    swellSeconds,
+    swellDb,
+    effects,
+    levelAdjustments,
+    effectResults: undefined,
+  };
 }
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 const range = (r: MusicRange) =>
@@ -131,15 +219,25 @@ export function musicChapters(words: readonly TranscriptWord[]): MusicChapter[] 
 export function musicOffset(track: MusicTrack, duration: number, beatOffset?: number): number {
   const maximum = track.duration - duration;
   if (maximum < 0) throw new Error("Track is too short for this chapter.");
+  const first = track.firstAudible ?? 0;
+  if (first > maximum) throw new Error("Track is too short after its leading silence.");
   if (beatOffset !== undefined) {
+    if (track.biggestDrop != null) {
+      const offset = track.biggestDrop - beatOffset;
+      if (offset >= first && offset <= maximum) return offset;
+    }
     const candidates = track.rises
       .filter((r) => r.db >= 3)
       .map((r) => ({ offset: r.end - beatOffset, db: r.db }))
-      .filter((r) => r.offset >= 0 && r.offset <= maximum)
+      .filter((r) => r.offset >= first && r.offset <= maximum)
       .sort((a, b) => b.db - a.db);
     if (candidates[0]) return candidates[0].offset;
   }
-  return 0;
+  return clamp(
+    (track.loudPartStart ?? first) - first > 12 ? track.loudPartStart! - 7 : first,
+    first,
+    maximum,
+  );
 }
 
 export const musicPathKey = (path: string) => path.replaceAll("\\", "/").toLowerCase();
@@ -175,7 +273,7 @@ export function matchingMusic(
   const blocked = new Set(excluded.map(musicPathKey));
   const candidates = tracks.filter(
     (t) =>
-      t.duration >= duration &&
+      t.duration - (t.firstAudible ?? 0) >= duration &&
       !blocked.has(musicPathKey(t.path)) &&
       !/00\. duplicate copies - review/i.test(t.path),
   );
@@ -268,6 +366,7 @@ export function mergeShortMusicSections(plan: MusicPlan): MusicPlan {
         ...previous,
         end: cue.end,
         chapter: theme,
+        keyTime: previous.keyTime ?? cue.keyTime,
         reason: `${previous.reason} ${cue.reason}`.slice(0, 2000),
       };
     } else cues.push({ ...cue });
@@ -307,11 +406,15 @@ export function fillMusicGaps(
           .map((gap, i) => ({
             ...cue,
             ...gap,
+            keyTime:
+              cue.keyTime !== undefined && cue.keyTime >= gap.start && cue.keyTime < gap.end
+                ? cue.keyTime
+                : undefined,
             id: `${cue.id}-gap-${i}`,
             sectionId: cue.id,
             sourceOffset: cue.sourceOffset,
-            fadeIn: Math.min(0.75, (gap.end - gap.start) / 4),
-            fadeOut: Math.min(0.75, (gap.end - gap.start) / 4),
+            fadeIn: Math.min(musicCrossfadeSeconds / 2, (gap.end - gap.start) / 4),
+            fadeOut: Math.min(musicCrossfadeSeconds / 2, (gap.end - gap.start) / 4),
           }));
       }),
   });
@@ -452,6 +555,10 @@ export function validateMusicPlan(value: unknown): MusicPlan {
       (c.theme !== undefined && (typeof c.theme !== "string" || c.theme.length > 200)) ||
       (c.mood !== undefined && (typeof c.mood !== "string" || c.mood.length > 100)) ||
       (c.energy !== undefined && (!finite(c.energy) || c.energy < 0 || c.energy > 1)) ||
+      (c.keyTime !== undefined &&
+        (!finite(c.keyTime) || c.keyTime < c.start || c.keyTime >= c.end)) ||
+      (c.vocals !== undefined && typeof c.vocals !== "boolean") ||
+      (c.swell !== undefined && typeof c.swell !== "boolean") ||
       typeof c.reason !== "string" ||
       c.reason.length > 2000 ||
       typeof c.enabled !== "boolean" ||
@@ -544,6 +651,9 @@ export function musicKeyframes(cue: MusicCue, speech: readonly MusicRange[], mix
     Math.max(mix.mergeGap, attack + release),
   ).filter((r) => r.end + release > cue.start && r.start - attack < cue.end);
   const points = new Set([0, duration, cue.fadeIn, duration - cue.fadeOut]);
+  const swell = cue.swellSeconds ?? 0;
+  if (swell) points.add(swell);
+  for (const adjustment of cue.levelAdjustments ?? []) points.add(adjustment.time);
   for (const r of regions)
     for (const t of [r.start - attack, r.start, r.end, r.end + release])
       points.add(Math.max(0, Math.min(duration, t - cue.start)));
@@ -566,6 +676,26 @@ export function musicKeyframes(cue: MusicCue, speech: readonly MusicRange[], mix
         cue.fadeOut ? (duration - time) / cue.fadeOut : 1,
         1,
       );
-      return { time, value: Math.pow(10, (cue.baseDb + duck) / 20) * Math.max(0, fade) };
+      return {
+        time,
+        value: musicEnvelopeGain(cue, time) * Math.pow(10, duck / 20) * Math.max(0, fade),
+      };
     });
+}
+
+/** Linear-gain ramp matches the host's linear Volume interpolation contract. */
+export function musicEnvelopeGain(cue: MusicCue, time: number): number {
+  const bed = Math.pow(10, cue.baseDb / 20);
+  const swell = cue.swellSeconds ?? 0;
+  if (swell && time < swell)
+    return bed * (1 + (Math.pow(10, (cue.swellDb ?? 12) / 20) - 1) * (1 - time / swell));
+  const adjustments = cue.levelAdjustments ?? [];
+  let db = 0;
+  for (let i = 0; i < adjustments.length; i++) {
+    const a = adjustments[i]!;
+    if (time < a.time) break;
+    const b = adjustments[i + 1];
+    db = b && time < b.time ? a.db + ((b.db - a.db) * (time - a.time)) / (b.time - a.time) : a.db;
+  }
+  return bed * Math.pow(10, db / 20);
 }

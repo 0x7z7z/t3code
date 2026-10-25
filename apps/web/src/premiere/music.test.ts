@@ -13,6 +13,9 @@ import {
   matchingMusic,
   mergeShortMusicSections,
   musicLevel,
+  musicEffects,
+  prepareMusicCue,
+  musicEnvelopeGain,
   musicScope,
   validateMusicCoverage,
   type MusicCue,
@@ -294,9 +297,10 @@ it("allows a returning song when existing music separates the new sections", () 
   ).not.toThrow();
 });
 
-it("normalizes from peak, clamps positive Level at +15, and does not duck by default", () => {
-  expect(musicLevel({ ...track(), peakDbfs: -3 })).toBe(-30);
-  expect(musicLevel({ ...track(), peakDbfs: -60 })).toBe(15);
+it("uses LUFS with clamping, requires peak safety data, and does not duck by default", () => {
+  expect(musicLevel({ ...track(), integratedLufs: -9, peakDbfs: -3 })).toBe(-29);
+  expect(musicLevel({ ...track(), integratedLufs: -40, peakDbfs: -3 })).toBe(-25);
+  expect(musicLevel({ ...track(), integratedLufs: 0, peakDbfs: -3 })).toBe(-35);
   expect(() => musicLevel(track())).toThrow("peak");
   const keys = musicKeyframes(
     { ...cue(), baseDb: -30, fadeIn: 0, fadeOut: 0 },
@@ -399,4 +403,89 @@ it("shares a rounded section boundary, protects occupied edges and rejects an un
     60,
   );
   expect(protectedPlan.cues[0]!.end).toBeLessThanOrEqual(40.01);
+});
+
+const measured = (): MusicTrack => ({
+  ...track(),
+  integratedLufs: -10,
+  peakDbfs: -1,
+  firstAudible: 0,
+  loudPartStart: 0,
+  loudnessSpread: 4,
+});
+
+it("skips leading silence and starts long soft intros seven seconds before the body", () => {
+  expect(musicOffset({ ...measured(), firstAudible: 1.85 }, 60)).toBe(1.85);
+  expect(musicOffset({ ...measured(), firstAudible: 2, loudPartStart: 29 }, 60)).toBe(22);
+  expect(musicOffset({ ...measured(), firstAudible: 2, loudPartStart: 12 }, 60)).toBe(2);
+  expect(musicOffset({ ...measured(), duration: 65, loudPartStart: 29 }, 60)).toBe(5);
+  expect(() => musicOffset({ ...measured(), firstAudible: 2, duration: 61 }, 60)).toThrow(
+    "leading silence",
+  );
+});
+
+it("aligns the biggest drop to a sequence keyTime without overrunning or starting in silence", () => {
+  const source = { ...measured(), duration: 120, firstAudible: 2, biggestDrop: 63, rises: [] };
+  const section = { ...cue(), start: 100, end: 160, keyTime: 109.7 };
+  const prepared = prepareMusicCue(section, source);
+  expect(prepared.sourceOffset).toBeCloseTo(53.3);
+  expect(prepared.sourceOffset + 60).toBeLessThanOrEqual(source.duration);
+  expect(prepared.swellSeconds).toBeCloseTo(9.7);
+  expect(musicOffset({ ...source, biggestDrop: 1 }, 60, 10)).toBe(2);
+  expect(musicOffset({ ...source, biggestDrop: 119 }, 60, 1)).toBe(2);
+  expect(() =>
+    validateMusicPlan({ version: 1, cues: [{ ...section, keyTime: 200 }], silence: [] }),
+  ).toThrow();
+});
+
+it("builds a default +12 dB linear-gain swell, extends soft openings, and permits static beds", () => {
+  const section = { ...cue(), start: 0, end: 60, fadeIn: 0, fadeOut: 0 };
+  const prepared = prepareMusicCue(section, measured());
+  expect(prepared.swellSeconds).toBe(8);
+  const keys = musicKeyframes(prepared, [], defaultMusicMix);
+  const bed = Math.pow(10, -28 / 20);
+  expect(keys[0]!.value).toBeCloseTo(Math.pow(10, -16 / 20));
+  expect(keys.find((k) => k.time === 8)!.value).toBeCloseTo(bed);
+  expect(musicEnvelopeGain(prepared, 4)).toBeCloseTo((keys[0]!.value + bed) / 2);
+  expect(prepareMusicCue(section, { ...measured(), loudPartStart: 11 }).swellSeconds).toBe(11);
+  expect(
+    prepareMusicCue(section, { ...measured(), loudPartStart: 40, duration: 60 }).swellSeconds,
+  ).toBe(28);
+  expect(prepareMusicCue({ ...section, swell: false }, measured()).swellSeconds).toBe(0);
+  expect(prepareMusicCue({ ...section, end: 2 }, measured()).swellSeconds).toBe(2);
+  const hot = prepareMusicCue(section, { ...measured(), peakDbfs: 20 });
+  expect(hot.baseDb + hot.swellDb! + 20).toBeLessThanOrEqual(-1);
+});
+
+it("chooses limiter for quiet or uneven songs, and Lowpass only from explicit vocal evidence", () => {
+  expect(musicEffects(measured())).toEqual([]);
+  expect(musicEffects({ ...measured(), integratedLufs: -18 })).toEqual(["Hard Limiter"]);
+  expect(musicEffects({ ...measured(), loudnessSpread: 12 })).toEqual([]);
+  expect(musicEffects({ ...measured(), loudnessSpread: 12.1 })).toEqual(["Hard Limiter"]);
+  expect(musicEffects({ ...measured(), tags: ["vocals"] })).toEqual(["Lowpass"]);
+  expect(musicEffects({ ...measured(), vocals: true }, false)).toEqual([]);
+  expect(musicEffects({ ...measured(), tags: ["no vocals", "instrumental"] })).toEqual([]);
+  const section = prepareMusicCue(
+    { ...cue(), vocals: true },
+    { ...measured(), integratedLufs: -5.3 },
+  );
+  expect(section.baseDb).toBe(-30);
+  expect(section.effects).toEqual(["Lowpass"]);
+  expect(
+    prepareMusicCue({ ...cue(), vocals: true }, { ...measured(), integratedLufs: -22 }).baseDb,
+  ).toBe(-28);
+});
+
+it("compensates uneven audible parts after the swell without boosting silence", () => {
+  const source = {
+    ...measured(),
+    loudnessSpread: 20,
+    loudnessCurve: Array.from({ length: 600 }, (_, i) => (i === 24 ? -120 : i === 20 ? -32 : -10)),
+    curveStep: 0.5,
+  };
+  const prepared = prepareMusicCue({ ...cue(), start: 0, end: 60 }, source);
+  expect(prepared.levelAdjustments).toContainEqual({ time: 8, db: 0 });
+  expect(prepared.levelAdjustments).toContainEqual({ time: 10, db: 6 });
+  expect(prepared.levelAdjustments).toContainEqual({ time: 12, db: 0 });
+  expect(musicKeyframes(prepared, [], defaultMusicMix).every((k) => k.value >= 0)).toBe(true);
 });

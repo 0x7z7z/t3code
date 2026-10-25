@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { newMessageId } from "../lib/utils";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import type { PremiereContext } from "./host";
 import { requestTimelineAction } from "./interactiveHost";
 import { requestTimelineSnapshot } from "./timelineHost";
@@ -12,7 +13,9 @@ import {
   matchingMusic,
   mergeShortMusicSections,
   musicKeyframes,
-  musicLevel,
+  musicCrossfadeSeconds,
+  musicEnvelopeGain,
+  prepareMusicCue,
   musicPathKey,
   musicScope,
   subtractMusicRanges,
@@ -182,8 +185,17 @@ export function MusicPanel({
       packet.status === "partial"
         ? `Music stopped: ${String(packet.message)} Use Undo all before retrying.`
         : `Placed ${plan.cues.length} ${plan.cues.length === 1 ? "section" : "sections"}. ${String(packet.message || "Volume keyframe fades used.")}`;
+    const reports = Array.isArray(packet.effectReports)
+      ? (packet.effectReports as Array<{ id: string; results: string[] }>)
+      : [];
     saveResult({
-      plan,
+      plan: {
+        ...plan,
+        cues: plan.cues.map((cue) => ({
+          ...cue,
+          effectResults: reports.find((r) => r.id === cue.id)?.results ?? cue.effectResults,
+        })),
+      },
       undo: {
         checkpointId: packet.checkpointId,
         checkpointSignature: packet.checkpointSignature,
@@ -203,10 +215,13 @@ export function MusicPanel({
       /00\. duplicate copies - review/i.test(source.path)
     )
       throw new Error("Every section must fit a song from the indexed library.");
-    const normalized = { ...cue, sourceOffset: 0, baseDb: musicLevel(source) };
+    const edgeFade = Math.min(musicCrossfadeSeconds / 2, (cue.end - cue.start) / 4);
+    const normalized = prepareMusicCue({ ...cue, fadeIn: edgeFade, fadeOut: edgeFade }, source);
     return {
       ...normalized,
-      keys: musicKeyframes(normalized, words, { ...defaultMusicMix, duckDb: duck ? -8 : 0 }),
+      keys: musicKeyframes(normalized, words, { ...defaultMusicMix, duckDb: duck ? -8 : 0 }).map(
+        (key) => ({ ...key, envelopeValue: musicEnvelopeGain(normalized, key.time) }),
+      ),
     };
   }
   async function apply(value: MusicPlan, expected?: string, scope?: MusicRange) {
@@ -258,7 +273,7 @@ export function MusicPanel({
         expectedSignature: snapshot.signature,
         targetTrackIndex: target.index,
         libraryPaths: tracks.map((t) => t.path),
-        crossfade: 1.5,
+        crossfade: musicCrossfadeSeconds,
         silence: plan.silence,
         ducking: duck,
         cues,
@@ -317,7 +332,7 @@ export function MusicPanel({
       const id = newMessageId();
       setWaiting({ id, signature: snapshot.signature, scope });
       await onPlace(
-        `Use $axis-music-placement. Return a plan only; the panel will checkpoint and apply automatically. Do not call timeline-writing tools. Split the timed VO by subject, character or object and emotional changes, usually 30-90 seconds, never by elapsed time alone. Merge neighbouring subjects shorter than 28 seconds only when they share a theme and mood (for example three short fusion characters become one Fusions section); use an optional shared theme field when returning separate short subjects. One song per section, back to back, covering the entire scope except sponsors and occupied intervals. Infer each section's mood and energy from its meaning. Primary mood source: calm music for explanations; dark cinematic music for tension, danger, reveals, ominous lore and showdowns; hype music for intros, fights and phonk; sad music for genuine loss and reflection. Never use duplicate-review copies. Unsorted-review tracks are last resort. Catalogue duration, BPM, energy and brightness are secondary hints. Songs may recur, never in neighbouring sections including existing clips. Always start at source zero; never loop or overrun sources. The panel sets Volume Level from measured peak to target -33 dBFS; no ducking. Return one axis-music JSON fence: {version:1,requestId:${JSON.stringify(id)},cues:[{id,chapter,theme?,mood,energy:0.0,start,end,track,sourceOffset,reason,fadeIn:0.75,fadeOut:0.75,baseDb:0,enabled:true,alternatives:[]}],silence:[]}. Mood and energy are required. Shorten fades for tiny sections. Use exact indexed paths. The checkpoint plus Undo all is the authorized single-click confirmation. Scope: ${JSON.stringify(scope)}. Target track: ${JSON.stringify(target)}. Timed VO: ${JSON.stringify(words.filter((w) => w.end > scope.start && w.start < scope.end))}. Indexed library: ${JSON.stringify(tracks.map(({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags }) => ({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags })))}`,
+        `Use $axis-music-placement. Return a plan only; the panel will checkpoint and apply automatically. Do not call timeline-writing tools. Split the timed VO by subject, character or object and emotional changes, usually 30-90 seconds, never by elapsed time alone. Merge neighbouring subjects shorter than 28 seconds only when they share a theme and mood (for example three short fusion characters become one Fusions section); use an optional shared theme field when returning separate short subjects. One song per section, back to back, covering the entire scope except sponsors and occupied intervals. Infer each section's mood and energy from its meaning. Primary mood source: calm music for explanations; dark cinematic music for tension, danger, reveals, ominous lore and showdowns; hype music for intros, fights and phonk; sad music for genuine loss and reflection. Never use duplicate-review copies. Unsorted-review tracks are last resort. Catalogue duration, BPM, energy and brightness are secondary hints. Songs may recur, never in neighbouring sections including existing clips. Find each section's key VO moment (form-name reveal, transformation or decisive visual beat) from exact transcript timings and include keyTime in sequence seconds when there is clear evidence. Mark vocals:true only from catalogue tags or known lyrics; otherwise omit it. Never loop or overrun sources. The panel skips silence, starts long soft intros about 7 seconds before the loud part, and aligns measured drops to keyTime within source bounds. It computes bedDb=clamp(-38-integratedLUFS,-35,-25), with a default +12 dB intro swell over 8 seconds (up to 28 for soft openings), 3 second joins, and best-effort Hard Limiter for quiet/uneven songs or Lowpass for vocals at -28 to -30 dB. Swell may be disabled per section with swell:false. No ducking by default. The user said: "-29 is the best, -33 is way too quiet even with headphones." Prefer Nordic/epic dark for dragon villains, trailer metal for destroyers, melodic phonk for berserk-but-tender, stylish phonk for Goku Black, haunting violin for god-complex horror, aggressive phonk for Vegeta. Return one axis-music JSON fence: {version:1,requestId:${JSON.stringify(id)},cues:[{id,chapter,theme?,mood,energy:0.0,start,end,keyTime?,vocals?,swell?,track,sourceOffset,reason,fadeIn:1.5,fadeOut:1.5,baseDb:0,enabled:true,alternatives:[]}],silence:[]}. Mood and energy are required. Shorten fades for tiny sections. Use exact indexed paths. The checkpoint plus Undo all is the authorized single-click confirmation. Scope: ${JSON.stringify(scope)}. Target track: ${JSON.stringify(target)}. Timed VO: ${JSON.stringify(words.filter((w) => w.end > scope.start && w.start < scope.end))}. Indexed library: ${JSON.stringify(tracks.map(({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags, vocals, integratedLufs, firstAudible, loudPartStart, biggestDrop }) => ({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags, vocals, integratedLufs, firstAudible, loudPartStart, biggestDrop })))}`,
       );
     } catch (problem) {
       setWaiting(null);
@@ -358,14 +373,19 @@ export function MusicPanel({
         [cue.track, ...neighbours.map((c) => c.mediaPath ?? "")],
       )[0];
       if (!chosen) throw new Error("No different matching song is long enough for this section.");
-      const replacement = prepared({ ...cue, track: chosen.path, sourceOffset: 0 });
+      const replacement = prepared({
+        ...cue,
+        track: chosen.path,
+        sourceOffset: 0,
+        vocals: undefined,
+      });
       const packet = await request("swap", {
         ...result.undo,
         confirmed: true,
         targetTrackIndex: result.trackIndex,
         replace: { nodeId: clip.nodeId, track: cue.track, start: cue.start, end: cue.end },
         libraryPaths: tracks.map((t) => t.path),
-        crossfade: 1.5,
+        crossfade: musicCrossfadeSeconds,
         ducking: duck,
         cues: [replacement],
       });
@@ -497,6 +517,22 @@ export function MusicPanel({
                   {transcriptTime(cue.start)} - {transcriptTime(cue.end)} · {cue.mood}
                 </small>
                 <p>{name(cue.track)}</p>
+                <Tooltip>
+                  <TooltipTrigger render={<small data-music-mix="" />}>
+                    {cue.baseDb.toFixed(1)} dB ·{" "}
+                    {cue.effectResults?.length
+                      ? cue.effectResults.map((result) => result.replace(/\s+\(.*/, "")).join(", ")
+                      : cue.effects?.length
+                        ? "Effects unverified"
+                        : "No effects"}
+                  </TooltipTrigger>
+                  <TooltipPopup>
+                    {cue.effectResults?.join(", ") ||
+                      (cue.effects?.length
+                        ? "Effect application could not be verified."
+                        : "No effects requested.")}
+                  </TooltipPopup>
+                </Tooltip>
               </li>
             ))}
           </ol>

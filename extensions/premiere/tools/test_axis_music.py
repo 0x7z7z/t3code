@@ -1,10 +1,13 @@
+import hashlib
+import json
 import math
+import sqlite3
 import struct
 import wave
 
 import pytest
 
-from axis_music import describe, estimate_tempo, index_library
+from axis_music import VERSION, describe, estimate_tempo, index_library, integrated_lufs
 
 
 def wav(path, duration=12):
@@ -126,3 +129,79 @@ def test_silent_sources_cannot_be_peak_normalized(tmp_path):
         out.writeframes(b"\0" * 16000)
     with pytest.raises(ValueError, match="finite source peak"):
         peak_dbfs(path)
+
+def structured_wav(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), 'wb') as out:
+        out.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+        for seconds, amplitude in [(2, 0), (18, 300), (20, 16000)]:
+            second = b''.join(struct.pack('<h', int(amplitude * math.sin(2*math.pi*440*i/8000))) for i in range(8000))
+            out.writeframes(second * seconds)
+
+
+def test_lufs_curve_silence_soft_intro_and_drop_are_cached(tmp_path):
+    root, cache = tmp_path / 'music', tmp_path / 'index.sqlite'
+    path = root / 'structured.wav'
+    structured_wav(path)
+    result = index_library(root, cache, compact=True)
+    track = result['tracks'][0]
+    assert result['version'] == VERSION == 3
+    assert -15 < track['integratedLufs'] < -5
+    assert track['integratedLufs'] == integrated_lufs(path)
+    assert track['firstAudible'] == pytest.approx(2, abs=0.05)
+    assert track['curveStep'] == 0.5
+    assert len(track['loudnessCurve']) == 80
+    assert track['loudnessCurve'][:4] == [-120] * 4
+    assert track['loudPartStart'] == 20
+    assert track['biggestDrop'] == 20
+    assert track['loudnessSpread'] > 30
+    assert -7 < track['peakDbfs'] < -6
+    cached = index_library(root, cache)
+    assert cached['analyzed'] == 0
+    assert cached['tracks'][0]['loudnessCurve'] == track['loudnessCurve']
+
+
+def test_schema_upgrade_reanalyzes_without_losing_listener_metadata(tmp_path):
+    root, cache = tmp_path / 'music', tmp_path / 'index.sqlite'
+    path = root / 'one.wav'
+    wav(path)
+    index_library(root, cache)
+    stat = path.stat()
+    previous = hashlib.sha256(f'2|{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}'.encode()).hexdigest()
+    with sqlite3.connect(cache) as db:
+        data = json.loads(db.execute('SELECT data FROM tracks').fetchone()[0])
+        data.pop('integratedLufs')
+        data.update(description='Auditioned strings', tags=['vocals'])
+        db.execute('UPDATE tracks SET fingerprint=?, data=?', (previous, json.dumps(data)))
+    result = index_library(root, cache)
+    assert result['analyzed'] == 1
+    assert result['tracks'][0]['description'] == 'Auditioned strings'
+    assert result['tracks'][0]['tags'] == ['vocals']
+    assert 'integratedLufs' in result['tracks'][0]
+
+
+def test_all_silence_is_unavailable_and_antiphase_structure_stays_audible(tmp_path):
+    root = tmp_path / 'music'
+    root.mkdir()
+    with wave.open(str(root / 'silent.wav'), 'wb') as out:
+        out.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+        out.writeframes(b'\0' * 64000)
+    with wave.open(str(root / 'antiphase.wav'), 'wb') as out:
+        out.setparams((2, 2, 8000, 0, 'NONE', 'not compressed'))
+        out.writeframes(b''.join(struct.pack('<hh', value, -value) for value in [int(12000*math.sin(2*math.pi*440*i/8000)) for i in range(32000)]))
+    result = index_library(root, tmp_path / 'cache.sqlite')
+    assert len(result['failures']) == 1
+    assert result['tracks'][0]['firstAudible'] == 0
+    assert result['tracks'][0]['loudnessCurve'][0] > -15
+
+
+def test_first_audible_refines_a_fractional_silence_boundary(tmp_path):
+    root = tmp_path / 'music'
+    root.mkdir()
+    path = root / 'ultra.wav'
+    with wave.open(str(path), 'wb') as out:
+        out.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
+        out.writeframes(b'\0' * (14640 * 2))
+        out.writeframes(b''.join(struct.pack('<h', int(12000*math.sin(2*math.pi*440*i/8000))) for i in range(40000)))
+    result = index_library(root, tmp_path / 'cache.sqlite')
+    assert result['tracks'][0]['firstAudible'] == pytest.approx(1.83, abs=0.002)
