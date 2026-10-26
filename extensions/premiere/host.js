@@ -1604,6 +1604,42 @@
     }
   }
 
+  var voCleanupBusy = false;
+  function voCleanupMessage(data, origin) {
+    if (data.type !== "premiere.vo-cleanup.request") return;
+    if (typeof data.requestId !== "string" || !data.requestId || data.requestId.length > 128)
+      return;
+    function reply(result) {
+      if (backendOrigin === origin && frame.contentWindow)
+        frame.contentWindow.postMessage(
+          Object.assign(
+            { type: "premiere.vo-cleanup", protocol: 1, requestId: data.requestId },
+            result
+          ),
+          origin
+        );
+    }
+    if (voCleanupBusy) return reply({ ok: false, error: "A VO cleanup operation is running." });
+    if (!window.__adobe_cep__)
+      return reply({ ok: false, error: "Premiere scripting is unavailable." });
+    voCleanupBusy = true;
+    function done(result) {
+      voCleanupBusy = false;
+      reply(result);
+    }
+    try {
+      nodeRequire(nodeRequire("path").join(extensionDirectory, "vo-cleanup.cjs"))
+        .operation(data, extensionDirectory, function (script, callback) {
+          window.__adobe_cep__.evalScript(script, callback);
+        })
+        .then(done, function (error) {
+          done({ ok: false, error: String(error.message).slice(0, 1024) });
+        });
+    } catch (error) {
+      done({ ok: false, error: String(error.message).slice(0, 1024) });
+    }
+  }
+
   var captionsBusy = false;
   function captionsMessage(data, origin) {
     if (data.type !== "premiere.captions.request") return;
@@ -1713,6 +1749,7 @@
       return;
     captionsMessage(event.data, event.origin);
     musicMessage(event.data, event.origin);
+    voCleanupMessage(event.data, event.origin);
     if (event.data.type === "premiere.transcript.load.request") {
       var transcriptRequest = event.data;
       if (

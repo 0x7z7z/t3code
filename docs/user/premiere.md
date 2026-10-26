@@ -77,6 +77,27 @@ automatic import; use the conversation's stop control to interrupt the agent its
 
 ## Clean up voice-over
 
+To clean an audio file, choose **Menu > Clean VO**. Browse to the file, paste its
+full path, or select one audio item in Premiere's Project panel and choose
+**Use selected project item**. Choose silence, breaths, or silence followed by
+breaths. Silence removal retains 50 ms by default and shortens the audio; breath
+removal lowers breaths by 40 dB while preserving length and samples outside the
+breath regions. For both steps, word timings are generated after removing silence.
+
+Each run saves uniquely named lossless WAV files beside the source, plus a breath
+region CSV when applicable. **Import result into project bin** adds the final file
+to **Axis VO cleanup**; you can also import after processing. Open a sequence in
+the intended project to enable import. This action never places or replaces
+timeline clips. The original files are preserved.
+
+Python 3.12 with `numpy`, `soundfile` and `pydub`, plus FFmpeg, must be available
+on the Premiere machine. Breath cleanup also requires the existing WhisperX
+setup in **Menu > Diagnostics**. Transcription runs locally on CPU and long VOs
+can take a while. Keep Axis open until processing finishes. Compressed sources
+are decoded before cleaning; sample identity applies to the decoded audio.
+
+### Review transcript cuts
+
 In Transcript, open the options menu and choose **Clean up**, or ask Axis to
 "clean up the VO" and open its cleanup suggestion. Import or transcribe first.
 Review pauses, filler words, repeated words, stutters and restarted takes before
