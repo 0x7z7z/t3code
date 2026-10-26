@@ -82,7 +82,8 @@ test("VO bridge validates settings and passes a literal file path to the Python 
   const calls = [];
   t.mock.method(child, "execFile", (binary, args, options, callback) => {
     calls.push({ binary, args, options });
-    if (args.includes("-c"))
+    if (args.join(" ").includes('"pydub"')) callback(null, "", "");
+    else if (args.includes("-c"))
       callback(null, JSON.stringify({ version: "3.12", path: "python-test", whisperx: true }));
     else callback(null, JSON.stringify({ outputPath: "clean.wav", regions: 136 }), "");
   });
@@ -113,7 +114,9 @@ test("VO bridge reports Python, transcription, and malformed-output failures", a
   fs.writeFileSync(source, "source bytes");
   const request = { action: "run", path: source, mode: "both", keepMs: 50 };
   let response = null;
+  let missing = "";
   t.mock.method(child, "execFile", (_binary, args, _options, callback) => {
+    if (args.join(" ").includes('"pydub"')) return callback(null, missing, "");
     callback(null, args.includes("-c") ? JSON.stringify(response) : "not json", "");
   });
   await assert.rejects(operation(request, __dirname), /Python/);
@@ -122,5 +125,10 @@ test("VO bridge reports Python, transcription, and malformed-output failures", a
   await assert.rejects(
     operation({ ...request, mode: "silence" }, __dirname),
     /Invalid cleanup output/,
+  );
+  missing = "pydub";
+  await assert.rejects(
+    operation({ ...request, mode: "silence" }, __dirname),
+    /Clean VO needs pydub\. Run: py -3\.12 -m pip install/,
   );
 });

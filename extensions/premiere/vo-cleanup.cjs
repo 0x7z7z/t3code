@@ -69,6 +69,21 @@ async function operation(request, directory, evaluate) {
     throw new Error(
       "Breath cleanup needs WhisperX. Complete Transcription setup in Axis Diagnostics.",
     );
+  const missing = await new Promise((resolve) => {
+    child.execFile(
+      python.path,
+      [
+        "-c",
+        'import importlib.util as u; print(" ".join(m for m in ("numpy","soundfile","pydub") if not u.find_spec(m)))',
+      ],
+      { windowsHide: true, timeout: 30000 },
+      (error, stdout) => resolve(error ? "" : String(stdout).trim()),
+    );
+  });
+  if (missing)
+    throw new Error(
+      "Clean VO needs " + missing + ". Run: py -3.12 -m pip install numpy soundfile pydub==0.25.1",
+    );
   const args = [
     path.join(directory, "tools", "axis_vo_cleanup.py"),
     "--input",
