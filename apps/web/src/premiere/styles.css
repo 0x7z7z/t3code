@@ -99,6 +99,57 @@ svg {
 }
 
 /* Toolbar */
+[data-vo-slot] {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+[data-vo-cleanup] {
+  padding: 12px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+[data-vo-cleanup] header,
+[data-vo-actions] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+[data-vo-cleanup] header {
+  justify-content: space-between;
+}
+[data-vo-cleanup] p {
+  color: var(--muted);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+[data-vo-cleanup] fieldset {
+  padding: 0;
+  border: 0;
+  margin: 16px 0;
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+[data-vo-import] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+[data-vo-import] input {
+  width: auto;
+}
+[data-vo-result] {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+[data-vo-cleanup] [role="alert"] {
+  color: var(--danger);
+}
+
 [data-toolbar] {
   display: flex;
   gap: 6px;
@@ -1762,11 +1813,20 @@ small[data-shot-text] {
 [data-axis-menu] summary {
   cursor: pointer;
 }
-[data-axis-menu] button {
+[data-axis-menu-items] {
   position: absolute;
   right: 0;
   top: 24px;
   z-index: 20;
+  display: grid;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+[data-axis-menu-items] button {
+  text-align: left;
   white-space: nowrap;
 }
 /* Music stays within the CEP panel's 440px viewport. */

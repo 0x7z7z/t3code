@@ -259,6 +259,30 @@ function setupQuestion(name: string, capability: "live" | "message" | "not_resum
   return { threadId: projection.thread.id, requestId };
 }
 
+it("opens Clean VO from the panel menu without a sequence and fits the full 440px panel", async () => {
+  setup("vo-cleanup-entry", true);
+  await page.viewport(440, 720);
+  await using screen = await render(
+    <AppAtomRegistryProvider>
+      <PremiereApp />
+    </AppAtomRegistryProvider>,
+  );
+  screen.container.style.height = "720px";
+  await page
+    .elementLocator(screen.container.querySelector('summary[aria-label="Panel menu"]')!)
+    .click();
+  await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "VO cleanup" })).toBeVisible();
+  await expect.element(screen.getByRole("textbox", { name: "Audio file" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Clean VO", exact: true })).toBeVisible();
+  expect(screen.container.querySelector("[data-composer]")!.getBoundingClientRect().height).toBe(0);
+  expect(screen.container.scrollWidth).toBeLessThanOrEqual(440);
+  await page.screenshot({ path: "./__screenshots__/axis-vo-cleanup-full-panel-440.png" });
+  await screen.getByRole("button", { name: "Close", exact: true }).click();
+  await expect.element(screen.getByRole("region", { name: "VO cleanup" })).not.toBeInTheDocument();
+  expect(state.run).not.toHaveBeenCalled();
+});
+
 it("sends custom text as a string keyed by question id instead of the selected option", async () => {
   const { threadId, requestId } = setupQuestion("custom-answer");
   // The docked panel has no router navigation.

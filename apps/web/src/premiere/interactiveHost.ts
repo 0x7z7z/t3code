@@ -28,6 +28,7 @@ export function requestTimelineAction(
     | "premiere.markers.add"
     | "premiere.captions.request"
     | "premiere.music.request"
+    | "premiere.vo-cleanup.request"
     | "premiere.transcript.load.request"
     | "premiere.diagnostics.request",
   payload: object,
@@ -66,13 +67,15 @@ export function requestTimelineAction(
     const timeout = setTimeout(
       () => finish("Premiere did not respond. Check the timeline before trying again.", {}),
       // Native caption import and Save dialogs can remain open for a while.
-      type === "premiere.music.request"
-        ? 660000
-        : type === "premiere.captions.request"
-          ? 120000
-          : type === "premiere.diagnostics.request"
-            ? 35000
-            : 10000,
+      type === "premiere.vo-cleanup.request"
+        ? 21660000
+        : type === "premiere.music.request"
+          ? 660000
+          : type === "premiere.captions.request"
+            ? 120000
+            : type === "premiere.diagnostics.request"
+              ? 35000
+              : 10000,
     );
     window.addEventListener("message", receive);
     try {

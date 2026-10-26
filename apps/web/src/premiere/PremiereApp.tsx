@@ -55,6 +55,7 @@ import {
   type SlashItem,
 } from "./composer";
 import { AccessModeMenu, AttachButton, ImageStrip, SlashMenu, UsageCard } from "./ComposerParts";
+import { VOCleanupPanel } from "./VOCleanupPanel";
 import { Markdown, type SeekHandler } from "./Markdown";
 import { createTimelineActions, useTimelineClips } from "./interactiveHost";
 import { editingModelOptions } from "./models";
@@ -130,7 +131,9 @@ export function PremiereApp() {
     : { approvals: [], userInputs: [] };
   const [draftState, setDraftState] = useState<{ key: string; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [panelView, setPanelView] = useState<"conversation" | "transcript">("conversation");
+  const [panelView, setPanelView] = useState<"conversation" | "transcript" | "vo-cleanup">(
+    "conversation",
+  );
   const [cleanupRequest, setCleanupRequest] = useState<{
     scope: string;
     settings: CleanupSettings;
@@ -727,9 +730,20 @@ export function PremiereApp() {
         </button>
         <details data-axis-menu="">
           <summary aria-label="Panel menu">Menu</summary>
-          <button type="button" onClick={() => setShowDiagnostics((current) => !current)}>
-            Diagnostics
-          </button>
+          <div data-axis-menu-items="">
+            <button
+              type="button"
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                setPanelView("vo-cleanup");
+              }}
+            >
+              Clean VO
+            </button>
+            <button type="button" onClick={() => setShowDiagnostics((current) => !current)}>
+              Diagnostics
+            </button>
+          </div>
         </details>
       </header>
       <SetupPanel
@@ -755,6 +769,9 @@ export function PremiereApp() {
           Transcript
         </button>
       </nav>
+      <div data-vo-slot="" hidden={panelView !== "vo-cleanup"}>
+        <VOCleanupPanel context={host.context} onClose={() => setPanelView("conversation")} />
+      </div>
       {status ? (
         <p data-status="" role="status">
           {status}
@@ -1025,6 +1042,7 @@ export function PremiereApp() {
       ) : null}
       <form
         data-composer=""
+        hidden={panelView === "vo-cleanup"}
         onSubmit={(event) => void send(event)}
         onDragOver={(event) => {
           if (event.dataTransfer.types.includes("Files")) event.preventDefault();
