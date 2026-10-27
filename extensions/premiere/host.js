@@ -1629,9 +1629,14 @@
     }
     try {
       nodeRequire(nodeRequire("path").join(extensionDirectory, "vo-cleanup.cjs"))
-        .operation(data, extensionDirectory, function (script, callback) {
-          window.__adobe_cep__.evalScript(script, callback);
-        })
+        .operation(
+          data,
+          extensionDirectory,
+          function (script, callback) {
+            window.__adobe_cep__.evalScript(script, callback);
+          },
+          { timelineSource: window.AxisTimeline.operation.toString() }
+        )
         .then(done, function (error) {
           done({ ok: false, error: String(error.message).slice(0, 1024) });
         });

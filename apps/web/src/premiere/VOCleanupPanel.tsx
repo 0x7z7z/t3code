@@ -12,18 +12,26 @@ interface CleanupResult {
 }
 
 interface TimelineAnchor {
+  projectId: string;
   sequenceId: string;
+  nodeId: string;
+  trackId: string;
   trackIndex: number;
   start: number;
+  end: number;
   inPoint: number;
   outPoint: number;
 }
 
 interface Placement {
+  recovery: boolean;
   path: string;
   sequenceId: string;
   trackIndex: number;
   start: number;
+  checkpointId: string;
+  checkpointSignature: string;
+  expectedSignature: string;
 }
 
 function parseAnchor(value: unknown): TimelineAnchor | null {
@@ -32,8 +40,11 @@ function parseAnchor(value: unknown): TimelineAnchor | null {
   if (
     typeof data.sequenceId !== "string" ||
     !data.sequenceId ||
+    [data.projectId, data.nodeId, data.trackId].some(
+      (field) => typeof field !== "string" || !field,
+    ) ||
     !Number.isInteger(data.trackIndex) ||
-    [data.start, data.inPoint, data.outPoint].some(
+    [data.start, data.end, data.inPoint, data.outPoint].some(
       (field) => typeof field !== "number" || !Number.isFinite(field),
     )
   )
@@ -75,6 +86,7 @@ export function VOCleanupPanel({
   const [error, setError] = useState("");
   const [result, setResult] = useState<CleanupResult | null>(null);
   const [imported, setImported] = useState(false);
+  const [placementMessage, setPlacementMessage] = useState("");
   const [resultProject, setResultProject] = useState("");
   const lock = useRef(false);
   const projectId = context?.projectDocumentId || context?.projectPath || "";
@@ -122,42 +134,71 @@ export function VOCleanupPanel({
       path,
       projectId: project,
       sequenceId: at.sequenceId,
+      nodeId: at.nodeId,
+      trackId: at.trackId,
       trackIndex: at.trackIndex,
       start: at.start,
+      end: at.end,
       inPoint: at.inPoint,
       outPoint: at.outPoint,
       keepTiming,
+      confirmed: true,
     });
-    const data = packet as { trackIndex?: unknown; start?: unknown };
-    if (!Number.isInteger(data.trackIndex) || typeof data.start !== "number")
+    const data = packet as Partial<Placement> & { status?: string; message?: string };
+    if (
+      !Number.isInteger(data.trackIndex) ||
+      typeof data.start !== "number" ||
+      typeof data.checkpointId !== "string" ||
+      !data.checkpointId ||
+      typeof data.checkpointSignature !== "string" ||
+      !data.checkpointSignature ||
+      typeof data.expectedSignature !== "string" ||
+      (data.status !== "placed" && data.status !== "recovery")
+    )
       throw new Error("Placement could not be verified. Check the timeline.");
     setImported(true);
     setPlacement({
+      recovery: data.status === "recovery",
       path,
       sequenceId: at.sequenceId,
       trackIndex: data.trackIndex as number,
       start: data.start,
+      checkpointId: data.checkpointId,
+      checkpointSignature: data.checkpointSignature,
+      expectedSignature: data.expectedSignature,
     });
+    if (data.status === "recovery")
+      throw new Error(data.message || "Check the timeline and use Undo placement.");
   }
   async function unplace(placed: Placement, project: string) {
-    await requestTimelineAction("premiere.vo-cleanup.request", {
+    const packet = await requestTimelineAction("premiere.vo-cleanup.request", {
       action: "unplace",
-      path: placed.path,
       projectId: project,
       sequenceId: placed.sequenceId,
-      trackIndex: placed.trackIndex,
-      start: placed.start,
+      checkpointId: placed.checkpointId,
+      checkpointSignature: placed.checkpointSignature,
+      expectedSignature: placed.expectedSignature,
     });
+    if (!("status" in packet) || packet.status !== "unplaced")
+      throw new Error("Checkpoint restore could not be verified. Check the timeline.");
     setPlacement(null);
+    setPlacementMessage(
+      "message" in packet && typeof packet.message === "string"
+        ? packet.message
+        : "Checkpoint restored.",
+    );
+    setAnchor(null);
+    setToTimeline(false);
   }
   async function clean() {
     if (!source.trim() || !validKeep) return;
     await action(async () => {
-      const targetProject = projectId;
       const targetAnchor = toTimeline ? anchor : null;
+      const targetProject = targetAnchor?.projectId || projectId;
       setResult(null);
       setImported(false);
       setPlacement(null);
+      setPlacementMessage("");
       const packet = await requestTimelineAction("premiere.vo-cleanup.request", {
         action: "run",
         path: source.trim(),
@@ -167,9 +208,15 @@ export function VOCleanupPanel({
       const output = parseResult(packet);
       setResult(output);
       setResultProject(targetProject);
-      if (targetAnchor && targetProject)
-        await place(output.outputPath, targetProject, targetAnchor, mode === "breaths");
-      else if (importResult && targetProject) await importFile(output.outputPath, targetProject);
+      if (targetAnchor && targetProject) {
+        try {
+          await place(output.outputPath, targetProject, targetAnchor, mode === "breaths");
+        } catch (failure) {
+          setAnchor(null);
+          setToTimeline(false);
+          throw failure;
+        }
+      } else if (importResult && targetProject) await importFile(output.outputPath, targetProject);
     });
   }
 
@@ -254,7 +301,7 @@ export function VOCleanupPanel({
         <button
           type="button"
           data-primary-button=""
-          disabled={!source.trim() || !validKeep}
+          disabled={!source.trim() || !validKeep || placement !== null}
           onClick={() => void clean()}
         >
           Clean VO
@@ -277,7 +324,11 @@ export function VOCleanupPanel({
           {result.regionsPath ? <p>Breath regions: {result.regionsPath}</p> : null}
           {placement ? (
             <div data-vo-actions="">
-              <span>Placed on new track A{placement.trackIndex + 1}.</span>
+              <span>
+                {placement.recovery
+                  ? "Placement needs recovery."
+                  : `Placed on new track A${placement.trackIndex + 1}.`}
+              </span>
               <button
                 type="button"
                 disabled={busy}
@@ -287,7 +338,7 @@ export function VOCleanupPanel({
               </button>
             </div>
           ) : imported ? (
-            <p>Imported into Axis VO cleanup.</p>
+            <p>{placementMessage || "Imported into Axis VO cleanup."}</p>
           ) : resultProject ? (
             <button
               type="button"

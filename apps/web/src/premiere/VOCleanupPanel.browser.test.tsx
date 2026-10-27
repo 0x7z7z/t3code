@@ -117,15 +117,34 @@ it("retains saved results after an optional import fails and retries without cle
 });
 
 it("places breath-only cleanup on a new track below the selected timeline clip and undoes it", async () => {
+  await page.viewport(440, 720);
   const props = setup();
   const run = host.request.getMockImplementation()!;
   host.request.mockImplementation(async (type, payload) => {
     if (payload.action === "selected")
       return {
         path: "D:/Film/VO.wav",
-        anchor: { sequenceId: "main", trackIndex: 0, start: 12, inPoint: 2, outPoint: 90 },
+        anchor: {
+          projectId: "film",
+          sequenceId: "main",
+          trackId: "vo-track",
+          nodeId: "vo",
+          trackIndex: 2,
+          start: 12,
+          end: 100,
+          inPoint: 2,
+          outPoint: 90,
+        },
       };
-    if (payload.action === "place") return { status: "placed", trackIndex: 1, start: 12 };
+    if (payload.action === "place")
+      return {
+        status: "placed",
+        trackIndex: 3,
+        start: 12,
+        checkpointId: "saved",
+        checkpointSignature: "before",
+        expectedSignature: "after",
+      };
     if (payload.action === "unplace") return { status: "unplaced" };
     return run(type, payload);
   });
@@ -138,16 +157,22 @@ it("places breath-only cleanup on a new track below the selected timeline clip a
   await screen.getByRole("combobox", { name: "Remove" }).selectOptions("breaths");
   await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
   await expect.element(screen.getByRole("button", { name: "Undo placement" })).toBeVisible();
+  expect(screen.container.scrollWidth).toBeLessThanOrEqual(440);
+  await page.screenshot({ path: "./__screenshots__/axis-vo-cleanup-placement-440.png" });
   expect(host.request).toHaveBeenLastCalledWith("premiere.vo-cleanup.request", {
     action: "place",
     path: "D:/Film/VO_AxisVO_123_NoBreaths.wav",
     projectId: "film",
     sequenceId: "main",
-    trackIndex: 0,
+    trackId: "vo-track",
+    nodeId: "vo",
+    trackIndex: 2,
     start: 12,
+    end: 100,
     inPoint: 2,
     outPoint: 90,
     keepTiming: true,
+    confirmed: true,
   });
   await screen.getByRole("button", { name: "Undo placement" }).click();
   await expect
@@ -155,11 +180,11 @@ it("places breath-only cleanup on a new track below the selected timeline clip a
     .not.toBeInTheDocument();
   expect(host.request).toHaveBeenLastCalledWith("premiere.vo-cleanup.request", {
     action: "unplace",
-    path: "D:/Film/VO_AxisVO_123_NoBreaths.wav",
     projectId: "film",
     sequenceId: "main",
-    trackIndex: 1,
-    start: 12,
+    checkpointId: "saved",
+    checkpointSignature: "before",
+    expectedSignature: "after",
   });
   await screen.getByRole("textbox", { name: "Audio file" }).fill("D:/Film/Other.wav");
   await expect.element(timeline()).toBeDisabled();
@@ -178,4 +203,69 @@ it("processes a file without a sequence and shows a failed job without a success
   await expect
     .element(screen.getByRole("textbox", { name: "Cleaned audio" }))
     .not.toBeInTheDocument();
+});
+
+it("retains Undo after a failed or unverified restore and clears it only after verified success", async () => {
+  const props = setup();
+  const run = host.request.getMockImplementation()!;
+  let undo: "fail" | "unverified" | "success" = "fail";
+  host.request.mockImplementation(async (type, payload) => {
+    if (payload.action === "selected")
+      return {
+        path: "D:/Film/VO.wav",
+        anchor: {
+          projectId: "film",
+          sequenceId: "main",
+          trackId: "track",
+          nodeId: "vo",
+          trackIndex: 0,
+          start: 12,
+          end: 100,
+          inPoint: 2,
+          outPoint: 90,
+        },
+      };
+    if (payload.action === "place")
+      return {
+        status: "recovery",
+        trackIndex: 1,
+        start: 12,
+        checkpointId: "saved",
+        checkpointSignature: "before",
+        expectedSignature: "after",
+        message: "Automatic restore failed. The added track may still be present.",
+      };
+    if (payload.action === "unplace") {
+      if (undo === "fail") throw new Error("Premiere could not open the checkpoint.");
+      return undo === "success" ? { status: "unplaced", message: "Checkpoint restored." } : {};
+    }
+    return run(type, payload);
+  });
+  await using screen = await render(<VOCleanupPanel {...props} />);
+  await screen.getByRole("button", { name: "Use selected clip" }).click();
+  await screen.getByRole("checkbox", { name: /Import into timeline/ }).click();
+  await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
+  const undoButton = () => screen.getByRole("button", { name: "Undo placement" });
+  await expect.element(undoButton()).toBeEnabled();
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Clean VO", exact: true }))
+    .toBeDisabled();
+  await expect
+    .element(screen.getByRole("checkbox", { name: /Import into timeline/ }))
+    .toBeDisabled();
+  await undoButton().click();
+  await expect.element(undoButton()).toBeEnabled();
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  undo = "unverified";
+  await undoButton().click();
+  await expect.element(undoButton()).toBeEnabled();
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  undo = "success";
+  await undoButton().click();
+  await expect.element(undoButton()).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
+  await expect
+    .element(screen.getByRole("checkbox", { name: /Import into timeline/ }))
+    .toBeDisabled();
 });

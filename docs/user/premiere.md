@@ -92,15 +92,29 @@ the intended project to enable import. The original files are preserved.
 
 When the VO came from a timeline clip, **Import into timeline** also places the
 result on a new audio track named **Clean VO** directly below the VO. Nothing on
-existing tracks is moved, trimmed or overwritten; Axis checks this after placing.
+existing tracks is moved, trimmed or overwritten. Axis accepts only a verified
+single mono or stereo clip and checks every existing audio and video clip after
+placing. Separate mono, surround and unreadable channel mappings are refused.
 Breath-only results keep the VO's trim and line up with it exactly; results with
-silence removed start where the VO clip starts. **Undo placement** removes the
-placed clip and leaves the empty track for you to delete.
+silence removed start where the VO clip starts. Keep the selected VO in place
+while processing. Timeline import requires forward playback at 100% speed, with
+the VO track and all audio tracks below it unlocked. Select only one instance;
+linked mono channels with identical source and timing count as one, and placement
+goes below the bottom selected channel.
+
+Axis saves a verified sequence checkpoint before placement. A placement failure
+automatically restores it. **Undo placement** restores the whole sequence and its
+original track layout; later timeline edits make Undo unavailable. The changed
+sequence, including its added track, remains in **Axis checkpoints**. If restore
+fails, Axis says so and keeps Undo available. After a response timeout, check the
+timeline and use Premiere's Undo before trying another placement.
 
 Python 3.12 with `numpy`, `soundfile` and `pydub`, plus FFmpeg, must be available
 on the Premiere machine. Breath cleanup also requires the existing WhisperX
 setup in **Menu > Diagnostics**. Transcription runs locally on CPU and long VOs
-can take a while. Keep Axis open until processing finishes. Compressed sources
+can take a while. Transcription stops after five hours; the complete job stops
+before six hours and removes unfinished outputs and temporary files. Keep Axis
+open until processing finishes. Compressed sources
 are decoded before cleaning; sample identity applies to the decoded audio.
 
 ### Review transcript cuts
