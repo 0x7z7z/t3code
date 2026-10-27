@@ -72,7 +72,7 @@ it("cleans both steps at 440px, preserves the source choice and offers explicit 
 it("chooses a project item and runs either individual step with retained-silence validation", async () => {
   const props = setup();
   await using screen = await render(<VOCleanupPanel {...props} />);
-  await screen.getByRole("button", { name: "Use selected project item" }).click();
+  await screen.getByRole("button", { name: "Use selected clip" }).click();
   await screen.getByRole("combobox", { name: "Remove" }).selectOptions("silence");
   await screen.getByRole("spinbutton", { name: "Keep silence (ms)" }).fill("-1");
   await expect
@@ -114,6 +114,55 @@ it("retains saved results after an optional import fails and retries without cle
   await screen.getByRole("button", { name: "Import cleaned VO" }).click();
   await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
   expect(host.request.mock.calls.filter((call) => call[1].action === "run")).toHaveLength(1);
+});
+
+it("places breath-only cleanup on a new track below the selected timeline clip and undoes it", async () => {
+  const props = setup();
+  const run = host.request.getMockImplementation()!;
+  host.request.mockImplementation(async (type, payload) => {
+    if (payload.action === "selected")
+      return {
+        path: "D:/Film/VO.wav",
+        anchor: { sequenceId: "main", trackIndex: 0, start: 12, inPoint: 2, outPoint: 90 },
+      };
+    if (payload.action === "place") return { status: "placed", trackIndex: 1, start: 12 };
+    if (payload.action === "unplace") return { status: "unplaced" };
+    return run(type, payload);
+  });
+  await using screen = await render(<VOCleanupPanel {...props} />);
+  const timeline = () => screen.getByRole("checkbox", { name: /Import into timeline/ });
+  await expect.element(timeline()).toBeDisabled();
+  await screen.getByRole("button", { name: "Use selected clip" }).click();
+  await expect.element(timeline()).toBeEnabled();
+  await timeline().click();
+  await screen.getByRole("combobox", { name: "Remove" }).selectOptions("breaths");
+  await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Undo placement" })).toBeVisible();
+  expect(host.request).toHaveBeenLastCalledWith("premiere.vo-cleanup.request", {
+    action: "place",
+    path: "D:/Film/VO_AxisVO_123_NoBreaths.wav",
+    projectId: "film",
+    sequenceId: "main",
+    trackIndex: 0,
+    start: 12,
+    inPoint: 2,
+    outPoint: 90,
+    keepTiming: true,
+  });
+  await screen.getByRole("button", { name: "Undo placement" }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Undo placement" }))
+    .not.toBeInTheDocument();
+  expect(host.request).toHaveBeenLastCalledWith("premiere.vo-cleanup.request", {
+    action: "unplace",
+    path: "D:/Film/VO_AxisVO_123_NoBreaths.wav",
+    projectId: "film",
+    sequenceId: "main",
+    trackIndex: 1,
+    start: 12,
+  });
+  await screen.getByRole("textbox", { name: "Audio file" }).fill("D:/Film/Other.wav");
+  await expect.element(timeline()).toBeDisabled();
 });
 
 it("processes a file without a sequence and shows a failed job without a success result", async () => {

@@ -132,3 +132,143 @@ test("VO bridge reports Python, transcription, and malformed-output failures", a
     /Clean VO needs pydub\. Run: py -3\.12 -m pip install/,
   );
 });
+
+function timelineFixture() {
+  const f = fixture();
+  const tracks = [];
+  const clip = (nodeId, mediaPath, start, mediaType = "Audio") => ({
+    nodeId,
+    mediaType,
+    projectItem: { getMediaPath: () => mediaPath },
+    start: { seconds: start },
+    inPoint: { seconds: 2 },
+    outPoint: { seconds: 90 },
+    remove() {
+      for (const track of tracks) {
+        const index = track.list.indexOf(this);
+        if (index >= 0) track.list.splice(index, 1);
+      }
+    },
+  });
+  const track = (name, list) => ({
+    name,
+    list,
+    get clips() {
+      const view = { numItems: list.length };
+      list.forEach((value, index) => (view[index] = value));
+      return view;
+    },
+    overwriteClip(item, start) {
+      list.push(clip("placed", item.getMediaPath(), Number(start)));
+    },
+  });
+  const vo = clip("vo", "D:/VO.wav", 12);
+  tracks.push(track("VO", [vo]), track("SFX", [clip("sfx", "D:/boom.wav", 30)]));
+  const audioTracks = {};
+  const sync = () => {
+    audioTracks.numTracks = tracks.length;
+    tracks.forEach((value, index) => (audioTracks[index] = value));
+  };
+  sync();
+  f.app.project.activeSequence = {
+    sequenceID: "seq",
+    audioTracks,
+    videoTracks: { numTracks: 1, 0: { clips: { numItems: 1 } } },
+    getSelection: () => [clip("vo-video", "D:/VO.wav", 12, "Video"), vo],
+  };
+  f.app.getProjectViewSelection = () => undefined;
+  const points = [];
+  const item = {
+    getMediaPath: () => "D:/clean.wav",
+    getInPoint: () => ({ seconds: 0 }),
+    getOutPoint: () => ({ seconds: 100 }),
+    setInPoint: (value) => points.push(["in", value]),
+    setOutPoint: (value) => points.push(["out", value]),
+    clearInPoint: () => points.push(["clear-in"]),
+    clearOutPoint: () => points.push(["clear-out"]),
+  };
+  f.bin.children = { numItems: 1, 0: item };
+  f.app.project.rootItem.children = { numItems: 1, 0: f.bin };
+  f.app.enableQE = () => {};
+  const qe = {
+    project: {
+      getActiveSequence: () => ({
+        addTracks: (_video, _videoAfter, count, _type, after) => {
+          for (let n = 0; n < count; n++)
+            tracks.splice(after, 0, track("Audio " + (after + 1), []));
+          sync();
+        },
+      }),
+    },
+  };
+  function File(filename) {
+    return { fsName: filename, exists: true };
+  }
+  const context = vm.createContext({ app: f.app, File, qe });
+  return {
+    tracks,
+    points,
+    evaluate: (text, callback) => callback(vm.runInContext(text, context)),
+  };
+}
+
+test("VO selection falls back to the timeline clip when project views have no selection", async () => {
+  const t = timelineFixture();
+  const selected = await hostOperation({ action: "selected" }, __dirname, t.evaluate);
+  assert.equal(selected.path, "D:/VO.wav");
+  assert.deepEqual(selected.anchor, {
+    sequenceId: "seq",
+    trackIndex: 0,
+    start: 12,
+    inPoint: 2,
+    outPoint: 90,
+  });
+});
+
+test("VO placement adds a track below the VO without touching other tracks, then undoes", async () => {
+  const t = timelineFixture();
+  const request = {
+    action: "place",
+    path: "D:/clean.wav",
+    projectId: "film",
+    sequenceId: "seq",
+    trackIndex: 0,
+    start: 12,
+    inPoint: 2,
+    outPoint: 90,
+    keepTiming: true,
+  };
+  await assert.rejects(
+    hostOperation({ ...request, sequenceId: "other" }, __dirname, t.evaluate),
+    /Open the sequence/,
+  );
+  assert.equal(t.tracks.length, 2);
+  const placed = await hostOperation(request, __dirname, t.evaluate);
+  assert.equal(placed.status, "placed");
+  assert.equal(placed.trackIndex, 1);
+  assert.deepEqual(
+    t.tracks.map((track) => [track.name, track.list.length]),
+    [
+      ["VO", 1],
+      ["Clean VO", 1],
+      ["SFX", 1],
+    ],
+  );
+  assert.equal(t.tracks[1].list[0].start.seconds, 12);
+  assert.deepEqual(t.points, [["in", 2], ["out", 90], ["clear-in"], ["clear-out"]]);
+  const undone = await hostOperation(
+    {
+      action: "unplace",
+      path: "D:/clean.wav",
+      projectId: "film",
+      sequenceId: "seq",
+      trackIndex: 1,
+      start: 12,
+    },
+    __dirname,
+    t.evaluate,
+  );
+  assert.equal(undone.status, "unplaced");
+  assert.equal(t.tracks[1].list.length, 0);
+  assert.equal(t.tracks[2].list.length, 1);
+});

@@ -78,8 +78,9 @@ automatic import; use the conversation's stop control to interrupt the agent its
 ## Clean up voice-over
 
 To clean an audio file, choose **Menu > Clean VO**. Browse to the file, paste its
-full path, or select one audio item in Premiere's Project panel and choose
-**Use selected project item**. Choose silence, breaths, or silence followed by
+full path, or select the VO clip on the timeline (or one item in the Project
+panel) and choose **Use selected clip**. Video files work too; their audio is
+cleaned. Choose silence, breaths, or silence followed by
 breaths. Silence removal retains 50 ms by default and shortens the audio; breath
 removal lowers breaths by 40 dB while preserving length and samples outside the
 breath regions. For both steps, word timings are generated after removing silence.
@@ -87,8 +88,14 @@ breath regions. For both steps, word timings are generated after removing silenc
 Each run saves uniquely named lossless WAV files beside the source, plus a breath
 region CSV when applicable. **Import result into project bin** adds the final file
 to **Axis VO cleanup**; you can also import after processing. Open a sequence in
-the intended project to enable import. This action never places or replaces
-timeline clips. The original files are preserved.
+the intended project to enable import. The original files are preserved.
+
+When the VO came from a timeline clip, **Import into timeline** also places the
+result on a new audio track named **Clean VO** directly below the VO. Nothing on
+existing tracks is moved, trimmed or overwritten; Axis checks this after placing.
+Breath-only results keep the VO's trim and line up with it exactly; results with
+silence removed start where the VO clip starts. **Undo placement** removes the
+placed clip and leaves the empty track for you to delete.
 
 Python 3.12 with `numpy`, `soundfile` and `pydub`, plus FFmpeg, must be available
 on the Premiere machine. Breath cleanup also requires the existing WhisperX

@@ -10,9 +10,9 @@ function audioFile(value) {
   const filename = fs.realpathSync(value);
   if (
     !fs.statSync(filename).isFile() ||
-    !/\.(wav|mp3|m4a|aac|flac|ogg|opus|aif|aiff|wma)$/i.test(filename)
+    !/\.(wav|mp3|m4a|aac|flac|ogg|opus|aif|aiff|wma|mp4|mov|m4v|mkv|avi|mxf)$/i.test(filename)
   )
-    throw new Error("Choose a supported audio file.");
+    throw new Error("Choose a supported audio or video file.");
   return filename;
 }
 
@@ -27,7 +27,21 @@ function hostOperation(request, directory, evaluate) {
         const fields = String(raw).split("|").map(decodeURIComponent);
         if (fields[0] !== "axis:vo")
           throw new Error(fields[1] || "Premiere could not complete VO cleanup.");
-        resolve({ ok: true, status: fields[1], path: fields[2] || "" });
+        const result = { ok: true, status: fields[1], path: fields[2] || "" };
+        if (fields[1] === "source" && fields.length === 8) {
+          const [trackIndex, start, inPoint, outPoint] = fields.slice(4).map(Number);
+          if (
+            [trackIndex, start, inPoint, outPoint].every(Number.isFinite) &&
+            Number.isInteger(trackIndex) &&
+            trackIndex >= 0
+          )
+            result.anchor = { sequenceId: fields[3], trackIndex, start, inPoint, outPoint };
+        }
+        if (fields[1] === "placed") {
+          result.trackIndex = Number(fields[3]);
+          result.start = Number(fields[4]);
+        }
+        resolve(result);
       } catch (error) {
         reject(error);
       }
@@ -53,6 +67,36 @@ async function operation(request, directory, evaluate) {
       directory,
       evaluate,
     );
+  }
+  if (request.action === "place" || request.action === "unplace") {
+    const numbers = [request.trackIndex, request.start].concat(
+      request.action === "place" ? [request.inPoint, request.outPoint] : [],
+    );
+    if (
+      typeof request.projectId !== "string" ||
+      !request.projectId ||
+      typeof request.sequenceId !== "string" ||
+      !request.sequenceId ||
+      !Number.isInteger(request.trackIndex) ||
+      request.trackIndex < 0 ||
+      !numbers.every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0)
+    )
+      throw new Error("Select the VO clip on the timeline again.");
+    const scoped = {
+      action: request.action,
+      path: audioFile(request.path),
+      projectId: request.projectId,
+      sequenceId: request.sequenceId,
+      trackIndex: request.trackIndex,
+      start: request.start,
+    };
+    if (request.action === "place")
+      Object.assign(scoped, {
+        inPoint: request.inPoint,
+        outPoint: request.outPoint,
+        keepTiming: request.keepTiming === true,
+      });
+    return hostOperation(scoped, directory, evaluate);
   }
   if (
     request.action !== "run" ||
