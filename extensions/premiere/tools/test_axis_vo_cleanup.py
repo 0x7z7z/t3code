@@ -64,6 +64,16 @@ def test_silence_extensions_are_capped_and_overlap_is_kept_once():
     assert protect_silence_edges([[500, 700], [800, 1000]], rms, hf, 16000, 2000, []) == [[380, 1120]]
 
 
+def test_silence_guard_does_not_absorb_breaths_or_room_hiss():
+    # Project 49's raw VO lost 69 of 593 cuts when breath-band frames counted as
+    # consonants. Breath-like edges (-48 dB, .80 share) must not extend a chunk.
+    rms, hf = np.full(200, -48.0), np.full(200, .8)
+    assert protect_silence_edges([[500, 700]], rms, hf, 16000, 2000, []) == [[500, 700]]
+    rms[:] = -70
+    hf[:] = 1
+    assert protect_silence_edges([[500, 700]], rms, hf, 16000, 2000, []) == [[500, 700]]
+
+
 def test_fourth_mode_uses_post_silence_timings_and_keeps_intermediates(tmp_path, monkeypatch):
     import axis_vo_cleanup as module
     source = tmp_path / "voice.wav"

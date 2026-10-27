@@ -214,6 +214,13 @@ def silence_ranges(sound, keep_ms):
     return [[max(0, a), min(len(sound), b)] for a, b in ranges]
 
 
+def consonant_edge(db, share):
+    # Breaths, f/th/h and room hiss share the -55..-40 dB, .60-.93 band, so audio
+    # alone only extends over sibilants (above .93) or still-voiced sound. Weak
+    # fricatives are protected by spelling where word timings exist.
+    return db > -60 and (share > .93 or db > -45)
+
+
 def protect_silence_edges(ranges, rms, hf, sr, duration_ms, words):
     protected = []
     for start, end in ranges:
@@ -227,13 +234,11 @@ def protect_silence_edges(ranges, rms, hf, sr, duration_ms, words):
             if abs(we - end) <= 120 and ws <= end and fricative_word(word["word"], "end"):
                 b = max(b, min(end + 120, math.ceil(we + 80)))
         while a > max(0, start - 120):
-            db, share = frame_at(rms, hf, sr, (a - 10) / 1000)
-            if db <= -60 or share <= .6:
+            if not consonant_edge(*frame_at(rms, hf, sr, (a - 10) / 1000)):
                 break
             a = max(0, start - 120, a - 5)
         while b < min(duration_ms, end + 120):
-            db, share = frame_at(rms, hf, sr, (b + 10) / 1000)
-            if db <= -60 or share <= .6:
+            if not consonant_edge(*frame_at(rms, hf, sr, (b + 10) / 1000)):
                 break
             b = min(duration_ms, end + 120, b + 5)
         a, b = max(0, a), min(duration_ms, b)

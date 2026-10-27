@@ -110,10 +110,10 @@ cannot set a safe mapping, timeline import is refused.
 Breath-only results keep the VO's trim and line up with it exactly; results with
 silence removed start where the VO clip starts. If you move or retrim the VO while
 processing, placement follows its current position, track and trim. Deleted or
-ambiguous clips are refused. Timeline import requires forward playback at 100% speed, with
-the VO track and all audio tracks below it unlocked. Select only one instance;
-linked mono channels with identical source and timing count as one, and placement
-goes below the bottom channel. Errors identify locked tracks and the intended
+ambiguous clips are refused. Timeline import requires forward playback at 100% speed. Locked tracks are
+fine: the result goes on a new unlocked track and locked clips are never touched.
+Select only one instance; linked mono channels with identical source and timing
+count as one, and placement goes below the bottom channel. Errors name the intended
 project or sequence so you can resolve the problem.
 
 Axis saves a verified sequence checkpoint before placement. A placement failure

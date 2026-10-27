@@ -11,7 +11,9 @@ function axisVOCleanupHost(request, timeline) {
       try {
         var value = work();
         if (value !== undefined && value !== null) return value;
-      } catch (ignoredRead) {}
+      } catch (readError) {
+        if (readError && readError.axisFail) throw readError;
+      }
       if (attempt < 2 && typeof $ !== "undefined" && $.sleep) $.sleep(40);
     }
     fail("Premiere could not read " + label + ". Try again when Premiere is ready.");
@@ -43,7 +45,9 @@ function axisVOCleanupHost(request, timeline) {
     return parts.join("|");
   }
   function fail(message) {
-    throw new Error(message);
+    var error = new Error(message);
+    error.axisFail = true;
+    throw error;
   }
   function near(value, expected) {
     return isFinite(Number(value)) && Math.abs(Number(value) - expected) <= 0.001;
@@ -312,17 +316,8 @@ function axisVOCleanupHost(request, timeline) {
     )
       fail("The VO has an invalid source or timeline range. Select a usable VO clip.");
     id(found.track);
-    var audio = tracks(s, "audioTracks");
-    for (var i = found.index; i < audio.numTracks; i++) {
-      var track = audio[i];
-      var locked = read(
-        function () {
-          return track.isLocked();
-        },
-        "the lock state of A" + (i + 1)
-      );
-      if (locked !== false) fail("A" + (i + 1) + " is locked, unlock it and try again.");
-    }
+    // Locked SFX or music below the VO is fine: adding a track never edits it,
+    // and placement only writes to a verified, unlocked destination track.
     return found;
   }
   function sourcePacket(found, s) {
@@ -623,7 +618,9 @@ function axisVOCleanupHost(request, timeline) {
         if (below && below.count === 0 && !below.locked) {
           target = vo.index + 1;
           explanation =
-            "Used the empty track below the VO because Premiere added the new track elsewhere.";
+            "Used the empty track below the VO because Premiere added the new track elsewhere (A" +
+            (added + 1) +
+            ", left empty).";
         } else if (added === currentAudio.length - 1) {
           explanation =
             "Used the bottom track because Premiere added the new track there instead of below the VO.";
@@ -634,7 +631,9 @@ function axisVOCleanupHost(request, timeline) {
           if (target !== tracks(sequence, "audioTracks").numTracks - 1)
             fail("Premiere could not add the fallback track at the bottom safely.");
           explanation =
-            "Used the bottom track because Premiere could not add a track directly below the VO.";
+            "Used the bottom track because Premiere could not add a track directly below the VO. Its first new track, A" +
+            (added + 1) +
+            ", is empty.";
         }
       }
       if (!unchanged(beforeVideo, inventory(tracks(sequence, "videoTracks")), -1))

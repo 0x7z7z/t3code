@@ -24,8 +24,11 @@ to the source. `--output-dir` can isolate test artifacts. Never edit source medi
 reference transcripts or CSVs. Silence defaults are pydub split_on_silence,
 100 ms minimum, -45 dBFS, 50 ms retained; only an empty split triggers the
 source dBFS minus 16 fallback. Do not silently substitute other thresholds.
-Cut edges extend up to 120 ms over fricative-like audio above -60 dB with an
-above-2 kHz share over .6. The final pass also protects fricative spellings.
+Cut edges extend up to 120 ms over sibilant audio (above -60 dB with an above-2 kHz
+share over .93) or still-voiced audio above -45 dB. Breaths, weak f/th/h and room
+hiss share the .60-.93 band, so audio alone must not extend over them: on project
+49's raw VO that loosened rule kept 10.8 s more and lost 69 of 593 cuts. The final
+pass protects weak fricatives by spelling, using word timings.
 Keep `_SilenceRemoved.wav`, `_NoBreaths.wav`, and the final
 `_SilenceBreathsSilence.wav` intermediates. The breath CSV addresses `_NoBreaths.wav`,
 before the last length-changing pass.
@@ -51,8 +54,9 @@ as one instance; anchor the bottom channel.
 
 Re-resolve by clip nodeId, falling back to media path plus timeline position.
 Follow moved tracks, timeline starts and current trims. Refuse deleted or ambiguous
-instances, wrong projects/sequences, retimed/reversed VOs and locked audio tracks
-at or below the VO; name the problem. Import a fresh project item and repair only
+instances, wrong projects/sequences and retimed/reversed VOs; name the problem.
+Locked tracks do not block placement: the destination is a new, verified, unlocked
+track and locked clips are only read. Import a fresh project item and repair only
 its channel mapping to one mono/stereo clip, then read it back. Never change the
 user's original item. Unsettable or unknown mappings must refuse placement.
 

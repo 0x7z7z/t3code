@@ -402,11 +402,18 @@ test("transient selection, track ID and timing reads are retried without repeati
   assert.equal(f.sequences.length, 2);
 });
 
-test("locked-track errors identify the audio track", async () => {
+test("locked SFX or music below the VO stays locked and untouched while the VO is placed", async () => {
   const f = timelineFixture();
   f.tracks[1].locked = true;
-  await assert.rejects(place(f), /A2 is locked, unlock it and try again/);
-  assert.equal(f.tracks.length, 2);
+  const locked = JSON.stringify(f.tracks[1].list.map((clip) => [clip.nodeId, clip.start.seconds]));
+  const placed = await place(f);
+  assert.equal(placed.status, "placed");
+  assert.equal(f.tracks.length, 3);
+  const lockedTrack = f.tracks.find((track) => track.locked);
+  assert.equal(
+    JSON.stringify(lockedTrack.list.map((clip) => [clip.nodeId, clip.start.seconds])),
+    locked,
+  );
 });
 
 test("a single usable instance can be resolved among retimed instances", async () => {
@@ -747,13 +754,13 @@ test("retimed, reversed and unreadable speed clips refuse placement", async () =
     assert.equal(f.tracks.length, 2);
   }
 });
-test("locked VO or any track below it refuses placement", async () => {
-  for (const index of [0, 1]) {
-    const f = timelineFixture();
-    f.tracks[index].locked = true;
-    await assert.rejects(place(f), /is locked, unlock/);
-    assert.equal(f.tracks.length, 2);
-  }
+test("a locked VO track still places on a new unlocked track below it", async () => {
+  const f = timelineFixture();
+  f.tracks[0].locked = true;
+  const placed = await place(f);
+  assert.equal(placed.status, "placed");
+  assert.equal(placed.trackIndex, 1);
+  assert.equal(f.tracks[1].locked, false);
 });
 test("no verified checkpoint means no mutation", async () => {
   const f = timelineFixture({ noCheckpoint: true });
