@@ -108,6 +108,8 @@ test("VO bridge validates settings and passes a literal file path to the Python 
   assert.equal(fs.readFileSync(source, "utf8"), "source bytes");
   for (const fields of [{ keepMs: -1 }, { keepMs: 1.5 }, { mode: "delete" }, { path: temp.path }])
     await assert.rejects(operation({ ...request, ...fields }, __dirname), /Choose/);
+  await operation({ ...request, mode: "sandwich", keepMs: 80 }, __dirname);
+  assert.deepEqual(calls.at(-1).args.slice(3, 7), ["--mode", "sandwich", "--keep-ms", "80"]);
 });
 
 test("VO bridge reports Python, transcription, and malformed-output failures", async (t) => {
@@ -266,14 +268,19 @@ function timelineFixture(options = {}) {
     f.app.project.activeSequence = next;
     if (options.onOpen) options.onOpen(next, sequence);
   };
-  f.bin.children = collection([item], "numItems");
+  f.bin.children = collection([], "numItems");
   f.app.project.rootItem.children = collection([f.bin], "numItems");
+  f.app.project.importFiles = (files, suppress, target, numbered) => {
+    f.imports.push({ files, suppress, target, numbered });
+    target.children = collection([item], "numItems");
+    return true;
+  };
   f.app.enableQE = () => {};
   const qe = {
     project: {
       getActiveSequence: () => ({
         addTracks: (_video, _videoAfter, count, _type, after) => {
-          const at = after + (options.insertOffset || 0);
+          const at = after + (options.insertOffsets?.shift() ?? options.insertOffset ?? 0);
           for (let n = 0; n < count + (options.extraTracks || 0); n++)
             sequence.audio.splice(at, 0, track("Audio " + (at + 1)));
           if (options.onAdd) options.onAdd(sequence);
@@ -284,7 +291,14 @@ function timelineFixture(options = {}) {
   function File(filename) {
     return { fsName: filename, exists: true };
   }
-  const context = vm.createContext({ app: f.app, File, qe, JSON: undefined });
+  const waits = [];
+  const context = vm.createContext({
+    app: f.app,
+    File,
+    qe,
+    JSON: undefined,
+    $: { sleep: (ms) => waits.push(ms) },
+  });
   // Exercise the real checkpoint implementation, including sequence clones and swaps.
   const timelineModule = { exports: {} };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "snapshot.js"), "utf8"), {
@@ -301,6 +315,7 @@ function timelineFixture(options = {}) {
     points,
     pointCalls,
     sequences,
+    waits,
     get tracks() {
       return f.app.project.activeSequence.audio;
     },
@@ -311,8 +326,191 @@ function timelineFixture(options = {}) {
 async function select(f) {
   return (await hostOperation({ action: "selected" }, __dirname, f.evaluate, f.options)).anchor;
 }
+async function resolveSource(f, fields = {}) {
+  return hostOperation(
+    { action: "resolve", path: "D:/VO.wav", projectId: "film", sequenceId: "seq", ...fields },
+    __dirname,
+    f.evaluate,
+    f.options,
+  );
+}
+
+test("Browse source resolves its only timeline instance without a selection", async () => {
+  const f = timelineFixture();
+  f.sequence.getSelection = () => [];
+  const result = await resolveSource(f);
+  assert.equal(result.anchor.nodeId, "vo");
+  assert.equal(result.anchor.sourcePath, "D:/VO.wav");
+});
+
+test("several source instances require exactly one selected instance", async () => {
+  const f = timelineFixture();
+  const second = f.clip("another", "D:/VO.wav", 120);
+  f.tracks[0].list.push(second);
+  f.sequence.getSelection = () => [];
+  assert.match((await resolveSource(f)).message, /Select.*VO clip/);
+  f.sequence.getSelection = () => [second];
+  assert.equal((await resolveSource(f)).anchor.nodeId, "another");
+  f.sequence.getSelection = () => [f.vo, second];
+  assert.equal((await resolveSource(f)).anchor, undefined);
+});
+
+test("placement follows a VO moved to a different start and track during cleaning", async () => {
+  const f = timelineFixture();
+  const saved = await select(f);
+  f.tracks[0].list.pop();
+  f.tracks.push(f.track("Moved VO", [f.vo]));
+  f.vo.start.seconds = 120;
+  f.vo.end.seconds = 208;
+  const placed = await place(f, saved);
+  assert.equal(placed.trackIndex, 3);
+  assert.equal(placed.start, 120);
+  assert.equal(f.tracks[3].list[0].inPoint.seconds, 2);
+});
+
+test("placement uses the current source trim after retrimming during cleaning", async () => {
+  const f = timelineFixture();
+  const saved = await select(f);
+  f.vo.inPoint.seconds = 30;
+  f.vo.outPoint.seconds = 50;
+  f.vo.end.seconds = 32;
+  await place(f, saved);
+  assert.equal(f.tracks[1].list[0].inPoint.seconds, 30);
+  assert.equal(f.tracks[1].list[0].outPoint.seconds, 50);
+});
+
+test("transient selection, track ID and timing reads are retried without repeating writes", async () => {
+  const f = timelineFixture();
+  let selectionReads = 0;
+  f.sequence.getSelection = () => (++selectionReads < 3 ? undefined : [f.vo]);
+  assert.equal((await select(f)).nodeId, "vo");
+  assert.equal(selectionReads, 3);
+  assert.deepEqual(f.waits, [40, 40]);
+  const oldId = f.tracks[0].id;
+  let idReads = 0;
+  Object.defineProperty(f.tracks[0], "id", { get: () => (++idReads < 3 ? undefined : oldId) });
+  const originalStart = f.vo.start;
+  let startReads = 0;
+  Object.defineProperty(f.vo, "start", {
+    get: () => {
+      if (++startReads < 3) throw new Error("Premiere busy");
+      return originalStart;
+    },
+  });
+  assert.equal((await place(f)).status, "placed");
+  assert.equal(f.tracks.length, 3);
+  assert.equal(f.sequences.length, 2);
+});
+
+test("locked-track errors identify the audio track", async () => {
+  const f = timelineFixture();
+  f.tracks[1].locked = true;
+  await assert.rejects(place(f), /A2 is locked, unlock it and try again/);
+  assert.equal(f.tracks.length, 2);
+});
+
+test("a single usable instance can be resolved among retimed instances", async () => {
+  const f = timelineFixture();
+  const other = f.clip("retimed", "D:/VO.wav", 120);
+  other.getSpeed = () => 0.5;
+  f.tracks[0].list.push(other);
+  f.sequence.getSelection = () => [];
+  assert.equal((await resolveSource(f)).anchor.nodeId, "vo");
+});
+
+test("read retries stop after three attempts and do not start any mutation", async () => {
+  const f = timelineFixture();
+  let reads = 0;
+  f.sequence.getSelection = () => {
+    reads++;
+    throw new Error("Premiere busy");
+  };
+  await assert.rejects(select(f), /could not read the timeline selection/);
+  assert.equal(reads, 3);
+  assert.deepEqual(f.waits, [40, 40]);
+  assert.equal(f.imports.length, 0);
+  assert.equal(f.sequences.length, 1);
+});
+
+test("transient audio track collection reads recover before placement", async () => {
+  const f = timelineFixture();
+  const getter = Object.getOwnPropertyDescriptor(f.sequence, "audioTracks").get;
+  let reads = 0;
+  Object.defineProperty(f.sequence, "audioTracks", {
+    get() {
+      return ++reads < 3 ? undefined : getter.call(this);
+    },
+  });
+  assert.equal((await place(f)).status, "placed");
+  assert.equal(f.tracks.length, 3);
+});
+
+test("wrong project and sequence errors name the original and current scope", async () => {
+  for (const changed of ["project", "sequence"]) {
+    const f = timelineFixture();
+    const saved = await select(f);
+    if (changed === "project") {
+      f.app.project.documentID = "other";
+      f.app.project.path = "D:/other.prproj";
+    } else {
+      f.sequence.sequenceID = "other";
+      f.sequence.name = "Other sequence";
+    }
+    await assert.rejects(
+      place(f, saved),
+      changed === "project" ? /D:\/film.prproj.*D:\/other.prproj/ : /Main.*Other sequence/,
+    );
+    assert.equal(f.tracks.length, 2);
+    assert.equal(f.sequences.length, 1);
+  }
+});
+
+test("a reused project item cannot have its channel mapping or source points changed", async () => {
+  const f = timelineFixture();
+  f.bin.children = { numItems: 1, 0: f.item };
+  await assert.rejects(place(f), /separate imported cleaned VO item/);
+  assert.deepEqual(f.pointCalls, []);
+  assert.equal(f.tracks.length, 2);
+});
+
+test("a transient overwrite failure is rolled back without retrying the write", async () => {
+  let writes = 0;
+  const f = timelineFixture({
+    onOverwrite: () => {
+      writes++;
+      throw new Error("Premiere busy");
+    },
+  });
+  const before = content(f);
+  await assert.rejects(place(f), /checkpoint was restored/);
+  assert.equal(writes, 1);
+  assert.deepEqual(content(f), before);
+});
+
+test("an unsafe second track strategy restores both inserted tracks", async () => {
+  const f = timelineFixture({ voIndex: 3, insertOffset: -1 });
+  const before = content(f);
+  await assert.rejects(place(f), /fallback track at the bottom.*checkpoint was restored/);
+  assert.deepEqual(content(f), before);
+});
+
+test("wrong QE position uses the verified empty new bottom track and remains undoable", async () => {
+  const f = timelineFixture({ insertOffset: 1 });
+  const before = content(f);
+  const placed = await place(f);
+  assert.equal(placed.trackIndex, 2);
+  assert.match(placed.message, /A3.*bottom track.*because/);
+  assert.deepEqual(content(f).slice(0, 2), before);
+  await hostOperation(
+    { ...placed, action: "unplace", projectId: "film", sequenceId: "seq" },
+    __dirname,
+    f.evaluate,
+    f.options,
+  );
+  assert.deepEqual(content(f), before);
+});
 async function place(f, fields = {}) {
-  const anchor = await select(f);
+  const anchor = fields.nodeId ? fields : await select(f);
   return hostOperation(
     {
       action: "place",
@@ -343,6 +541,9 @@ function content(f) {
 test("VO selection captures project, sequence, track and clip identities and timing", async () => {
   const f = timelineFixture();
   assert.deepEqual(await select(f), {
+    sourcePath: "D:/VO.wav",
+    projectName: "D:/film.prproj",
+    sequenceName: "Main",
     projectId: "film",
     sequenceId: "seq",
     nodeId: "vo",
@@ -409,22 +610,17 @@ test("linked mono channels of one instance count as one selection on the bottom 
   assert.equal(anchor.nodeId, "channel-2");
   assert.equal(anchor.trackIndex, 1);
 });
-test("a moved, trimmed, replaced or deleted anchor refuses mutation", async () => {
+test("a replaced source, deleted clip or ambiguous fallback refuses mutation", async () => {
   for (const change of [
     (f) => {
-      f.vo.start.seconds = 120;
-    },
-    (f) => {
-      f.vo.inPoint.seconds = 30;
-    },
-    (f) => {
-      f.vo.nodeId = "replacement";
-    },
-    (f) => {
-      f.tracks[0].id = "replacement-track";
+      f.vo.projectItem.getMediaPath = () => "D:/different.wav";
     },
     (f) => {
       f.tracks[0].list.length = 0;
+    },
+    (f) => {
+      f.vo.nodeId = "replacement";
+      f.tracks[1].list.push(f.clip("duplicate", "D:/VO.wav"));
     },
   ]) {
     const f = timelineFixture();
@@ -434,7 +630,7 @@ test("a moved, trimmed, replaced or deleted anchor refuses mutation", async () =
     assert.equal(f.tracks.length, 2);
   }
 });
-test("separate mono, surround, multichannel and unknown imported mappings refuse placement", async () => {
+test("unfixable separate mono, surround, multichannel and unknown imported mappings refuse placement", async () => {
   for (const mapping of [
     { audioClipsNumber: 2, audioChannelsType: 0 },
     { audioClipsNumber: 1, audioChannelsType: 2 },
@@ -454,7 +650,6 @@ test("one mono clip is safe", async () => {
   assert.equal((await place(f)).status, "placed");
 });
 for (const [name, options] of [
-  ["QE inserts at the wrong position", { insertOffset: 1 }],
   ["QE creates several tracks", { extraTracks: 1 }],
   [
     "SFX is replaced without changing the count",
@@ -515,6 +710,19 @@ test("requested source trim is read back before overwrite and restored afterward
   assert.equal(f.tracks[1].list[0].outPoint.seconds, 50);
   assert.deepEqual(f.points[2], [0, 100]);
 });
+
+test("final readback catches a placed range changed when imported source points are restored", async () => {
+  const f = timelineFixture();
+  const before = content(f);
+  const setOut = f.item.setOutPoint;
+  f.item.setOutPoint = (value, type) => {
+    setOut(value, type);
+    const placed = f.tracks[1]?.list[0];
+    if (value === 100 && placed?.projectItem === f.item) placed.outPoint.seconds = 100;
+  };
+  await assert.rejects(place(f), /final cleaned VO range.*checkpoint was restored/);
+  assert.deepEqual(content(f), before);
+});
 test("ignored source trim refuses overwrite", async () => {
   const f = timelineFixture();
   f.item.setInPoint = () => {};
@@ -535,7 +743,7 @@ test("retimed, reversed and unreadable speed clips refuse placement", async () =
   ]) {
     const f = timelineFixture();
     change(f);
-    await assert.rejects(place(f), /100%|speed/);
+    await assert.rejects(place(f), /100%|speed|reversed/);
     assert.equal(f.tracks.length, 2);
   }
 });
@@ -543,7 +751,7 @@ test("locked VO or any track below it refuses placement", async () => {
   for (const index of [0, 1]) {
     const f = timelineFixture();
     f.tracks[index].locked = true;
-    await assert.rejects(place(f), /Unlock/);
+    await assert.rejects(place(f), /is locked, unlock/);
     assert.equal(f.tracks.length, 2);
   }
 });
@@ -751,9 +959,84 @@ test("an existing identical empty track cannot be mistaken for QE's new track", 
       sequence.audio[2].name = sequence.audio[1].name;
     },
   });
+  const existing = f.tracks[1];
+  const name = existing.name;
+  const placed = await place(f);
+  assert.equal(placed.trackIndex, 1);
+  assert.equal(f.tracks[1], existing);
+  assert.equal(existing.name, name);
+  assert.equal(f.tracks[2].list.length, 0);
+  assert.match(placed.message, /empty track.*because/);
+});
+
+test("changed node IDs fall back to a unique media path and timeline position", async () => {
+  const f = timelineFixture();
+  const saved = await select(f);
+  f.vo.nodeId = "replacement-id";
+  assert.equal((await place(f, saved)).status, "placed");
+});
+
+for (const type of [0, 1, 2, 3]) {
+  test(
+    "imported mapping type " +
+      type +
+      " is repaired to one stereo clip without changing the original item",
+    async () => {
+      const f = timelineFixture();
+      const original = { audioClipsNumber: 2, audioChannelsType: type };
+      f.vo.projectItem.getAudioChannelMapping = original;
+      const channels = [];
+      let submitted = 0;
+      f.item.getAudioChannelMapping = {
+        ...original,
+        setMappingForChannel: (channel, source) => channels.push([channel, source]),
+      };
+      f.item.setAudioChannelMapping = (value) => {
+        submitted++;
+        f.item.getAudioChannelMapping = { ...value };
+      };
+      assert.equal((await place(f)).status, "placed");
+      assert.equal(submitted, 1);
+      assert.deepEqual(channels, [
+        [0, 0],
+        [1, 1],
+      ]);
+      assert.deepEqual(original, { audioClipsNumber: 2, audioChannelsType: type });
+      assert.equal(f.tracks[1].list.length, 1);
+      assert.equal(f.tracks[2].list[0].nodeId, "sfx");
+    },
+  );
+}
+
+test("a mapping setter that refuses or throws is never retried", async () => {
+  for (const throws of [false, true]) {
+    const f = timelineFixture();
+    let writes = 0;
+    f.item.getAudioChannelMapping = () => ({
+      audioClipsNumber: 2,
+      audioChannelsType: 0,
+      setMappingForChannel() {},
+    });
+    f.item.setAudioChannelMapping = () => {
+      writes++;
+      if (throws) throw new Error("Mapping busy");
+    };
+    await assert.rejects(place(f), /single mono or stereo|Mapping busy/);
+    assert.equal(writes, 1);
+    assert.equal(f.tracks.length, 2);
+  }
+});
+
+test("wrong QE position away from the bottom tries a separately verified bottom insertion", async () => {
+  const f = timelineFixture({ insertOffsets: [-1, 0] });
   const before = content(f);
-  await assert.rejects(place(f), /wrong position.*checkpoint was restored/);
-  assert.deepEqual(content(f), before);
+  const result = await place(f);
+  assert.equal(result.trackIndex, f.tracks.length - 1);
+  assert.match(result.message, /bottom track.*because/);
+  assert.deepEqual(
+    content(f).filter((_, i) => i !== 0 && i !== result.trackIndex),
+    before,
+  );
 });
 test("the review's wrong trim reproduction restores instead of accepting source 2-90 for 30-50", async () => {
   const f = timelineFixture({

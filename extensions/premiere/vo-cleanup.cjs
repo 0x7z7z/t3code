@@ -58,7 +58,7 @@ function hostOperation(request, directory, evaluate, options = {}) {
             if (fields[0] !== "axis:vo")
               throw new Error(fields[1] || "Premiere could not complete VO cleanup.");
             const result = { ok: true, status: fields[1], path: fields[2] || "" };
-            if (fields[1] === "source" && fields.length === 12) {
+            if (fields[1] === "source" && fields.length >= 12) {
               const [trackIndex, start, inPoint, outPoint] = fields.slice(4).map(Number);
               if (
                 [trackIndex, start, inPoint, outPoint].every(Number.isFinite) &&
@@ -75,8 +75,12 @@ function hostOperation(request, directory, evaluate, options = {}) {
                   nodeId: fields[9],
                   trackId: fields[10],
                   end: Number(fields[11]),
+                  sourcePath: fields[2],
+                  projectName: fields[12] || "",
+                  sequenceName: fields[13] || "",
                 };
             }
+            if (fields[1] === "unanchored") result.message = fields[3] || "";
             if (fields[1] === "placed" || fields[1] === "recovery") {
               result.trackIndex = Number(fields[3]);
               result.start = Number(fields[4]);
@@ -102,6 +106,28 @@ function hostOperation(request, directory, evaluate, options = {}) {
 }
 
 async function operation(request, directory, evaluate, options = {}) {
+  if (request.action === "resolve") {
+    if (
+      typeof request.projectId !== "string" ||
+      !request.projectId ||
+      typeof request.sequenceId !== "string" ||
+      !request.sequenceId
+    )
+      throw new Error("Open the sequence containing this VO first.");
+    return hostOperation(
+      {
+        action: "resolve",
+        path: audioFile(request.path),
+        projectId: request.projectId,
+        sequenceId: request.sequenceId,
+        projectName: request.projectName,
+        sequenceName: request.sequenceName,
+      },
+      directory,
+      evaluate,
+      options,
+    );
+  }
   if (request.action === "pick" || request.action === "selected") {
     const result = await hostOperation({ action: request.action }, directory, evaluate, options);
     if (result.path) result.path = audioFile(result.path);
@@ -137,6 +163,7 @@ async function operation(request, directory, evaluate, options = {}) {
         (!Number.isInteger(request.trackIndex) ||
           !validId(request.trackId) ||
           !validId(request.nodeId) ||
+          !validId(request.sourcePath, 32768) ||
           request.confirmed !== true)) ||
       (!placing &&
         (!validId(request.checkpointId) ||
@@ -155,6 +182,9 @@ async function operation(request, directory, evaluate, options = {}) {
       end: request.end,
       nodeId: request.nodeId,
       trackId: request.trackId,
+      sourcePath: request.sourcePath,
+      projectName: request.projectName,
+      sequenceName: request.sequenceName,
       checkpointId: request.checkpointId,
       checkpointSignature: request.checkpointSignature,
       expectedSignature: request.expectedSignature,
@@ -170,12 +200,12 @@ async function operation(request, directory, evaluate, options = {}) {
   }
   if (
     request.action !== "run" ||
-    !["silence", "breaths", "both"].includes(request.mode) ||
+    !["silence", "breaths", "both", "sandwich"].includes(request.mode) ||
     !Number.isInteger(request.keepMs) ||
     request.keepMs < 0 ||
     request.keepMs > 5000
   )
-    throw new Error("Choose silence, breaths or both, and 0-5000 ms retained silence.");
+    throw new Error("Choose a cleanup mode and 0-5000 ms retained silence.");
   const source = audioFile(request.path);
   const python = await transcriptionStatus();
   if (!python.path) throw new Error("Install Python 3.12. See Axis Menu > Diagnostics.");

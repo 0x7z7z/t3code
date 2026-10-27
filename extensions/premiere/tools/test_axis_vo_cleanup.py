@@ -7,7 +7,116 @@ import numpy as np
 import pytest
 import soundfile as sf
 
-from axis_vo_cleanup import breath_regions, cleanup, render_breaths, remove_silence
+from axis_vo_cleanup import breath_regions, cleanup, protect_silence_edges, render_breaths, remove_silence
+
+
+def fricative_noise(count, sr, db=-52):
+    spectrum = np.fft.rfft(np.random.default_rng(73).normal(size=count))
+    spectrum[np.fft.rfftfreq(count, 1 / sr) < 2500] = 0
+    noise = np.fft.irfft(spectrum, n=count)
+    return noise / np.sqrt(np.mean(noise ** 2)) * 10 ** (db / 20)
+
+
+@pytest.mark.parametrize("keep_ms", [0, 50])
+def test_silence_preserves_quiet_fricative_onset_and_tail(tmp_path, keep_ms):
+    sr = 16000
+    hiss = fricative_noise(1600, sr)
+    vowel = .1 * np.sin(np.arange(6400) * 2 * np.pi * 300 / sr)
+    source, output = tmp_path / "voice.wav", tmp_path / "clean.wav"
+    sf.write(source, np.r_[np.zeros(8000), hiss, vowel, hiss, np.zeros(8000)], sr)
+    remove_silence(source, output, keep_ms)
+    before, _ = sf.read(source, dtype="int16")
+    after, _ = sf.read(output, dtype="int16")
+    assert before[8100:9500].tobytes() in after.tobytes()
+    assert before[16100:17500].tobytes() in after.tobytes()
+    assert len(after) < len(before)
+
+
+def test_breath_end_protects_a_whisperx_start_after_the_opening_fricative(tmp_path, monkeypatch):
+    import axis_vo_cleanup as module
+    sr = 16000
+    source = tmp_path / "voice.wav"
+    samples = np.zeros(sr)
+    samples[6400:8000] = fricative_noise(1600, sr, -44)
+    sf.write(source, samples, sr)
+    monkeypatch.setattr(module, "select_breaths", lambda *args: [{"a": .2, "b": .5, "prev": .15, "next": .52}])
+    regions, _ = breath_regions(source, [{"word": "She", "start": .52, "end": .8}])
+    assert len(regions) == 1
+    assert regions[0][1] / sr <= .4
+
+
+@pytest.mark.parametrize("word,edge", [
+    ("She", "start"), ("the", "start"), ("voice", "start"), ("phone", "start"),
+    ("John", "start"), ("his", "start"), ("fox", "end"), ("judge.", "end"),
+    ("voice,", "end"), ("with", "end"), ("buzz", "end"), ("laugh", "end"),
+])
+def test_spelling_protects_weak_fricatives_on_second_silence_pass(word, edge):
+    # Deliberately below the spectral/level floor: spelling adds protection even
+    # when lowering a neighbouring breath made the acoustic boundary ambiguous.
+    words = [{"word": word, "start": .55, "end": .95}]
+    ranges = protect_silence_edges([[500, 1000]], np.full(200, -80), np.zeros(200), 16000, 2000, words)
+    assert ranges[0][0 if edge == "start" else 1] == (470 if edge == "start" else 1030)
+
+
+def test_silence_extensions_are_capped_and_overlap_is_kept_once():
+    rms, hf = np.full(200, -52), np.ones(200)
+    assert protect_silence_edges([[500, 700]], rms, hf, 16000, 2000, []) == [[380, 820]]
+    assert protect_silence_edges([[500, 700], [800, 1000]], rms, hf, 16000, 2000, []) == [[380, 1120]]
+
+
+def test_fourth_mode_uses_post_silence_timings_and_keeps_intermediates(tmp_path, monkeypatch):
+    import axis_vo_cleanup as module
+    source = tmp_path / "voice.wav"
+    sf.write(source, np.r_[np.ones(8000) * .1, np.zeros(8000), np.ones(8000) * .1], 8000)
+    calls = []
+    remove = module.remove_silence
+
+    def silence(current, destination, keep_ms, words=None):
+        calls.append((current, keep_ms, words))
+        remove(current, destination, keep_ms, words)
+
+    def transcribe(current, directory):
+        assert current.name.endswith("_SilenceRemoved.wav")
+        filename = directory / "words.json"
+        filename.write_text(json.dumps({"words": [{"word": "She.", "start": .1, "end": .4}]}))
+        return filename
+
+    monkeypatch.setattr(module, "remove_silence", silence)
+    monkeypatch.setattr(module, "transcribe_words", transcribe)
+    result = cleanup(source, "sandwich", keep_ms=80)
+    assert len(calls) == 2
+    assert calls[0][1:] == (80, None)
+    assert calls[1][1:] == (80, [{"word": "She.", "start": .1, "end": .4}])
+    assert calls[1][0] == Path(result["breathsPath"])
+    assert result["outputPath"].endswith("_SilenceBreathsSilence.wav")
+    assert all(Path(result[key]).is_file() for key in ("silencePath", "breathsPath", "outputPath", "regionsPath"))
+    with pytest.raises(ValueError, match="source timings"):
+        cleanup(source, "sandwich", transcript=tmp_path / "old.json")
+
+
+def test_final_silence_pass_closes_a_lowered_breath_gap(tmp_path, monkeypatch):
+    import axis_vo_cleanup as module
+    sr = 16000
+    source = tmp_path / "voice.wav"
+    vowel = .1 * np.sin(np.arange(6400) * 2 * np.pi * 300 / sr)
+    sf.write(source, np.r_[vowel, fricative_noise(4800, sr, -39), vowel], sr)
+    seen = []
+
+    def transcribe(current, directory):
+        seen.append(current)
+        filename = directory / "words.json"
+        filename.write_text(json.dumps({"words": [
+            {"word": "one.", "start": 0, "end": .4},
+            {"word": "again", "start": .7, "end": 1.1},
+        ]}))
+        return filename
+
+    monkeypatch.setattr(module, "transcribe_words", transcribe)
+    monkeypatch.setattr(module, "breath_regions", lambda *args: ([(6400, 11200)], sr))
+    result = cleanup(source, "sandwich", keep_ms=50)
+    assert len(seen) == 1
+    assert sf.info(result["silencePath"]).frames == sf.info(result["breathsPath"]).frames
+    assert sf.info(result["outputPath"]).frames < sf.info(result["breathsPath"]).frames - 1000
 
 
 @pytest.mark.parametrize("subtype,dtype,quantum", [
@@ -36,7 +145,8 @@ def test_breath_render_preserves_samples_and_edges(tmp_path, subtype, dtype, qua
 
 
 @pytest.mark.parametrize("amplitude", [.3, .002, 0])
-def test_silence_matches_reference_including_quiet_fallback(tmp_path, amplitude):
+@pytest.mark.parametrize("keep_ms", [0, 50, 100, 5000])
+def test_silence_matches_reference_including_quiet_fallback(tmp_path, amplitude, keep_ms):
     from pydub import AudioSegment
     from pydub.silence import split_on_silence
     sr = 8000
@@ -44,11 +154,11 @@ def test_silence_matches_reference_including_quiet_fallback(tmp_path, amplitude)
     source, output = tmp_path / "voice.wav", tmp_path / "clean.wav"
     sf.write(source, np.r_[np.zeros(4000), tone, np.zeros(8000), tone, np.zeros(4000)], sr)
     sound = AudioSegment.from_file(source)
-    chunks = split_on_silence(sound, min_silence_len=100, silence_thresh=-45, keep_silence=50)
+    chunks = split_on_silence(sound, min_silence_len=100, silence_thresh=-45, keep_silence=keep_ms)
     if not chunks:
-        chunks = split_on_silence(sound, min_silence_len=100, silence_thresh=sound.dBFS - 16, keep_silence=50)
+        chunks = split_on_silence(sound, min_silence_len=100, silence_thresh=sound.dBFS - 16, keep_silence=keep_ms)
     expected = sum(chunks, AudioSegment.empty()) if chunks else sound
-    remove_silence(source, output)
+    remove_silence(source, output, keep_ms)
     assert AudioSegment.from_file(output).raw_data == expected.raw_data
 
 
@@ -125,7 +235,12 @@ def test_project49_reproduction():
     assert len(rows) == 136
     assert len(rows) == len(expected)
     max_delta = max(abs(float(row[key]) - float(ref[key])) for row, ref in zip(rows, expected) for key in ("start_s", "end_s"))
-    assert max_delta <= .015
+    assert max_delta <= .12
+    changed = sum(any(abs(float(row[key]) - float(ref[key])) > .001 for key in ("start_s", "end_s"))
+                  for row, ref in zip(rows, expected))
+    shrank = sum(float(row["end_s"]) < float(ref["end_s"]) - .001 for row, ref in zip(rows, expected))
+    assert all(abs(float(row["start_s"]) - float(ref["start_s"])) <= .001 and
+               float(row["end_s"]) <= float(ref["end_s"]) + .001 for row, ref in zip(rows, expected))
     with sf.SoundFile(source) as before, sf.SoundFile(result["outputPath"]) as after:
         assert before.frames == after.frames
         assert before.subtype == after.subtype
@@ -142,6 +257,7 @@ def test_project49_reproduction():
             offset += len(block)
     summary = {"marksFound": hits, "falsePositivesThrough64_5": extras, "regions": len(rows),
                "referenceRegions": len(expected), "maxEdgeDifferenceSeconds": max_delta,
+               "changedRegions": changed, "shrunkRegions": shrank,
                "sampleCount": offset, "outsideRegionsBitIdentical": True, **result}
     (output / "project49-result.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary))
@@ -202,7 +318,7 @@ def test_supervisor_removes_reserved_outputs_and_workspace_even_if_worker_cannot
         token = command[command.index("--job-id") + 1]
         workspace = Path(command[command.index("--workspace") + 1])
         (workspace / "unfinished-temp").write_bytes(b"temp")
-        for suffix in ("_SilenceRemoved.wav", "_NoBreaths.wav", "_breaths.csv"):
+        for suffix in ("_SilenceRemoved.wav", "_NoBreaths.wav", "_breaths.csv", "_SilenceBreathsSilence.wav"):
             (tmp_path / ("voice_AxisVO_" + token + suffix)).write_bytes(b"reserved")
         return process
 

@@ -1619,12 +1619,14 @@
           origin
         );
     }
-    if (voCleanupBusy) return reply({ ok: false, error: "A VO cleanup operation is running." });
+    var readOnly = data.action === "resolve";
+    if (voCleanupBusy && !readOnly)
+      return reply({ ok: false, error: "A VO cleanup operation is running." });
     if (!window.__adobe_cep__)
       return reply({ ok: false, error: "Premiere scripting is unavailable." });
-    voCleanupBusy = true;
+    if (!readOnly) voCleanupBusy = true;
     function done(result) {
-      voCleanupBusy = false;
+      if (!readOnly) voCleanupBusy = false;
       reply(result);
     }
     try {
