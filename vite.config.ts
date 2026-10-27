@@ -161,6 +161,7 @@ export default defineConfig({
           "extensions/premiere/host.js",
           "extensions/premiere/snapshot.js",
           "extensions/premiere/rangeCut.js",
+          "extensions/premiere/vo-cleanup-host.js",
         ],
         options: { trailingComma: "none" },
       },

@@ -11,6 +11,36 @@ interface CleanupResult {
   afterSeconds: number;
 }
 
+interface TimelineAnchor {
+  sequenceId: string;
+  trackIndex: number;
+  start: number;
+  inPoint: number;
+  outPoint: number;
+}
+
+interface Placement {
+  path: string;
+  sequenceId: string;
+  trackIndex: number;
+  start: number;
+}
+
+function parseAnchor(value: unknown): TimelineAnchor | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Partial<TimelineAnchor>;
+  if (
+    typeof data.sequenceId !== "string" ||
+    !data.sequenceId ||
+    !Number.isInteger(data.trackIndex) ||
+    [data.start, data.inPoint, data.outPoint].some(
+      (field) => typeof field !== "number" || !Number.isFinite(field),
+    )
+  )
+    return null;
+  return data as TimelineAnchor;
+}
+
 function parseResult(packet: object): CleanupResult {
   const data = packet as Partial<CleanupResult>;
   if (
@@ -38,6 +68,9 @@ export function VOCleanupPanel({
   const [mode, setMode] = useState("both");
   const [keepMs, setKeepMs] = useState("50");
   const [importResult, setImportResult] = useState(false);
+  const [anchor, setAnchor] = useState<TimelineAnchor | null>(null);
+  const [toTimeline, setToTimeline] = useState(false);
+  const [placement, setPlacement] = useState<Placement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CleanupResult | null>(null);
@@ -67,8 +100,12 @@ export function VOCleanupPanel({
       const packet = await requestTimelineAction("premiere.vo-cleanup.request", {
         action: selection,
       });
-      if ("path" in packet && typeof packet.path === "string" && packet.path)
+      if ("path" in packet && typeof packet.path === "string" && packet.path) {
         setSource(packet.path);
+        const found = parseAnchor("anchor" in packet ? packet.anchor : null);
+        setAnchor(found);
+        if (!found) setToTimeline(false);
+      }
     });
   }
   async function importFile(path: string, project: string) {
@@ -79,12 +116,48 @@ export function VOCleanupPanel({
     });
     setImported(true);
   }
+  async function place(path: string, project: string, at: TimelineAnchor, keepTiming: boolean) {
+    const packet = await requestTimelineAction("premiere.vo-cleanup.request", {
+      action: "place",
+      path,
+      projectId: project,
+      sequenceId: at.sequenceId,
+      trackIndex: at.trackIndex,
+      start: at.start,
+      inPoint: at.inPoint,
+      outPoint: at.outPoint,
+      keepTiming,
+    });
+    const data = packet as { trackIndex?: unknown; start?: unknown };
+    if (!Number.isInteger(data.trackIndex) || typeof data.start !== "number")
+      throw new Error("Placement could not be verified. Check the timeline.");
+    setImported(true);
+    setPlacement({
+      path,
+      sequenceId: at.sequenceId,
+      trackIndex: data.trackIndex as number,
+      start: data.start,
+    });
+  }
+  async function unplace(placed: Placement, project: string) {
+    await requestTimelineAction("premiere.vo-cleanup.request", {
+      action: "unplace",
+      path: placed.path,
+      projectId: project,
+      sequenceId: placed.sequenceId,
+      trackIndex: placed.trackIndex,
+      start: placed.start,
+    });
+    setPlacement(null);
+  }
   async function clean() {
     if (!source.trim() || !validKeep) return;
     await action(async () => {
       const targetProject = projectId;
+      const targetAnchor = toTimeline ? anchor : null;
       setResult(null);
       setImported(false);
+      setPlacement(null);
       const packet = await requestTimelineAction("premiere.vo-cleanup.request", {
         action: "run",
         path: source.trim(),
@@ -94,7 +167,9 @@ export function VOCleanupPanel({
       const output = parseResult(packet);
       setResult(output);
       setResultProject(targetProject);
-      if (importResult && targetProject) await importFile(output.outputPath, targetProject);
+      if (targetAnchor && targetProject)
+        await place(output.outputPath, targetProject, targetAnchor, mode === "breaths");
+      else if (importResult && targetProject) await importFile(output.outputPath, targetProject);
     });
   }
 
@@ -106,13 +181,17 @@ export function VOCleanupPanel({
           Close
         </button>
       </header>
-      <p>Save a cleaned copy beside your audio. The source and timeline stay as they are.</p>
+      <p>Save a cleaned copy beside your audio. The source is never changed.</p>
       <fieldset disabled={busy}>
         <label>
           <span>Audio file</span>
           <input
             value={source}
-            onChange={(event) => setSource(event.target.value)}
+            onChange={(event) => {
+              setSource(event.target.value);
+              setAnchor(null);
+              setToTimeline(false);
+            }}
             placeholder="Choose audio or paste its full path"
           />
         </label>
@@ -121,7 +200,7 @@ export function VOCleanupPanel({
             Browse...
           </button>
           <button type="button" onClick={() => void choose("selected")}>
-            Use selected project item
+            Use selected clip
           </button>
         </div>
         <label>
@@ -155,6 +234,17 @@ export function VOCleanupPanel({
           />
           Import result into project bin
         </label>
+        <label data-vo-import="">
+          <input
+            type="checkbox"
+            checked={toTimeline}
+            disabled={!projectId || !anchor}
+            onChange={(event) => setToTimeline(event.target.checked)}
+          />
+          {anchor
+            ? `Import into timeline on a new track below A${anchor.trackIndex + 1}`
+            : "Import into timeline (select the VO clip on the timeline first)"}
+        </label>
         {mode !== "silence" ? (
           <p>
             Breath cleanup uses WhisperX word timings and keeps the audio length. Long VOs can take
@@ -185,7 +275,18 @@ export function VOCleanupPanel({
             <p>Silence-only copy: {result.silencePath}</p>
           ) : null}
           {result.regionsPath ? <p>Breath regions: {result.regionsPath}</p> : null}
-          {imported ? (
+          {placement ? (
+            <div data-vo-actions="">
+              <span>Placed on new track A{placement.trackIndex + 1}.</span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void action(() => unplace(placement, resultProject))}
+              >
+                Undo placement
+              </button>
+            </div>
+          ) : imported ? (
             <p>Imported into Axis VO cleanup.</p>
           ) : resultProject ? (
             <button
