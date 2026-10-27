@@ -2008,3 +2008,39 @@ test("a lost VO callback releases the CEP busy lock and late replies cannot revi
   assert.equal(f.messages.at(-1).packet.requestId, "next");
   assert.equal(f.messages.at(-1).packet.ok, true);
 });
+
+test("VO source resolution can finish during an outstanding operation without releasing its busy lock", async () => {
+  using temp = fs.mkdtempDisposableSync(path.join(os.tmpdir(), "axis-vo-resolve-"));
+  const source = path.join(temp.path, "voice.wav");
+  fs.writeFileSync(source, "fixture media");
+  const f = await panelFixture();
+  const callbacks = [];
+  f.setEvalScript((script, callback) => {
+    parse(script, { ecmaVersion: 3 });
+    callbacks.push(callback);
+  });
+  f.send({ type: "premiere.vo-cleanup.request", requestId: "ongoing", action: "selected" });
+  f.send({
+    type: "premiere.vo-cleanup.request",
+    requestId: "resolve",
+    action: "resolve",
+    path: source,
+    projectId: "film",
+    sequenceId: "main",
+  });
+  assert.equal(callbacks.length, 2);
+  callbacks[1]("axis:vo|unanchored|" + encodeURIComponent(source) + "|Select the VO clip to use.");
+  await new Promise(setImmediate);
+  assert.equal(f.messages.at(-1).packet.requestId, "resolve");
+  assert.equal(f.messages.at(-1).packet.ok, true);
+  f.send({ type: "premiere.vo-cleanup.request", requestId: "busy", action: "selected" });
+  assert.match(f.messages.at(-1).packet.error, /operation is running/);
+  callbacks[0]("axis:vo|source|");
+  await new Promise(setImmediate);
+  assert.equal(f.messages.at(-1).packet.requestId, "ongoing");
+  f.setEvalScript((_script, callback) => callback("axis:vo|source|"));
+  f.send({ type: "premiere.vo-cleanup.request", requestId: "next", action: "selected" });
+  await new Promise(setImmediate);
+  assert.equal(f.messages.at(-1).packet.requestId, "next");
+  assert.equal(f.messages.at(-1).packet.ok, true);
+});

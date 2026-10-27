@@ -10,9 +10,10 @@ vi.mock("./interactiveHost", () => ({ requestTimelineAction: host.request }));
 function setup() {
   host.request
     .mockReset()
-    .mockImplementation(async (_type: string, payload: { action: string }) => {
+    .mockImplementation(async (_type: string, payload: { action: string; path?: string }) => {
       if (payload.action === "pick" || payload.action === "selected")
         return { path: "D:/Film/VO.wav" };
+      if (payload.action === "resolve") return { path: payload.path };
       if (payload.action === "import") return { status: "imported" };
       return {
         outputPath: "D:/Film/VO_AxisVO_123_NoBreaths.wav",
@@ -35,6 +36,120 @@ function setup() {
   return { context, onClose: vi.fn() };
 }
 
+function timelineAnchor() {
+  return {
+    projectId: "film",
+    projectName: "Film",
+    sequenceId: "main",
+    sequenceName: "Main",
+    sourcePath: "D:/Film/VO.wav",
+    trackId: "vo-track",
+    nodeId: "vo",
+    trackIndex: 2,
+    start: 12,
+    end: 100,
+    inPoint: 2,
+    outPoint: 90,
+  };
+}
+
+it("auto-anchors Browse and typed paths, and places the fourth mode at the returned current location", async () => {
+  await page.viewport(440, 900);
+  const props = setup();
+  const run = host.request.getMockImplementation()!;
+  host.request.mockImplementation(async (type, payload) => {
+    if (payload.action === "resolve")
+      return payload.path === "D:/Film/VO.wav"
+        ? { path: payload.path, anchor: timelineAnchor() }
+        : { path: payload.path, message: "No clip using this file was found in sequence Main." };
+    if (payload.action === "run")
+      return {
+        ...(await run(type, payload)),
+        outputPath: "D:/Film/VO_SilenceBreathsSilence.wav",
+        breathsPath: "D:/Film/VO_NoBreaths.wav",
+      };
+    if (payload.action === "place")
+      return {
+        status: "placed",
+        trackIndex: 6,
+        start: 120,
+        checkpointId: "saved",
+        checkpointSignature: "before",
+        expectedSignature: "after",
+        message:
+          "Placed on A7 at 120.000 s. Used the bottom track because Premiere added it there.",
+      };
+    if (payload.action === "unplace") return { status: "unplaced" };
+    return run(type, payload);
+  });
+  await using screen = await render(<VOCleanupPanel {...props} />);
+  screen.container.style.width = "440px";
+  const timeline = () => screen.getByRole("checkbox", { name: /Import into timeline/ });
+  await screen.getByRole("button", { name: "Browse...", exact: true }).click();
+  await expect.element(timeline()).toBeEnabled();
+  await screen.getByRole("textbox", { name: "Audio file" }).fill("D:/Film/Other.wav");
+  await expect.element(timeline()).toBeDisabled();
+  await expect.element(screen.getByRole("note")).toBeVisible();
+  await screen.getByRole("textbox", { name: "Audio file" }).fill("D:/Film/VO.wav");
+  await expect.element(timeline()).toBeEnabled();
+  await timeline().click();
+  await screen.getByRole("combobox", { name: "Remove" }).selectOptions("sandwich");
+  await screen.getByRole("spinbutton", { name: "Keep silence (ms)" }).fill("80");
+  await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
+  await expect.element(screen.getByRole("button", { name: "Undo placement" })).toBeEnabled();
+  expect(host.request.mock.calls.find((call) => call[1].action === "run")?.[1]).toMatchObject({
+    mode: "sandwich",
+    keepMs: 80,
+  });
+  expect(host.request.mock.calls.find((call) => call[1].action === "place")?.[1]).toMatchObject({
+    ...timelineAnchor(),
+    keepTiming: false,
+    confirmed: true,
+  });
+  expect(screen.container.textContent).toContain("Placed on A7 at 120.000 s.");
+  expect(screen.container.textContent).toContain("Breath-cleaned copy: D:/Film/VO_NoBreaths.wav");
+  expect(screen.container.scrollWidth).toBeLessThanOrEqual(440);
+  await page.screenshot({ path: "./__screenshots__/axis-vo-cleanup-v3-440.png" });
+  await screen.getByRole("button", { name: "Undo placement" }).click();
+  await expect
+    .element(screen.getByRole("button", { name: "Undo placement" }))
+    .not.toBeInTheDocument();
+  expect(host.request.mock.calls.some((call) => call[1].action === "selected")).toBe(false);
+});
+
+it("asks which repeated instance to use and enables placement after selecting one", async () => {
+  const props = setup();
+  const run = host.request.getMockImplementation()!;
+  let selected = false;
+  host.request.mockImplementation(async (type, payload) => {
+    if (payload.action === "selected") {
+      selected = true;
+      return { path: "D:/Film/VO.wav", anchor: timelineAnchor() };
+    }
+    if (payload.action === "resolve")
+      return selected
+        ? { path: payload.path, anchor: timelineAnchor() }
+        : {
+            path: payload.path,
+            message:
+              "Select the VO clip to use, then click Use selected clip. This file appears more than once.",
+          };
+    return run(type, payload);
+  });
+  await using screen = await render(<VOCleanupPanel {...props} />);
+  await screen.getByRole("textbox", { name: "Audio file" }).fill("D:/Film/VO.wav");
+  await expect.element(screen.getByRole("note")).toBeVisible();
+  await expect
+    .element(screen.getByRole("checkbox", { name: /Import into timeline/ }))
+    .toBeDisabled();
+  expect(screen.container.textContent).toContain("Select the VO clip to use");
+  await screen.getByRole("button", { name: "Use selected clip" }).click();
+  await expect
+    .element(screen.getByRole("checkbox", { name: /Import into timeline/ }))
+    .toBeEnabled();
+  await expect.element(screen.getByRole("note")).not.toBeInTheDocument();
+});
+
 it("cleans both steps at 440px, preserves the source choice and offers explicit bin import", async () => {
   await page.viewport(440, 720);
   const props = setup();
@@ -52,7 +167,9 @@ it("cleans both steps at 440px, preserves the source choice and offers explicit 
   await expect
     .element(screen.getByRole("textbox", { name: "Cleaned audio" }))
     .toHaveValue("D:/Film/VO_AxisVO_123_NoBreaths.wav");
-  expect(host.request.mock.calls.map((call) => call[1].action)).toEqual(["pick", "run"]);
+  expect(
+    host.request.mock.calls.map((call) => call[1].action).filter((action) => action !== "resolve"),
+  ).toEqual(["pick", "run"]);
   expect(host.request).toHaveBeenLastCalledWith("premiere.vo-cleanup.request", {
     action: "run",
     path: "D:/Film/VO.wav",
@@ -125,6 +242,9 @@ it("places breath-only cleanup on a new track below the selected timeline clip a
       return {
         path: "D:/Film/VO.wav",
         anchor: {
+          sourcePath: "D:/Film/VO.wav",
+          projectName: "Film",
+          sequenceName: "Main",
           projectId: "film",
           sequenceId: "main",
           trackId: "vo-track",
@@ -167,6 +287,9 @@ it("places breath-only cleanup on a new track below the selected timeline clip a
     trackId: "vo-track",
     nodeId: "vo",
     trackIndex: 2,
+    sourcePath: "D:/Film/VO.wav",
+    projectName: "Film",
+    sequenceName: "Main",
     start: 12,
     end: 100,
     inPoint: 2,
@@ -214,6 +337,9 @@ it("retains Undo after a failed or unverified restore and clears it only after v
       return {
         path: "D:/Film/VO.wav",
         anchor: {
+          sourcePath: "D:/Film/VO.wav",
+          projectName: "Film",
+          sequenceName: "Main",
           projectId: "film",
           sequenceId: "main",
           trackId: "track",

@@ -80,27 +80,41 @@ automatic import; use the conversation's stop control to interrupt the agent its
 To clean an audio file, choose **Menu > Clean VO**. Browse to the file, paste its
 full path, or select the VO clip on the timeline (or one item in the Project
 panel) and choose **Use selected clip**. Video files work too; their audio is
-cleaned. Choose silence, breaths, or silence followed by
-breaths. Silence removal retains 50 ms by default and shortens the audio; breath
+cleaned. Choose silence, breaths, silence followed by breaths, or **Silence,
+breaths, then silence**. The last mode closes the gaps left by lowered breaths
+with a second silence pass using the same retained-silence value.
+Silence removal retains 50 ms by default and shortens the audio; breath
 removal lowers breaths by 40 dB while preserving length and samples outside the
-breath regions. For both steps, word timings are generated after removing silence.
+breath regions. Quiet consonant onsets and tails get extra protection at cut edges.
+Word timings are generated after the first silence pass and also protect
+consonants during the final pass.
 
-Each run saves uniquely named lossless WAV files beside the source, plus a breath
-region CSV when applicable. **Import result into project bin** adds the final file
+Each run saves uniquely named lossless WAV files beside the source, retaining
+the silence-only and breath-cleaned intermediates, plus a breath region CSV when
+applicable. The final file in the fourth mode ends in `_SilenceBreathsSilence.wav`.
+The CSV uses the breath-cleaned intermediate's timing.
+**Import result into project bin** adds the final file
 to **Axis VO cleanup**; you can also import after processing. Open a sequence in
 the intended project to enable import. The original files are preserved.
 
-When the VO came from a timeline clip, **Import into timeline** also places the
-result on a new audio track named **Clean VO** directly below the VO. Nothing on
-existing tracks is moved, trimmed or overwritten. Axis accepts only a verified
-single mono or stereo clip and checks every existing audio and video clip after
-placing. Separate mono, surround and unreadable channel mappings are refused.
+**Import into timeline** finds the source file on the active sequence, including
+files chosen with Browse or a pasted path. If there are several instances, select
+the one to use and choose **Use selected clip**. Axis places the result on a new
+audio track named **Clean VO** below the VO. If Premiere adds the track elsewhere,
+Axis can use an entirely empty, unlocked track directly below the VO or a verified
+bottom track. The result reports the actual track and start time, with the reason
+for any fallback. Nothing on existing clips is moved, trimmed or overwritten.
+Axis sets its own freshly imported item to one mono or stereo clip when needed,
+then verifies the mapping and every existing audio and video clip. If Premiere
+cannot set a safe mapping, timeline import is refused.
 Breath-only results keep the VO's trim and line up with it exactly; results with
-silence removed start where the VO clip starts. Keep the selected VO in place
-while processing. Timeline import requires forward playback at 100% speed, with
-the VO track and all audio tracks below it unlocked. Select only one instance;
-linked mono channels with identical source and timing count as one, and placement
-goes below the bottom selected channel.
+silence removed start where the VO clip starts. If you move or retrim the VO while
+processing, placement follows its current position, track and trim. Deleted or
+ambiguous clips are refused. Timeline import requires forward playback at 100% speed. Locked tracks are
+fine: the result goes on a new unlocked track and locked clips are never touched.
+Select only one instance; linked mono channels with identical source and timing
+count as one, and placement goes below the bottom channel. Errors name the intended
+project or sequence so you can resolve the problem.
 
 Axis saves a verified sequence checkpoint before placement. A placement failure
 automatically restores it. **Undo placement** restores the whole sequence and its

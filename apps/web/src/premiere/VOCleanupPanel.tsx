@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PremiereContext } from "./host";
 import { requestTimelineAction } from "./interactiveHost";
 
 interface CleanupResult {
   outputPath: string;
   silencePath: string | null;
+  breathsPath: string | null;
   regionsPath: string | null;
   regions: number;
   beforeSeconds: number;
@@ -12,6 +13,9 @@ interface CleanupResult {
 }
 
 interface TimelineAnchor {
+  sourcePath: string;
+  projectName: string;
+  sequenceName: string;
   projectId: string;
   sequenceId: string;
   nodeId: string;
@@ -32,6 +36,7 @@ interface Placement {
   checkpointId: string;
   checkpointSignature: string;
   expectedSignature: string;
+  message: string;
 }
 
 function parseAnchor(value: unknown): TimelineAnchor | null {
@@ -40,7 +45,7 @@ function parseAnchor(value: unknown): TimelineAnchor | null {
   if (
     typeof data.sequenceId !== "string" ||
     !data.sequenceId ||
-    [data.projectId, data.nodeId, data.trackId].some(
+    [data.projectId, data.nodeId, data.trackId, data.sourcePath].some(
       (field) => typeof field !== "string" || !field,
     ) ||
     !Number.isInteger(data.trackIndex) ||
@@ -75,11 +80,13 @@ export function VOCleanupPanel({
   context: PremiereContext | null;
   onClose: () => void;
 }) {
-  const [source, setSource] = useState("");
+  const [sourceInput, setSourceInput] = useState({ path: "" });
+  const source = sourceInput.path;
   const [mode, setMode] = useState("both");
   const [keepMs, setKeepMs] = useState("50");
   const [importResult, setImportResult] = useState(false);
   const [anchor, setAnchor] = useState<TimelineAnchor | null>(null);
+  const [anchorMessage, setAnchorMessage] = useState("");
   const [toTimeline, setToTimeline] = useState(false);
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -90,7 +97,49 @@ export function VOCleanupPanel({
   const [resultProject, setResultProject] = useState("");
   const lock = useRef(false);
   const projectId = context?.projectDocumentId || context?.projectPath || "";
+  const sequenceId = context?.sequenceId || "";
+  const projectName = context?.projectName || "";
+  const sequenceName = context?.sequenceName || "";
   const validKeep = mode === "breaths" || (/^\d+$/.test(keepMs) && Number(keepMs) <= 5000);
+
+  useEffect(() => {
+    if (!sourceInput.path.trim() || !projectId || !sequenceId || placement) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      void requestTimelineAction("premiere.vo-cleanup.request", {
+        action: "resolve",
+        path: sourceInput.path.trim(),
+        projectId,
+        sequenceId,
+        projectName,
+        sequenceName,
+      }).then(
+        (packet) => {
+          if (cancelled) return;
+          const found = parseAnchor("anchor" in packet ? packet.anchor : null);
+          setAnchor(found);
+          setAnchorMessage(
+            "message" in packet && typeof packet.message === "string" ? packet.message : "",
+          );
+          if (!found) setToTimeline(false);
+        },
+        (failure: unknown) => {
+          if (cancelled) return;
+          setAnchor(null);
+          setToTimeline(false);
+          setAnchorMessage(
+            failure instanceof Error ? failure.message : "Could not find this VO on the timeline.",
+          );
+        },
+      );
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [sourceInput, projectId, sequenceId, projectName, sequenceName, placement]);
+  const currentAnchor =
+    anchor?.projectId === projectId && anchor.sequenceId === sequenceId ? anchor : null;
 
   async function action(work: () => Promise<void>) {
     if (lock.current) return;
@@ -113,9 +162,10 @@ export function VOCleanupPanel({
         action: selection,
       });
       if ("path" in packet && typeof packet.path === "string" && packet.path) {
-        setSource(packet.path);
+        setSourceInput({ path: packet.path });
         const found = parseAnchor("anchor" in packet ? packet.anchor : null);
         setAnchor(found);
+        setAnchorMessage("");
         if (!found) setToTimeline(false);
       }
     });
@@ -137,6 +187,9 @@ export function VOCleanupPanel({
       nodeId: at.nodeId,
       trackId: at.trackId,
       trackIndex: at.trackIndex,
+      sourcePath: at.sourcePath,
+      projectName: at.projectName,
+      sequenceName: at.sequenceName,
       start: at.start,
       end: at.end,
       inPoint: at.inPoint,
@@ -166,6 +219,7 @@ export function VOCleanupPanel({
       checkpointId: data.checkpointId,
       checkpointSignature: data.checkpointSignature,
       expectedSignature: data.expectedSignature,
+      message: data.message || `Placed on A${data.trackIndex! + 1} at ${data.start.toFixed(3)} s.`,
     });
     if (data.status === "recovery")
       throw new Error(data.message || "Check the timeline and use Undo placement.");
@@ -193,7 +247,7 @@ export function VOCleanupPanel({
   async function clean() {
     if (!source.trim() || !validKeep) return;
     await action(async () => {
-      const targetAnchor = toTimeline ? anchor : null;
+      const targetAnchor = toTimeline ? currentAnchor : null;
       const targetProject = targetAnchor?.projectId || projectId;
       setResult(null);
       setImported(false);
@@ -235,8 +289,9 @@ export function VOCleanupPanel({
           <input
             value={source}
             onChange={(event) => {
-              setSource(event.target.value);
+              setSourceInput({ path: event.target.value });
               setAnchor(null);
+              setAnchorMessage("");
               setToTimeline(false);
             }}
             placeholder="Choose audio or paste its full path"
@@ -254,6 +309,7 @@ export function VOCleanupPanel({
           <span>Remove</span>
           <select value={mode} onChange={(event) => setMode(event.target.value)}>
             <option value="both">Silence, then breaths</option>
+            <option value="sandwich">Silence, breaths, then silence</option>
             <option value="silence">Silence only</option>
             <option value="breaths">Breaths only</option>
           </select>
@@ -285,17 +341,22 @@ export function VOCleanupPanel({
           <input
             type="checkbox"
             checked={toTimeline}
-            disabled={!projectId || !anchor}
+            disabled={!currentAnchor || placement !== null}
             onChange={(event) => setToTimeline(event.target.checked)}
           />
-          {anchor
-            ? `Import into timeline on a new track below A${anchor.trackIndex + 1}`
-            : "Import into timeline (select the VO clip on the timeline first)"}
+          {currentAnchor
+            ? `Import into timeline below A${currentAnchor.trackIndex + 1}`
+            : "Import into timeline"}
         </label>
+        {anchorMessage ? (
+          <p role="note" data-vo-anchor-message="">
+            {anchorMessage}
+          </p>
+        ) : null}
         {mode !== "silence" ? (
           <p>
-            Breath cleanup uses WhisperX word timings and keeps the audio length. Long VOs can take
-            a while.
+            Breath cleanup uses WhisperX word timings. Breaths only keeps the audio length. Long VOs
+            can take a while.
           </p>
         ) : null}
         <button
@@ -321,14 +382,13 @@ export function VOCleanupPanel({
           {result.silencePath && result.silencePath !== result.outputPath ? (
             <p>Silence-only copy: {result.silencePath}</p>
           ) : null}
+          {result.breathsPath && result.breathsPath !== result.outputPath ? (
+            <p>Breath-cleaned copy: {result.breathsPath}</p>
+          ) : null}
           {result.regionsPath ? <p>Breath regions: {result.regionsPath}</p> : null}
           {placement ? (
             <div data-vo-actions="">
-              <span>
-                {placement.recovery
-                  ? "Placement needs recovery."
-                  : `Placed on new track A${placement.trackIndex + 1}.`}
-              </span>
+              <span>{placement.recovery ? "Placement needs recovery." : placement.message}</span>
               <button
                 type="button"
                 disabled={busy}

@@ -4,13 +4,50 @@ function axisVOCleanupHost(request, timeline) {
   var checkpoint = null;
   var mutationStarted = false;
   var added = -1;
+  var placementStart = request.start;
+  var explanation = "";
+  function read(work, label) {
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        var value = work();
+        if (value !== undefined && value !== null) return value;
+      } catch (readError) {
+        if (readError && readError.axisFail) throw readError;
+      }
+      if (attempt < 2 && typeof $ !== "undefined" && $.sleep) $.sleep(40);
+    }
+    fail("Premiere could not read " + label + ". Try again when Premiere is ready.");
+  }
+  function seconds(clip, property) {
+    return read(function () {
+      var time = clip[property];
+      if (!time || typeof time.seconds !== "number" || !isFinite(time.seconds)) return null;
+      return time.seconds;
+    }, "the clip's " + property);
+  }
+  function tracks(s, property) {
+    return read(function () {
+      var value = s[property];
+      return value && typeof value.numTracks === "number" ? value : null;
+    }, "the sequence's " + property);
+  }
+  function itemPoint(item, method) {
+    return read(function () {
+      var value = item[method](2);
+      return value && typeof value.seconds === "number" && isFinite(value.seconds)
+        ? value.seconds
+        : null;
+    }, "the cleaned source " + method);
+  }
   function packet(status, values) {
     var parts = ["axis:vo", status];
     for (var p = 0; p < values.length; p++) parts.push(encodeURIComponent(String(values[p])));
     return parts.join("|");
   }
   function fail(message) {
-    throw new Error(message);
+    var error = new Error(message);
+    error.axisFail = true;
+    throw error;
   }
   function near(value, expected) {
     return isFinite(Number(value)) && Math.abs(Number(value) - expected) <= 0.001;
@@ -21,25 +58,45 @@ function axisVOCleanupHost(request, timeline) {
     );
   }
   function mediaPath(item) {
-    try {
-      return item && item.getMediaPath ? String(item.getMediaPath() || "") : "";
-    } catch (ignored) {
-      return "";
-    }
+    if (!item || !item.getMediaPath) return "";
+    return read(function () {
+      return item.getMediaPath();
+    }, "the media path");
   }
   function id(track) {
-    if (!track || track.id === undefined || track.id === null || String(track.id) === "")
-      fail("Premiere could not identify the audio tracks safely. Nothing was placed.");
-    return String(track.id);
+    return read(function () {
+      var value = track && track.id;
+      return value === undefined || value === null || String(value) === "" ? null : String(value);
+    }, "the track ID");
   }
   function scope() {
-    if (String(project.documentID || project.path) !== request.projectId)
-      fail("The project changed. Open the original project first.");
+    var current = read(function () {
+      return project.documentID || project.path;
+    }, "the project ID");
+    if (String(current) !== request.projectId)
+      fail(
+        "The project changed. Open " +
+          (request.projectName || request.projectId) +
+          " first. The active project is " +
+          (project.name || project.path || current) +
+          "."
+      );
   }
   function activeSequence() {
-    var s = project.activeSequence;
-    if (!s || String(s.sequenceID) !== request.sequenceId)
-      fail("Open the sequence the VO came from, then try again.");
+    var s = read(function () {
+      return project.activeSequence;
+    }, "the active sequence");
+    var sequenceId = read(function () {
+      return s.sequenceID;
+    }, "the sequence ID");
+    if (String(sequenceId) !== request.sequenceId)
+      fail(
+        "Open sequence " +
+          (request.sequenceName || request.sequenceId) +
+          ". The active sequence is " +
+          (s ? s.name || s.sequenceID : "none") +
+          "."
+      );
     return s;
   }
   function state(action, save, expected, savedId, rollback) {
@@ -60,10 +117,12 @@ function axisVOCleanupHost(request, timeline) {
     );
   }
   function snapshot() {
-    var result = state("snapshot", false);
-    if (!result.ok || !result.signature || result.snapshot.truncated)
-      fail(result.error || "Could not verify the VO timeline.");
-    return result;
+    return read(function () {
+      var result = state("snapshot", false);
+      return result.ok && result.signature && result.snapshot && !result.snapshot.truncated
+        ? result
+        : null;
+    }, "the VO timeline snapshot");
   }
   function restore(saved, expected, rollback) {
     var result = state(
@@ -76,7 +135,7 @@ function axisVOCleanupHost(request, timeline) {
     if (!result.ok) fail(result.error || "The VO checkpoint could not be restored.");
     return result;
   }
-  function importCleaned() {
+  function importCleaned(fresh) {
     var file = new File(request.path);
     if (!file.exists) fail("Audio file not found.");
     var bin = null;
@@ -90,25 +149,58 @@ function axisVOCleanupHost(request, timeline) {
     if (!bin) bin = project.rootItem.createBin("Axis VO cleanup");
     if (!bin) fail("Premiere could not create the Axis VO cleanup bin.");
     var c;
-    for (c = 0; c < bin.children.numItems; c++)
-      if (same(mediaPath(bin.children[c]), file.fsName)) return bin.children[c];
+    var existing = {};
+    if (fresh) {
+      // Import may deduplicate media. Only a genuinely new project item may
+      // have its channel interpretation or source points changed.
+      existing = read(function () {
+        var ids = {};
+        var pending = [project.rootItem];
+        while (pending.length) {
+          var folder = pending.pop();
+          var children = folder.children;
+          if (!children || typeof children.numItems !== "number") return null;
+          for (var n = 0; n < children.numItems; n++) {
+            var child = children[n];
+            if (!child) return null;
+            if (child.nodeId) ids["i" + String(child.nodeId)] = true;
+            if (child.type === 2) pending.push(child);
+          }
+        }
+        return ids;
+      }, "the existing project items");
+    }
+    for (c = 0; c < bin.children.numItems; c++) {
+      existing["i" + String(bin.children[c].nodeId)] = true;
+      if (!fresh && same(mediaPath(bin.children[c]), file.fsName)) return bin.children[c];
+    }
     if (!project.importFiles([file.fsName], true, bin, false))
       fail("Premiere could not import the cleaned VO. The file is saved.");
-    for (c = 0; c < bin.children.numItems; c++)
-      if (same(mediaPath(bin.children[c]), file.fsName)) return bin.children[c];
-    fail("Import could not be verified. The cleaned file is saved.");
+    return read(function () {
+      for (var n = 0; n < bin.children.numItems; n++) {
+        var imported = bin.children[n];
+        if (
+          same(mediaPath(imported), file.fsName) &&
+          (!fresh || (imported.nodeId && !existing["i" + String(imported.nodeId)]))
+        )
+          return imported;
+      }
+      return null;
+    }, "a separate imported cleaned VO item. The cleaned file is saved");
   }
   function timing(clip) {
     return [
-      Number(clip.start.seconds),
-      Number(clip.end.seconds),
-      Number(clip.inPoint.seconds),
-      Number(clip.outPoint.seconds)
+      seconds(clip, "start"),
+      seconds(clip, "end"),
+      seconds(clip, "inPoint"),
+      seconds(clip, "outPoint")
     ].join("|");
   }
   function linked(a, b) {
     if (!a.getLinkedItems) return false;
-    var items = a.getLinkedItems();
+    var items = read(function () {
+      return a.getLinkedItems();
+    }, "linked audio channels");
     if (!items) return false;
     for (var i = 0; i < items.numItems; i++)
       if (String(items[i].nodeId) === String(b.nodeId)) return true;
@@ -116,76 +208,231 @@ function axisVOCleanupHost(request, timeline) {
   }
   function mapping(item) {
     // Adobe's CEP sample exposes a property. Some hosts expose a callable getter.
-    var value = item.getAudioChannelMapping;
-    return typeof value === "function" ? item.getAudioChannelMapping() : value;
+    return read(function () {
+      var value = item.getAudioChannelMapping;
+      return typeof value === "function" ? item.getAudioChannelMapping() : value;
+    }, "the cleaned item's audio channel mapping");
   }
-  function safeMapping(item) {
+  function singleMapping(m) {
+    return (
+      m && m.audioClipsNumber === 1 && (m.audioChannelsType === 0 || m.audioChannelsType === 1)
+    );
+  }
+  function safeMapping(item, repair) {
     var m = mapping(item);
-    if (!m || m.audioClipsNumber !== 1 || (m.audioChannelsType !== 0 && m.audioChannelsType !== 1))
-      fail(
-        "Timeline import needs a single mono or stereo clip. Change the cleaned file's Audio Channels in Premiere, or import it into the bin."
-      );
+    if (singleMapping(m)) return;
+    if (
+      repair &&
+      item.setAudioChannelMapping &&
+      m.audioClipsNumber >= 1 &&
+      m.audioChannelsType >= 0 &&
+      m.audioChannelsType <= 5 &&
+      m.setMappingForChannel
+    ) {
+      m.audioChannelsType = 1;
+      m.audioClipsNumber = 1;
+      if (m.setMappingForChannel(0, 0) === false || m.setMappingForChannel(1, 1) === false)
+        fail("Premiere could not map the cleaned item's audio channels.");
+      // Only our newly imported item is changed. A mutation is never retried.
+      if (item.setAudioChannelMapping(m) === false)
+        fail("Premiere could not set the cleaned item's audio channels.");
+      if (singleMapping(mapping(item))) return;
+    }
+    fail(
+      "Timeline import needs a single mono or stereo clip. Premiere could not set the cleaned item's Audio Channels. Import it into the bin instead."
+    );
   }
-  function anchor(s) {
-    var found = null;
-    for (var t = 0; t < s.audioTracks.numTracks; t++) {
-      var track = s.audioTracks[t];
-      var clips = track.clips;
-      for (var c = 0; c < clips.numItems; c++)
-        if (String(clips[c].nodeId) === request.nodeId) {
-          if (found) fail("The VO clip is ambiguous. Select it again.");
-          found = { clip: clips[c], track: track, index: t };
+  function audioClips(s) {
+    return read(function () {
+      var found = [];
+      var audio = tracks(s, "audioTracks");
+      for (var t = 0; t < audio.numTracks; t++) {
+        var track = audio[t];
+        var clips = track.clips;
+        if (!clips || typeof clips.numItems !== "number") return null;
+        for (var c = 0; c < clips.numItems; c++) {
+          var clip = clips[c];
+          if (!clip || !clip.nodeId || !clip.projectItem) return null;
+          found.push({ clip: clip, track: track, index: t, path: mediaPath(clip.projectItem) });
         }
-    }
+      }
+      return found;
+    }, "the sequence's audio clips");
+  }
+  function oneInstance(a, b) {
     if (
-      !found ||
-      id(found.track) !== request.trackId ||
-      Number(found.clip.start.seconds) !== request.start ||
-      Number(found.clip.end.seconds) !== request.end ||
-      Number(found.clip.inPoint.seconds) !== request.inPoint ||
-      Number(found.clip.outPoint.seconds) !== request.outPoint
+      !a.clip.projectItem.nodeId ||
+      String(a.clip.projectItem.nodeId) !== String(b.clip.projectItem.nodeId) ||
+      timing(a.clip) !== timing(b.clip) ||
+      !linked(a.clip, b.clip) ||
+      !linked(b.clip, a.clip)
     )
-      fail("The VO clip changed or is gone. Select it again.");
-    var speed;
-    var reversed;
+      return false;
+    var m;
     try {
-      speed = found.clip.getSpeed();
-      reversed = found.clip.isSpeedReversed();
-    } catch (ignoredSpeed) {
-      fail("Could not verify the VO speed. Use a forward clip at 100%.");
+      m = mapping(a.clip.projectItem);
+    } catch (ignoredMapping) {
+      return false;
     }
+    return m && m.audioChannelsType === 0 && m.audioClipsNumber >= 2;
+  }
+  function instances(clips) {
+    var groups = [];
+    for (var i = 0; i < clips.length; i++) {
+      var group = null;
+      for (var j = 0; j < groups.length; j++)
+        if (oneInstance(groups[j].bottom, clips[i])) {
+          group = groups[j];
+          break;
+        }
+      if (!group) {
+        group = { bottom: clips[i], members: [] };
+        groups.push(group);
+      }
+      group.members.push(clips[i]);
+      if (clips[i].index > group.bottom.index) group.bottom = clips[i];
+    }
+    return groups;
+  }
+  function selection(s) {
+    return read(function () {
+      return s.getSelection();
+    }, "the timeline selection");
+  }
+  function usable(found, s) {
+    var speed = read(function () {
+      return found.clip.getSpeed();
+    }, "the VO speed (use a forward clip at 100%)");
+    var reversed = read(function () {
+      return found.clip.isSpeedReversed();
+    }, "the VO direction");
+    if (reversed !== false && reversed !== 0)
+      fail("The VO is reversed. Use forward playback for timeline import.");
+    if (typeof speed !== "number" || !isFinite(speed) || Math.abs(speed - 1) > 0.000001)
+      fail("The VO is retimed. Use 100% speed for timeline import.");
     if (
-      typeof speed !== "number" ||
-      Math.abs(speed - 1) > 0.000001 ||
-      (reversed !== false && reversed !== 0)
+      !(seconds(found.clip, "end") > seconds(found.clip, "start")) ||
+      !(seconds(found.clip, "outPoint") > seconds(found.clip, "inPoint"))
     )
-      fail("Timeline import needs a forward VO clip at 100% speed.");
-    for (var i = found.index; i < s.audioTracks.numTracks; i++) {
-      if (!s.audioTracks[i].isLocked || s.audioTracks[i].isLocked() !== false)
-        fail("Unlock the VO track and all audio tracks below it before timeline import.");
-    }
+      fail("The VO has an invalid source or timeline range. Select a usable VO clip.");
+    id(found.track);
+    // Locked SFX or music below the VO is fine: adding a track never edits it,
+    // and placement only writes to a verified, unlocked destination track.
     return found;
   }
-  function inventory(collection) {
-    var rows = [];
-    var ids = {};
-    for (var t = 0; t < collection.numTracks; t++) {
-      var track = collection[t];
-      var trackId = id(track);
-      if (ids["t" + trackId]) fail("Premiere returned duplicate track IDs. Nothing was placed.");
-      ids["t" + trackId] = true;
-      var parts = [trackId, String(track.name), String(track.isLocked())];
-      for (var c = 0; c < track.clips.numItems; c++) {
-        var clip = track.clips[c];
-        if (!clip.nodeId || !mediaPath(clip.projectItem))
-          fail("Could not identify every existing clip safely.");
-        parts.push(String(clip.nodeId), timing(clip), mediaPath(clip.projectItem));
+  function sourcePacket(found, s) {
+    return packet("source", [
+      found.path,
+      s.sequenceID,
+      found.index,
+      seconds(found.clip, "start"),
+      seconds(found.clip, "inPoint"),
+      seconds(found.clip, "outPoint"),
+      String(project.documentID || project.path),
+      String(found.clip.nodeId),
+      id(found.track),
+      seconds(found.clip, "end"),
+      project.name || project.path || "",
+      s.name || ""
+    ]);
+  }
+  function resolveSource(s, path) {
+    var clips = audioClips(s);
+    var matches = [];
+    for (var i = 0; i < clips.length; i++) if (same(clips[i].path, path)) matches.push(clips[i]);
+    var groups = instances(matches);
+    if (groups.length === 1) return usable(groups[0].bottom, s);
+    if (groups.length > 1) {
+      var selected = selection(s);
+      var chosen = [];
+      for (var g = 0; g < groups.length; g++) {
+        var has = false;
+        for (var m = 0; m < groups[g].members.length; m++)
+          for (var k = 0; k < selected.length; k++)
+            if (String(selected[k].nodeId) === String(groups[g].members[m].clip.nodeId)) has = true;
+        if (has) chosen.push(groups[g].bottom);
       }
-      // Encode individual fields so delimiters in names and paths cannot hide a change.
-      for (var p = 0; p < parts.length; p++) parts[p] = encodeURIComponent(parts[p]);
-      rows.push({ id: trackId, signature: parts.join("|") });
+      if (chosen.length === 1) return usable(chosen[0], s);
+      if (chosen.length === 0) {
+        var usableGroups = [];
+        var problem = "";
+        for (var u = 0; u < groups.length; u++) {
+          try {
+            usableGroups.push(usable(groups[u].bottom, s));
+          } catch (unusable) {
+            problem = String(unusable);
+          }
+        }
+        if (usableGroups.length === 1) return usableGroups[0];
+        if (!usableGroups.length && problem) fail(problem.replace(/^Error: /, ""));
+      }
+      fail(
+        "Select the VO clip to use, then click Use selected clip. This file appears more than once."
+      );
     }
-    return rows;
+    fail("No clip using this file was found in sequence " + (s.name || s.sequenceID) + ".");
+  }
+  function anchor(s) {
+    var clips = audioClips(s);
+    var byId = [];
+    var byPosition = [];
+    for (var i = 0; i < clips.length; i++) {
+      if (String(clips[i].clip.nodeId) === request.nodeId) byId.push(clips[i]);
+      if (
+        same(clips[i].path, request.sourcePath) &&
+        near(seconds(clips[i].clip, "start"), request.start)
+      )
+        byPosition.push(clips[i]);
+    }
+    var groups = instances(byId.length ? byId : byPosition);
+    if (groups.length !== 1) fail("The VO clip is gone or ambiguous. Select the VO clip again.");
+    var found = groups[0].bottom;
+    if (!same(found.path, request.sourcePath))
+      fail("The VO source changed. Select the VO clip again.");
+    for (var linkedIndex = 0; linkedIndex < clips.length; linkedIndex++)
+      if (clips[linkedIndex].index > found.index && oneInstance(found, clips[linkedIndex]))
+        found = clips[linkedIndex];
+    return usable(found, s);
+  }
+  function inventory(collection) {
+    return read(function () {
+      if (!collection || typeof collection.numTracks !== "number") return null;
+      var rows = [];
+      var ids = {};
+      for (var t = 0; t < collection.numTracks; t++) {
+        var track = collection[t];
+        var trackId = id(track);
+        if (ids["t" + trackId]) fail("Premiere returned duplicate track IDs. Nothing was placed.");
+        ids["t" + trackId] = true;
+        var locked = track.isLocked();
+        var clips = track.clips;
+        if (
+          track.name === undefined ||
+          (locked !== true && locked !== false) ||
+          !clips ||
+          typeof clips.numItems !== "number"
+        )
+          return null;
+        var parts = [trackId, String(track.name), String(locked)];
+        var header = parts.join("|");
+        for (var c = 0; c < clips.numItems; c++) {
+          var clip = clips[c];
+          if (!clip.nodeId || !mediaPath(clip.projectItem))
+            fail("Could not identify every existing clip safely.");
+          parts.push(String(clip.nodeId), timing(clip), mediaPath(clip.projectItem));
+        }
+        // Encode individual fields so delimiters in names and paths cannot hide a change.
+        for (var p = 0; p < parts.length; p++) parts[p] = encodeURIComponent(parts[p]);
+        rows.push({
+          id: trackId,
+          header: header,
+          signature: parts.join("|"),
+          count: clips.numItems,
+          locked: locked
+        });
+      }
+      return rows;
+    }, "every existing track and clip");
   }
   function unchanged(before, after, skip) {
     var n = 0;
@@ -196,8 +443,8 @@ function axisVOCleanupHost(request, timeline) {
     }
     return n === before.length;
   }
-  function newTrack(before, s, vo) {
-    var after = inventory(s.audioTracks);
+  function newTrack(before, s) {
+    var after = inventory(tracks(s, "audioTracks"));
     var old = {};
     var found = -1;
     for (var i = 0; i < before.length; i++) old["t" + before[i].id] = true;
@@ -208,12 +455,18 @@ function axisVOCleanupHost(request, timeline) {
       }
     if (after.length !== before.length + 1 || found < 0 || !unchanged(before, after, found))
       fail("Premiere did not add exactly one empty audio track safely.");
-    if (found !== vo.index + 1 || id(s.audioTracks[found - 1]) !== request.trackId)
-      fail("Premiere added the track in the wrong position.");
-    var track = s.audioTracks[found];
-    if (track.clips.numItems !== 0 || track.isLocked())
+    if (after[found].count !== 0 || after[found].locked)
       fail("The added audio track is not empty and unlocked.");
     return found;
+  }
+  function placementUnchanged(before, after, target) {
+    if (before.length !== after.length) return false;
+    for (var i = 0; i < before.length; i++) {
+      if (i === target) {
+        if (before[i].count !== 0 || before[i].header !== after[i].header) return false;
+      } else if (before[i].signature !== after[i].signature) return false;
+    }
+    return true;
   }
   try {
     project = app.project;
@@ -225,65 +478,35 @@ function axisVOCleanupHost(request, timeline) {
     if (request.action === "selected") {
       var seen = {};
       var s = project.activeSequence;
-      var clips = (s && s.getSelection()) || [];
+      var clips = s ? selection(s) : [];
       var selected = [];
+      var all = s ? audioClips(s) : [];
       for (var k = 0; k < clips.length; k++) {
-        var selectedClip = clips[k];
-        if (String(selectedClip.mediaType) !== "Audio") continue;
-        var path = mediaPath(selectedClip.projectItem);
-        if (!selectedClip.nodeId || !path) fail("Select one audio file clip on the timeline.");
-        var key = "clip:" + String(selectedClip.nodeId);
+        if (String(clips[k].mediaType) !== "Audio") continue;
+        var key = "clip:" + String(clips[k].nodeId);
         if (seen[key]) continue;
-        var located = false;
-        for (var t = 0; t < s.audioTracks.numTracks; t++)
-          for (var c = 0; c < s.audioTracks[t].clips.numItems; c++)
-            if (String(s.audioTracks[t].clips[c].nodeId) === String(selectedClip.nodeId)) {
-              selected.push({ clip: selectedClip, index: t, track: s.audioTracks[t], path: path });
-              located = true;
-            }
-        if (!located) fail("The selected VO clip is gone. Select it again.");
+        for (var c = 0; c < all.length; c++)
+          if (String(all[c].clip.nodeId) === String(clips[k].nodeId)) selected.push(all[c]);
         seen[key] = true;
       }
       if (selected.length) {
-        var chosenClip = selected[0];
-        for (var a = 1; a < selected.length; a++) {
-          var other = selected[a];
-          var sourceMap = mapping(chosenClip.clip.projectItem);
-          // Only explicit linked mono channels with the same source and range are one instance.
-          // Anchor the bottom channel so the new track does not split the linked group.
-          if (
-            !sourceMap ||
-            sourceMap.audioChannelsType !== 0 ||
-            sourceMap.audioClipsNumber < selected.length ||
-            !chosenClip.clip.projectItem.nodeId ||
-            String(chosenClip.clip.projectItem.nodeId) !== String(other.clip.projectItem.nodeId) ||
-            timing(chosenClip.clip) !== timing(other.clip) ||
-            !linked(chosenClip.clip, other.clip) ||
-            !linked(other.clip, chosenClip.clip)
-          )
-            fail("Select only one VO clip on the timeline.");
-          if (other.index > chosenClip.index) chosenClip = other;
-        }
-        return packet("source", [
-          chosenClip.path,
-          s.sequenceID,
-          chosenClip.index,
-          chosenClip.clip.start.seconds,
-          chosenClip.clip.inPoint.seconds,
-          chosenClip.clip.outPoint.seconds,
-          String(project.documentID || project.path),
-          String(chosenClip.clip.nodeId),
-          id(chosenClip.track),
-          chosenClip.clip.end.seconds
-        ]);
+        var groups = instances(selected);
+        if (groups.length !== 1) fail("Select only one VO clip on the timeline.");
+        return sourcePacket(usable(groups[0].bottom, s), s);
       }
       var found = [];
-      var views = (app.getProjectViewIDs && app.getProjectViewIDs()) || [];
+      var views = app.getProjectViewIDs
+        ? read(function () {
+            return app.getProjectViewIDs();
+          }, "Project panel views")
+        : [];
       for (var v = 0; v < views.length; v++) {
-        var selection = app.getProjectViewSelection(views[v]) || [];
-        for (var i = 0; i < selection.length; i++) {
-          var media = mediaPath(selection[i]);
-          var itemKey = "item:" + String(selection[i].nodeId || media);
+        var viewSelection = read(function () {
+          return app.getProjectViewSelection(views[v]);
+        }, "the Project panel selection");
+        for (var i = 0; i < viewSelection.length; i++) {
+          var media = mediaPath(viewSelection[i]);
+          var itemKey = "item:" + String(viewSelection[i].nodeId || media);
           if (media && !seen[itemKey]) {
             found.push([media]);
             seen[itemKey] = true;
@@ -293,6 +516,15 @@ function axisVOCleanupHost(request, timeline) {
       if (found.length === 1) return packet("source", found[0]);
       if (found.length > 1) fail("Select only one audio item in the Project panel.");
       fail("Select one VO clip on the timeline or one audio item in the Project panel.");
+    }
+    if (request.action === "resolve") {
+      scope();
+      var active = activeSequence();
+      try {
+        return sourcePacket(resolveSource(active, request.path), active);
+      } catch (resolveError) {
+        return packet("unanchored", [request.path, String(resolveError).replace(/^Error: /, "")]);
+      }
     }
     scope();
     if (request.action === "import") return packet("imported", [mediaPath(importCleaned())]);
@@ -312,16 +544,18 @@ function axisVOCleanupHost(request, timeline) {
       fail("Choose Import into timeline, then Clean VO to confirm placement.");
     var sequence = activeSequence();
     var vo = anchor(sequence);
-    var item = importCleaned();
-    safeMapping(item);
-    var beforeAudio = inventory(sequence.audioTracks);
-    var beforeVideo = inventory(sequence.videoTracks);
+    var item = importCleaned(true);
+    if (String(item.nodeId) === String(vo.clip.projectItem.nodeId))
+      fail("Premiere did not import a separate cleaned VO item. Nothing was placed.");
+    safeMapping(item, true);
+    var beforeAudio = inventory(tracks(sequence, "audioTracks"));
+    var beforeVideo = inventory(tracks(sequence, "videoTracks"));
     var frame = Number(sequence.timebase) / 254016000000;
     if (!(frame > 0 && frame < 1)) fail("Could not verify the sequence frame rate.");
-    var oldIn = Number(item.getInPoint(2).seconds);
-    var oldOut = Number(item.getOutPoint(2).seconds);
-    var sourceIn = request.keepTiming ? request.inPoint : 0;
-    var sourceOut = request.keepTiming ? request.outPoint : oldOut;
+    var oldIn = itemPoint(item, "getInPoint");
+    var oldOut = itemPoint(item, "getOutPoint");
+    var sourceIn = request.keepTiming ? seconds(vo.clip, "inPoint") : 0;
+    var sourceOut = request.keepTiming ? seconds(vo.clip, "outPoint") : oldOut;
     if (
       !isFinite(oldIn) ||
       !isFinite(oldOut) ||
@@ -329,16 +563,18 @@ function axisVOCleanupHost(request, timeline) {
       sourceOut > oldOut + 0.001
     )
       fail("The cleaned source is shorter than the VO range.");
-    var start = Number(vo.clip.start.seconds);
+    var start = seconds(vo.clip, "start");
+    placementStart = start;
     var duration = Math.floor((sourceOut - sourceIn) / frame + 0.000001) * frame;
     if (!(duration > 0)) fail("The cleaned source range is too short.");
+    var readyAudio = null;
     try {
       // Same audio-only media type as Music. Never clear custom source points.
       item.setInPoint(sourceIn, 2);
       item.setOutPoint(sourceOut, 2);
       if (
-        !near(item.getInPoint(2).seconds, sourceIn) ||
-        !near(item.getOutPoint(2).seconds, sourceOut)
+        !near(itemPoint(item, "getInPoint"), sourceIn) ||
+        !near(itemPoint(item, "getOutPoint"), sourceOut)
       )
         fail("Premiere did not accept the cleaned VO source range.");
       checkpoint = state("snapshot", true);
@@ -355,42 +591,105 @@ function axisVOCleanupHost(request, timeline) {
       // Cloning can change the active sequence. Recheck the exact instance just before mutation.
       sequence = activeSequence();
       vo = anchor(sequence);
+      if (
+        !near(seconds(vo.clip, "start"), start) ||
+        (request.keepTiming &&
+          (!near(seconds(vo.clip, "inPoint"), sourceIn) ||
+            !near(seconds(vo.clip, "outPoint"), sourceOut)))
+      )
+        fail("The VO changed while saving its checkpoint. Try placement again.");
       safeMapping(item);
       app.enableQE();
-      var qeSequence = qe.project.getActiveSequence();
+      var qeSequence = read(function () {
+        return qe.project.getActiveSequence();
+      }, "the QE sequence");
       if (!qeSequence) fail("Premiere could not add a track.");
       mutationStarted = true;
       // Verify the result rather than trusting undocumented QE index semantics.
       qeSequence.addTracks(0, 0, 1, 1, vo.index + 1, 0, 0);
-      added = newTrack(beforeAudio, sequence, vo);
-      if (!unchanged(beforeVideo, inventory(sequence.videoTracks), -1))
+      added = newTrack(beforeAudio, sequence);
+      vo = anchor(sequence);
+      var target = added;
+      if (added !== vo.index + 1) {
+        // The first write succeeded safely, but QE interpreted its index
+        // differently. Choose a separately verified destination, never repeat it.
+        var currentAudio = inventory(tracks(sequence, "audioTracks"));
+        var below = currentAudio[vo.index + 1];
+        if (below && below.count === 0 && !below.locked) {
+          target = vo.index + 1;
+          explanation =
+            "Used the empty track below the VO because Premiere added the new track elsewhere (A" +
+            (added + 1) +
+            ", left empty).";
+        } else if (added === currentAudio.length - 1) {
+          explanation =
+            "Used the bottom track because Premiere added the new track there instead of below the VO.";
+        } else {
+          var intermediate = currentAudio;
+          qeSequence.addTracks(0, 0, 1, 1, intermediate.length, 0, 0);
+          target = newTrack(intermediate, sequence);
+          if (target !== tracks(sequence, "audioTracks").numTracks - 1)
+            fail("Premiere could not add the fallback track at the bottom safely.");
+          explanation =
+            "Used the bottom track because Premiere could not add a track directly below the VO. Its first new track, A" +
+            (added + 1) +
+            ", is empty.";
+        }
+      }
+      if (!unchanged(beforeVideo, inventory(tracks(sequence, "videoTracks")), -1))
         fail("Video tracks changed while adding the VO track.");
-      var track = sequence.audioTracks[added];
-      track.name = "Clean VO";
+      var track = read(function () {
+        return tracks(sequence, "audioTracks")[target];
+      }, "the destination track");
+      var isNew = true;
+      for (var originalTrack = 0; originalTrack < beforeAudio.length; originalTrack++)
+        if (beforeAudio[originalTrack].id === id(track)) isNew = false;
+      if (isNew) track.name = "Clean VO";
+      readyAudio = inventory(tracks(sequence, "audioTracks"));
       safeMapping(item);
       track.overwriteClip(item, String(start));
-      if (track.clips.numItems !== 1) fail("Premiere did not place exactly one cleaned VO clip.");
-      var placed = track.clips[0];
+      var placed = read(function () {
+        return track.clips.numItems === 1 ? track.clips[0] : null;
+      }, "exactly one placed cleaned VO clip");
       if (
         !same(mediaPath(placed.projectItem), request.path) ||
-        !near(placed.start.seconds, start) ||
-        !near(placed.end.seconds, start + duration) ||
-        !near(placed.inPoint.seconds, sourceIn) ||
-        !near(placed.outPoint.seconds, sourceIn + duration)
+        !near(seconds(placed, "start"), start) ||
+        !near(seconds(placed, "end"), start + duration) ||
+        !near(seconds(placed, "inPoint"), sourceIn) ||
+        !near(seconds(placed, "outPoint"), sourceIn + duration)
       )
         fail("Premiere did not place the expected cleaned VO range.");
       if (
-        !unchanged(beforeAudio, inventory(sequence.audioTracks), added) ||
-        !unchanged(beforeVideo, inventory(sequence.videoTracks), -1)
+        !placementUnchanged(readyAudio, inventory(tracks(sequence, "audioTracks")), target) ||
+        !unchanged(beforeVideo, inventory(tracks(sequence, "videoTracks")), -1)
       )
         fail("Other clips changed during VO placement.");
+      added = target;
     } finally {
       item.setInPoint(oldIn, 2);
       item.setOutPoint(oldOut, 2);
-      if (!near(item.getInPoint(2).seconds, oldIn) || !near(item.getOutPoint(2).seconds, oldOut))
+      if (
+        !near(itemPoint(item, "getInPoint"), oldIn) ||
+        !near(itemPoint(item, "getOutPoint"), oldOut)
+      )
         fail("Premiere did not restore the cleaned item's source points.");
     }
     var completed = snapshot();
+    var finalClips = completed.snapshot.audioTracks[added].clips;
+    if (
+      finalClips.length !== 1 ||
+      !same(finalClips[0].mediaPath, request.path) ||
+      !near(finalClips[0].start, start) ||
+      !near(finalClips[0].end, start + duration) ||
+      !near(finalClips[0].inPoint, sourceIn) ||
+      !near(finalClips[0].outPoint, sourceIn + duration)
+    )
+      fail("Premiere did not retain the final cleaned VO range.");
+    if (
+      !placementUnchanged(readyAudio, inventory(tracks(sequence, "audioTracks")), added) ||
+      !unchanged(beforeVideo, inventory(tracks(sequence, "videoTracks")), -1)
+    )
+      fail("Other clips changed while restoring the cleaned item's source points.");
     return packet("placed", [
       mediaPath(item),
       added,
@@ -398,7 +697,12 @@ function axisVOCleanupHost(request, timeline) {
       checkpoint.checkpointId,
       checkpoint.checkpointSignature,
       completed.signature,
-      ""
+      "Placed on A" +
+        (added + 1) +
+        " at " +
+        start.toFixed(3) +
+        " s." +
+        (explanation ? " " + explanation : "")
     ]);
   } catch (error) {
     var message = String(error).slice(0, 600);
@@ -415,7 +719,7 @@ function axisVOCleanupHost(request, timeline) {
         return packet("recovery", [
           request.path,
           added,
-          request.start,
+          placementStart,
           checkpoint.checkpointId,
           checkpoint.checkpointSignature,
           after ? after.signature : "",
