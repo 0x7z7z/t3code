@@ -16,6 +16,7 @@ export function usePlayheadClock(enabled: boolean): number {
       getPremierePlayheadSample()?.seconds ?? getPremiereHostState().context?.playheadSeconds ?? 0,
   );
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Subscribe to CEP playhead samples and own the animation clock lifecycle.
   useEffect(() => {
     if (!enabled) return;
     let clock = new PlayheadClock();

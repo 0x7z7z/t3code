@@ -32,6 +32,7 @@ export function SetupPanel({
   );
   const bridgeConnected =
     connected && (!report || report.bridgeState === "running" || report.bridgeState === "standby");
+  // oxlint-disable-next-line t3code/react-effect-budget -- Read diagnostics from the CEP host when the setup panel mounts.
   useEffect(() => {
     if (!isPremierePanel()) return;
     let disposed = false;

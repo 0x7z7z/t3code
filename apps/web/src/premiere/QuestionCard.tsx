@@ -63,7 +63,7 @@ export function QuestionCard({
     inFlight.current = true;
     setSending(true);
     onError(null);
-    try {
+    return await (async () => {
       const result = await answer({
         environmentId,
         input: { threadId, requestId: request.requestId, answers },
@@ -76,10 +76,10 @@ export function QuestionCard({
             : "The answer could not be sent. Your conversation is unchanged.",
         );
       }
-    } finally {
+    })().finally(() => {
       inFlight.current = false;
       setSending(false);
-    }
+    });
   }
 
   function close() {

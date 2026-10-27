@@ -333,7 +333,7 @@ it("retains Undo after a failed or unverified restore and clears it only after v
   const run = host.request.getMockImplementation()!;
   let undo: "fail" | "unverified" | "success" = "fail";
   host.request.mockImplementation(async (type, payload) => {
-    if (payload.action === "selected")
+    if (payload.action === "selected" || payload.action === "resolve")
       return {
         path: "D:/Film/VO.wav",
         anchor: {

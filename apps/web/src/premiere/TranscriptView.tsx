@@ -313,6 +313,7 @@ export function TranscriptView({
   const starting = useRef(false);
   const generation = useRef(0);
   const outcome = useRef(agentOutcome);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Async transcript polling must observe the latest streamed agent outcome.
   useEffect(() => {
     outcome.current = agentOutcome;
   }, [agentOutcome]);
@@ -324,6 +325,7 @@ export function TranscriptView({
   const operation = useRef(false);
   // Async work reads the latest record; persist() also updates it synchronously.
   const storedRef = useRef(stored);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Pending host operations must observe committed transcript state.
   useEffect(() => {
     storedRef.current = stored;
   }, [stored]);
@@ -366,27 +368,35 @@ export function TranscriptView({
       let index = 0;
       index + tokens.length <= normalized.length && matches.length < 5000;
       index++
-    )
+    ) {
+      const start = index;
       if (
         tokens.every((token, k) =>
           k === tokens.length - 1
-            ? normalized[index + k]!.startsWith(token)
-            : normalized[index + k] === token,
+            ? normalized[start + k]!.startsWith(token)
+            : normalized[start + k] === token,
         )
       )
-        matches.push(index);
+        matches.push(start);
+    }
   const cursor = matches.length ? Math.min(matchCursor, matches.length - 1) : -1;
   const marks = new Uint8Array(words.length);
   matches.forEach((start, n) => {
     for (let k = 0; k < tokens.length; k++) marks[start + k] = n === cursor ? 2 : 1;
   });
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Discard asynchronous CEP results after this view unmounts.
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
     };
   }, []);
+
+  const clearCleanup = () => {
+    setCleanup(null);
+    setToolView((current) => (current === "cleanup" ? null : current));
+  };
 
   function persist(next: StoredTranscript, destination = key) {
     if (storedRef.current.transcript !== next.transcript) clearCleanup();
@@ -399,11 +409,6 @@ export function TranscriptView({
         "Browser storage is full or unavailable. Keep this panel open; the transcript and undo could not be saved.",
       );
     }
-  }
-
-  function clearCleanup() {
-    setCleanup(null);
-    setToolView((current) => (current === "cleanup" ? null : current));
   }
 
   async function snapshot() {
@@ -424,6 +429,7 @@ export function TranscriptView({
     if (found) setOffset("0");
   });
   const unlinked = stored.link === undefined;
+  // oxlint-disable-next-line t3code/react-effect-budget -- Resolve imported transcript words against the current Premiere sequence.
   useEffect(() => {
     if (!active || !doc || !unlinked) return;
     let disposed = false;
@@ -456,6 +462,7 @@ export function TranscriptView({
     }
   });
   const linked = link !== null;
+  // oxlint-disable-next-line t3code/react-effect-budget -- Refresh transcript placement after edits made outside the panel.
   useEffect(() => {
     if (!active || !linked || busy) return;
     let disposed = false;
@@ -472,17 +479,19 @@ export function TranscriptView({
       clearInterval(timer);
     };
   }, [active, linked, busy]);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Reset the idle timer when the external Premiere playhead moves.
   useEffect(() => {
     const rest = resting.current;
     if (rest.playhead !== playhead) resting.current = { playhead, still: 0 };
   }, [playhead]);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Own the timer that detects a resting Premiere playhead.
   useEffect(() => {
     const timer = setInterval(() => resting.current.still++, 1000);
     return () => clearInterval(timer);
   }, []);
 
   const pollJob = useEffectEvent(async (id: string, cancelled: () => boolean) => {
-    try {
+    return await (async () => {
       const handoff = await loadWhisperTranscript(context, id);
       if (cancelled()) return;
       if (!handoff.content) {
@@ -498,13 +507,14 @@ export function TranscriptView({
       setConfirmCut(false);
       setWhisperState("loaded");
       setJob(null);
-    } catch (problem) {
+    })().catch((problem) => {
       if (cancelled()) return;
       setError(problem instanceof Error ? problem.message : "Transcription failed.");
       setWhisperState("failed");
       setJob(null);
-    }
+    });
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Poll the external WhisperX handoff while its agent job is active.
   useEffect(() => {
     if (!job) return;
     let disposed = false;
@@ -533,21 +543,24 @@ export function TranscriptView({
     setWhisperState("transcribing");
     setError(null);
     const id = randomUUID();
-    try {
+    return await (async () => {
       const handoff = await loadWhisperTranscript(context, id, true);
       if (!mounted.current || generation.current !== attempt) return;
       await onTranscribe(whisperPrompt(context, id, handoff, fixScript));
       if (mounted.current && generation.current === attempt) setJob(id);
-    } catch (problem) {
-      if (!mounted.current || generation.current !== attempt) return;
-      setError(problem instanceof Error ? problem.message : "Could not start transcription.");
-      setWhisperState("failed");
-    } finally {
-      starting.current = false;
-    }
+    })()
+      .catch((problem) => {
+        if (!mounted.current || generation.current !== attempt) return;
+        setError(problem instanceof Error ? problem.message : "Could not start transcription.");
+        setWhisperState("failed");
+      })
+      .finally(() => {
+        starting.current = false;
+      });
   }
 
   // Keeps the spoken word in the upper part of the view without jumping on every word.
+  // oxlint-disable-next-line t3code/react-effect-budget -- Keep the spoken word visible in the transcript scroll container.
   useEffect(() => {
     const area = wordArea.current;
     if (!following || anchorWord < 0 || !area?.offsetParent) return;
@@ -564,6 +577,7 @@ export function TranscriptView({
     });
   }, [anchorWord, following]);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Register document listeners only while the transcript menu is open.
   useEffect(() => {
     if (!menuOpen) return;
     const close = (event: PointerEvent) => {
@@ -586,7 +600,7 @@ export function TranscriptView({
     setBusy(true);
     setError(null);
     setMenuOpen(false);
-    try {
+    return await (async () => {
       if (file.size > 10000000) throw new Error("Choose a transcript smaller than 10 MB.");
       const transcript = parseTranscript(await file.text(), file.name);
       const timeline = await snapshot().catch(() => null);
@@ -601,12 +615,14 @@ export function TranscriptView({
       setSelection(null);
       setFollowing(true);
       setConfirmCut(false);
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Could not read this transcript.");
-    } finally {
-      operation.current = false;
-      setBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        setError(problem instanceof Error ? problem.message : "Could not read this transcript.");
+      })
+      .finally(() => {
+        operation.current = false;
+        setBusy(false);
+      });
   }
 
   async function openMenu() {
@@ -658,7 +674,7 @@ export function TranscriptView({
     setBusy(true);
     onBusy(true);
     setError(null);
-    try {
+    return await (async () => {
       const result = await cutTranscriptRange({
         sequenceId: context.sequenceId,
         projectId: context.projectDocumentId || context.projectPath,
@@ -683,17 +699,19 @@ export function TranscriptView({
       setSelection(null);
       setConfirmCut(false);
       if (result.cutError) setError(`${result.cutError} The checkpoint is available below.`);
-    } catch (problem) {
-      // A timeout can mean the host changed the sequence without returning the checkpoint ID.
-      persist({ ...storedRef.current, uncertain: true });
-      setError(
-        `${problem instanceof Error ? problem.message : "Cut failed."} Inspect the timeline and Axis checkpoints before reimporting or retrying.`,
-      );
-    } finally {
-      operation.current = false;
-      setBusy(false);
-      onBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        // A timeout can mean the host changed the sequence without returning the checkpoint ID.
+        persist({ ...storedRef.current, uncertain: true });
+        setError(
+          `${problem instanceof Error ? problem.message : "Cut failed."} Inspect the timeline and Axis checkpoints before reimporting or retrying.`,
+        );
+      })
+      .finally(() => {
+        operation.current = false;
+        setBusy(false);
+        onBusy(false);
+      });
   }
 
   async function openCleanup(settings = cleanupSettings) {
@@ -705,7 +723,7 @@ export function TranscriptView({
     operation.current = true;
     setBusy(true);
     setError(null);
-    try {
+    return await (async () => {
       const reply = await requestTimelineSnapshot(false, context.sequenceId);
       if (
         reply.snapshot &&
@@ -724,17 +742,20 @@ export function TranscriptView({
       setFollowing(false);
       setCleanup({ signature: reply.signature });
       setToolView("cleanup");
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Could not open cleanup review.");
-    } finally {
-      operation.current = false;
-      setBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        setError(problem instanceof Error ? problem.message : "Could not open cleanup review.");
+      })
+      .finally(() => {
+        operation.current = false;
+        setBusy(false);
+      });
   }
 
   const requestedCleanup = useEffectEvent((settings: CleanupSettings) => {
     void openCleanup(settings);
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Start the host snapshot request when an external cleanup suggestion arrives.
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- A suggestion starts a Premiere snapshot request, which must mark the view busy before awaiting the host.
     if (cleanupRequest) requestedCleanup(cleanupRequest.settings);
@@ -742,6 +763,7 @@ export function TranscriptView({
   const requestedMusic = useEffectEvent(() => {
     setToolView("music");
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Open music review when an external agent suggestion arrives.
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- A new agent suggestion opens its review UI.
     if (musicRequest) requestedMusic();
@@ -764,7 +786,7 @@ export function TranscriptView({
     setBusy(true);
     onBusy(true);
     setError(null);
-    try {
+    return await (async () => {
       const result = await cutTranscriptRanges({
         sequenceId: context.sequenceId,
         projectId: context.projectDocumentId || context.projectPath,
@@ -799,18 +821,20 @@ export function TranscriptView({
       await pruneCheckpoints(context.sequenceId, result.checkpointId).catch(() => {});
       if (result.cutError)
         setError(`${result.cutError} Undo transcript cut restores the entire cleanup.`);
-    } catch (problem) {
-      const unchanged = problem instanceof TimelineRequestError && problem.unchanged;
-      persist({ ...storedRef.current, uncertain: !unchanged });
-      clearCleanup();
-      setError(
-        `${problem instanceof Error ? problem.message : "Cleanup failed."} ${unchanged ? "Open Clean up to review again." : "Inspect the timeline and Axis checkpoints before retrying."}`,
-      );
-    } finally {
-      operation.current = false;
-      setBusy(false);
-      onBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        const unchanged = problem instanceof TimelineRequestError && problem.unchanged;
+        persist({ ...storedRef.current, uncertain: !unchanged });
+        clearCleanup();
+        setError(
+          `${problem instanceof Error ? problem.message : "Cleanup failed."} ${unchanged ? "Open Clean up to review again." : "Inspect the timeline and Axis checkpoints before retrying."}`,
+        );
+      })
+      .finally(() => {
+        operation.current = false;
+        setBusy(false);
+        onBusy(false);
+      });
   }
 
   async function undo() {
@@ -820,7 +844,7 @@ export function TranscriptView({
     setBusy(true);
     onBusy(true);
     setError(null);
-    try {
+    return await (async () => {
       const reply = await requestTimelineSnapshot(false, context.sequenceId);
       if (
         reply.signature !== saved.expectedSignature ||
@@ -851,13 +875,15 @@ export function TranscriptView({
       localStorage.setItem(key, JSON.stringify({ ...stored, undo: null }));
       setSelection(null);
       setOffset(String(saved.before.offset));
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Could not restore the cut.");
-    } finally {
-      operation.current = false;
-      setBusy(false);
-      onBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        setError(problem instanceof Error ? problem.message : "Could not restore the cut.");
+      })
+      .finally(() => {
+        operation.current = false;
+        setBusy(false);
+        onBusy(false);
+      });
   }
 
   function goToMatch(step: number) {
@@ -1087,9 +1113,11 @@ export function TranscriptView({
                         onSubmit={(event) => {
                           event.preventDefault();
                           setError(null);
+                          if (!offset.trim()) {
+                            setError("Enter a sequence offset in seconds.");
+                            return;
+                          }
                           try {
-                            if (!offset.trim())
-                              throw new Error("Enter a sequence offset in seconds.");
                             const delta = Number(offset) - doc.offset;
                             persist({
                               ...stored,

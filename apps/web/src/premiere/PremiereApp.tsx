@@ -166,6 +166,7 @@ export function PremiereApp() {
     messageId: ReturnType<typeof newMessageId>;
   } | null>(null);
   const transcriptVisible = panelView === "transcript" && host.connected && host.context !== null;
+  // oxlint-disable-next-line t3code/react-effect-budget -- Tell CEP whether to publish transcript playhead updates.
   useEffect(() => {
     setPremiereTranscriptActive(transcriptVisible);
     return () => setPremiereTranscriptActive(false);
@@ -182,6 +183,7 @@ export function PremiereApp() {
       return true;
     }
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Persist the model-options preference to browser storage.
   useEffect(() => {
     try {
       localStorage.setItem(modelOptionsStorageKey, String(showOptions));
@@ -288,6 +290,7 @@ export function PremiereApp() {
     /* Browser storage can be unavailable. */
   }
   const draft = draftState?.key === draftKey ? draftState.value : storedDraft;
+  // oxlint-disable-next-line t3code/react-effect-budget -- Measure the composer DOM and observe panel resizing.
   useLayoutEffect(() => {
     const input = textarea.current;
     const panel = input?.closest("[data-premiere-client]");
@@ -373,6 +376,7 @@ export function PremiereApp() {
               provider.instanceId,
               providers,
               config?.usageLimitSources ?? [],
+              // oxlint-disable-next-line react/purity -- Usage is sampled only when the user requests limits.
               Date.now(),
             )
           : null;
@@ -412,21 +416,24 @@ export function PremiereApp() {
     if (capturingFrame) return;
     setCapturingFrame(true);
     setError(null);
-    try {
+    return await (async () => {
       const frame = await requestPremiereFrame();
       const bytes = Uint8Array.from(atob(frame.dataUrl.slice(22)), (character) =>
         character.charCodeAt(0),
       );
       await addImages([new File([bytes], frame.name, { type: frame.mimeType })]);
-    } catch (failure) {
-      setError(
-        failure instanceof Error ? failure.message : "The current frame could not be attached.",
-      );
-    } finally {
-      setCapturingFrame(false);
-    }
+    })()
+      .catch((failure) => {
+        setError(
+          failure instanceof Error ? failure.message : "The current frame could not be attached.",
+        );
+      })
+      .finally(() => {
+        setCapturingFrame(false);
+      });
   }
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Consume the CEP pairing URL and connect to its backend.
   useEffect(() => {
     if (paired.current) return;
     paired.current = true;
@@ -446,6 +453,7 @@ export function PremiereApp() {
     });
   }, [connect]);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Follow incoming agent output in the conversation scroll container.
   useEffect(() => {
     if (projection?.turnItems && followTranscript.current && transcript.current)
       transcript.current.scrollTop = transcript.current.scrollHeight;
@@ -506,7 +514,7 @@ export function PremiereApp() {
     const messageId = newMessageId();
     const options = editingModelOptions(model, optionValues);
     const selection = createModelSelection(provider.instanceId, model.slug, options);
-    try {
+    return await (async () => {
       const audioAttachments: ChatFileAttachment[] = [];
       for (const audio of musicAudio) {
         const minted = await createUploadUrl({
@@ -627,18 +635,20 @@ export function PremiereApp() {
       }
       setImages((current) => current.filter((image) => !sentImages.includes(image)));
       followTranscript.current = true;
-    } catch (failure) {
-      timelineChanges.cancel(messageId);
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "The request failed. Your draft has been kept.",
-      );
-      if (transcriptionPrompt) throw failure;
-    } finally {
-      inFlight.current = false;
-      setBusy(false);
-    }
+    })()
+      .catch((failure) => {
+        timelineChanges.cancel(messageId);
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "The request failed. Your draft has been kept.",
+        );
+        if (transcriptionPrompt) throw failure;
+      })
+      .finally(() => {
+        inFlight.current = false;
+        setBusy(false);
+      });
   }
 
   function accountSetup() {

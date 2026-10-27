@@ -22,7 +22,6 @@
     function quote(value) {
       return (
         '"' +
-        // eslint-disable-next-line no-control-regex -- ES3 has no JSON serializer; escape every control character.
         String(value).replace(/[\\"\x00-\x1f\u2028\u2029]/g, function (c) {
           return "\\u" + ("0000" + c.charCodeAt(0).toString(16)).slice(-4);
         }) +

@@ -18,6 +18,7 @@ export function AccessModeMenu({
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Register document listeners while the permissions menu is open.
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
@@ -90,6 +91,7 @@ export function SlashMenu({
   onHover: (index: number) => void;
 }) {
   const list = useRef<HTMLDivElement>(null);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Scroll the highlighted command into view in the DOM.
   useEffect(() => {
     list.current
       ?.querySelector<HTMLElement>(`[data-index="${highlighted}"]`)

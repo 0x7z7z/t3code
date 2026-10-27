@@ -163,6 +163,8 @@ svg {
   background: transparent;
   font-weight: 600;
   padding-left: 4px;
+  padding-right: 22px;
+  text-overflow: ellipsis;
 }
 [data-toolbar] select:hover:enabled {
   background: var(--surface);

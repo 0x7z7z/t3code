@@ -142,12 +142,17 @@ describe("installed Premiere connector", () => {
           });
           expect(params.input).toEqual([{ type: "text", text: "Inspect my cut." }]);
           expect(params.collaborationMode?.mode).toBe(interactionMode);
-          expect(params.collaborationMode?.settings.developer_instructions).toContain(
+          expect(params.collaborationMode?.settings.developer_instructions).toBeUndefined();
+          const axisContext = Object.entries(params.additionalContext ?? {})
+            .filter(([key]) => key.startsWith("axis_premiere_"))
+            .map(([, entry]) => entry);
+          expect(axisContext.map((entry) => entry.value).join("")).toContain(
             AXIS_ENVIRONMENT_PREAMBLE,
           );
-          expect(params.collaborationMode?.settings.developer_instructions).toContain(
-            "<collaboration_mode>",
-          );
+          for (const entry of axisContext) {
+            expect(entry.kind).toBe("application");
+            expect(new TextEncoder().encode(entry.value).byteLength).toBeLessThanOrEqual(4_000);
+          }
         }
         const outside = codexThreadRuntimeParams({
           environment,

@@ -48,7 +48,6 @@
       renderStatus();
     });
 
-  /* eslint-disable no-unused-vars -- ExtendScript requires bindings for ignored errors. */
   // prettier-ignore
   function timelineContext() {
     try {
@@ -140,7 +139,6 @@
       return "premiere:error";
     }
   }
-  /* eslint-enable no-unused-vars */
 
   function readContext(callback) {
     if (!window.__adobe_cep__) return callback(null);
@@ -752,7 +750,6 @@
 
   // Serialized into ES3 ExtendScript. Clone the entire sequence before adding:
   // ExtendScript exposes caption creation but no caption-track removal API.
-  /* eslint-disable no-unused-vars -- ES3 requires catch bindings, even for unsupported optional APIs. */
   function captionOperation(request, timeline) {
     var bin = null;
     var file = null;
@@ -875,7 +872,7 @@
             else placed = s.createCaptionTrack(item, 0) === true;
           }
         }
-      } catch (ignoredCaption) {
+      } catch (_ignoredCaption) {
         // Keep the imported source when this build cannot create caption tracks.
       }
       return (
@@ -903,19 +900,18 @@
       if (bin && request.action !== "undo") {
         try {
           if (bin.deleteBin() !== 0) cleanup = " Remove the Axis captions bin manually.";
-        } catch (ignoredCleanup) {
+        } catch (_ignoredCleanup) {
           cleanup = " Remove the Axis captions bin manually.";
         }
       }
       if (file && request.action === "add" && !cleanup) {
         try {
           file.remove();
-        } catch (ignoredFile) {}
+        } catch (_ignoredFile) {}
       }
       return "axis:error|" + encodeURIComponent(String(error).slice(0, 800) + cleanup);
     }
   }
-  /* eslint-enable no-unused-vars */
 
   function musicScript() {
     return (
@@ -1983,7 +1979,7 @@
     try {
       var environment = JSON.parse(window.__adobe_cep__.getHostEnvironment());
       return { premiere: environment.appVersion, cep: window.__adobe_cep__.getCurrentApiVersion() };
-    } catch (error) {
+    } catch (_error) {
       return { premiere: "unavailable", cep: "unavailable" };
     }
   }

@@ -50,6 +50,7 @@ export function TurnChanges({
                     ? "Checkpoint verification data is unavailable."
                     : (problem ?? (!checked ? "Checking the timeline checkpoint..." : null))));
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Revalidate the undo checkpoint against the live Premiere timeline.
   useEffect(() => {
     if (!connected || !latest || busy || record.restored || !record.checkpointId || !record.after)
       return;
@@ -78,29 +79,34 @@ export function TurnChanges({
   }, [connected, latest, busy, record]);
 
   async function undo() {
-    if (reason || !record.checkpointId || !record.signature || !record.checkpointSignature) return;
+    const { checkpointId, signature, checkpointSignature } = record;
+    if (reason || !checkpointId || !signature || !checkpointSignature) return;
     if (!confirm) {
       setConfirm(true);
       return;
     }
     setRestoring(true);
     onRestoring?.(true);
-    try {
+    return await (async () => {
       await restoreTimeline({
-        checkpointId: record.checkpointId,
+        checkpointId,
         sequenceId: record.before.sequenceId,
-        expectedSignature: record.signature,
-        checkpointSignature: record.checkpointSignature,
+        expectedSignature: signature,
+        checkpointSignature,
         turnNumber: record.turnNumber,
       });
       onRestored(record.messageId);
-    } catch (error) {
-      setProblem(error instanceof Error ? error.message : "Premiere could not restore this turn.");
-    } finally {
-      setRestoring(false);
-      onRestoring?.(false);
-      setConfirm(false);
-    }
+    })()
+      .catch((error) => {
+        setProblem(
+          error instanceof Error ? error.message : "Premiere could not restore this turn.",
+        );
+      })
+      .finally(() => {
+        setRestoring(false);
+        onRestoring?.(false);
+        setConfirm(false);
+      });
   }
 
   if (!record.changes.length && !record.error) return null;

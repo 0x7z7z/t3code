@@ -10,13 +10,15 @@ export function ClipButton({ name, actions }: { name: string; actions: TimelineA
     if (!clip || pending) return;
     setPending(true);
     setError(null);
-    try {
+    return await (async () => {
       await actions.select(clip);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "Could not select clip.");
-    } finally {
-      setPending(false);
-    }
+    })()
+      .catch((failure) => {
+        setError(failure instanceof Error ? failure.message : "Could not select clip.");
+      })
+      .finally(() => {
+        setPending(false);
+      });
   };
   return (
     <>

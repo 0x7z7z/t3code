@@ -37,9 +37,11 @@ export function useTurnChanges(
     )
       throw new Error("A later turn started before the after snapshot was captured.");
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Persist checkpoint receipts to browser storage.
   useEffect(() => {
     writeTurnChanges(localStorage, records);
   }, [records]);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Capture the host timeline when an externally streamed run finishes.
   useEffect(() => {
     for (const record of records) {
       if (record.threadId !== threadId || record.after || record.error) continue;

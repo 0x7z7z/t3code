@@ -96,6 +96,7 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 
 - [Axis, the editing agent](./docs/user/premiere.md) - a Premiere Pro extension with its MCP server and bridge included. Open **Window > Extensions > Axis** after installing.
 
+- [FAQ](./docs/user/faq.md)
 - [Install and first run](./docs/user/install.md)
 - [Permission modes](./docs/user/permission-modes.md)
 - [Keyboard shortcuts](./docs/user/keybindings.md)

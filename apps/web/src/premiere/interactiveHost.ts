@@ -107,6 +107,7 @@ export function useTimelineClips(context: PremiereContext | null): readonly Time
   const sequenceId = context?.sequenceId ?? "";
   const projectId = context?.projectDocumentId || context?.projectPath || "";
   const scope = JSON.stringify([context?.projectPath, context?.projectDocumentId, sequenceId]);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Subscribe to clip changes in the external Premiere sequence.
   useEffect(() => {
     if (!sequenceId || !isPremierePanel()) return;
     let disposed = false;
@@ -114,7 +115,7 @@ export function useTimelineClips(context: PremiereContext | null): readonly Time
     const refresh = async () => {
       if (reading) return;
       reading = true;
-      try {
+      return await (async () => {
         const packet = await requestTimelineAction("premiere.clips.request", {
           sequenceId,
           projectId,
@@ -128,11 +129,13 @@ export function useTimelineClips(context: PremiereContext | null): readonly Time
           return;
         const clips = parseClipIndex(packet.clips);
         if (clips) setIndex({ scope, clips });
-      } catch {
-        if (!disposed) setIndex(null);
-      } finally {
-        reading = false;
-      }
+      })()
+        .catch(() => {
+          if (!disposed) setIndex(null);
+        })
+        .finally(() => {
+          reading = false;
+        });
     };
     void refresh();
     const timer = setInterval(() => void refresh(), 15000);

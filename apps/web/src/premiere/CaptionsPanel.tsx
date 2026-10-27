@@ -100,7 +100,7 @@ export function CaptionsPanel({
     onBusy(true);
     setError(null);
     setNotice(null);
-    try {
+    return await (async () => {
       const packet = await requestTimelineAction("premiere.captions.request", {
         action,
         sequenceId: context.sequenceId,
@@ -162,13 +162,15 @@ export function CaptionsPanel({
             : `SRT imported into ${bin}. This Premiere build could not create a caption track. Drag the SRT from that bin onto the sequence at 00:00:00:00.`,
         );
       } else if (packet.status === "saved") setNotice("SRT saved.");
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Captions failed.");
-    } finally {
-      lock.current = false;
-      setBusy(false);
-      onBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        setError(problem instanceof Error ? problem.message : "Captions failed.");
+      })
+      .finally(() => {
+        lock.current = false;
+        setBusy(false);
+        onBusy(false);
+      });
   }
   return (
     <section data-captions-panel="" role="region" aria-label="Captions">

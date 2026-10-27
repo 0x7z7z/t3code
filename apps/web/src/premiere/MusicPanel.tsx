@@ -162,11 +162,13 @@ export function MusicPanel({
         if (libraryGeneration.current === generation) setIndexing(false);
       });
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Debounce filesystem indexing through the CEP music helper.
   useEffect(() => {
     if (!active || !root.trim() || indexedRoot.current === root) return;
     const timer = setTimeout(() => indexLibrary(), 400);
     return () => clearTimeout(timer);
   }, [root, active]);
+  // oxlint-disable-next-line t3code/react-effect-budget -- Invalidate asynchronous library reads when this panel unmounts.
   useEffect(
     () => () => {
       libraryGeneration.current++;
@@ -230,7 +232,7 @@ export function MusicPanel({
     setBusy(true);
     onBusy(true);
     setError("");
-    try {
+    return await (async () => {
       const snapshot = await requestTimelineSnapshot(false, context.sequenceId);
       if (
         snapshot.snapshot.projectId !== projectId ||
@@ -279,14 +281,16 @@ export function MusicPanel({
         cues,
       });
       keepReceipt(packet, { ...plan, cues }, target.index);
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Music placement failed.");
-    } finally {
-      setWaiting(null);
-      lock.current = false;
-      setBusy(false);
-      onBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        setError(problem instanceof Error ? problem.message : "Music placement failed.");
+      })
+      .finally(() => {
+        setWaiting(null);
+        lock.current = false;
+        setBusy(false);
+        onBusy(false);
+      });
   }
   const receivePlan = useEffectEvent(() => {
     if (!waiting || disabled || busy || indexing) return;
@@ -297,6 +301,7 @@ export function MusicPanel({
       setError("The agent finished without a matching music plan. Place music to try again.");
     }
   });
+  // oxlint-disable-next-line t3code/react-effect-budget -- Read the CEP plan handoff when the external planning run finishes.
   useEffect(() => {
     if (
       !waiting ||
@@ -313,7 +318,7 @@ export function MusicPanel({
     lock.current = true;
     setError("");
     setMessage("");
-    try {
+    return await (async () => {
       if (!onPlace) throw new Error("Connect an editing agent to place music.");
       if (!tracks.length) throw new Error("Choose a library containing indexed songs.");
       const snapshot = await requestTimelineSnapshot(false, context.sequenceId);
@@ -334,12 +339,14 @@ export function MusicPanel({
       await onPlace(
         `Use $axis-music-placement. Return a plan only; the panel will checkpoint and apply automatically. Do not call timeline-writing tools. Split the timed VO by subject, character or object and emotional changes, usually 30-90 seconds, never by elapsed time alone. Merge neighbouring subjects shorter than 28 seconds only when they share a theme and mood (for example three short fusion characters become one Fusions section); use an optional shared theme field when returning separate short subjects. One song per section, back to back, covering the entire scope except sponsors and occupied intervals. Infer each section's mood and energy from its meaning. Primary mood source: calm music for explanations; dark cinematic music for tension, danger, reveals, ominous lore and showdowns; hype music for intros, fights and phonk; sad music for genuine loss and reflection. Never use duplicate-review copies. Unsorted-review tracks are last resort. Catalogue duration, BPM, energy and brightness are secondary hints. Songs may recur, never in neighbouring sections including existing clips. Find each section's key VO moment (form-name reveal, transformation or decisive visual beat) from exact transcript timings and include keyTime in sequence seconds when there is clear evidence. Mark vocals:true only from catalogue tags or known lyrics; otherwise omit it. Never loop or overrun sources. The panel skips silence, starts long soft intros about 7 seconds before the loud part, and aligns measured drops to keyTime within source bounds. It computes bedDb=clamp(-38-integratedLUFS,-35,-25), with a default +12 dB intro swell over 8 seconds (up to 28 for soft openings), 3 second joins, and best-effort Hard Limiter for quiet/uneven songs or Lowpass for vocals at -28 to -30 dB. Swell may be disabled per section with swell:false. No ducking by default. The user said: "-29 is the best, -33 is way too quiet even with headphones." Prefer Nordic/epic dark for dragon villains, trailer metal for destroyers, melodic phonk for berserk-but-tender, stylish phonk for Goku Black, haunting violin for god-complex horror, aggressive phonk for Vegeta. Return one axis-music JSON fence: {version:1,requestId:${JSON.stringify(id)},cues:[{id,chapter,theme?,mood,energy:0.0,start,end,keyTime?,vocals?,swell?,track,sourceOffset,reason,fadeIn:1.5,fadeOut:1.5,baseDb:0,enabled:true,alternatives:[]}],silence:[]}. Mood and energy are required. Shorten fades for tiny sections. Use exact indexed paths. The checkpoint plus Undo all is the authorized single-click confirmation. Scope: ${JSON.stringify(scope)}. Target track: ${JSON.stringify(target)}. Timed VO: ${JSON.stringify(words.filter((w) => w.end > scope.start && w.start < scope.end))}. Indexed library: ${JSON.stringify(tracks.map(({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags, vocals, integratedLufs, firstAudible, loudPartStart, biggestDrop }) => ({ path, category, duration, tempo, catalogueEnergy, brightness, description, tags, vocals, integratedLufs, firstAudible, loudPartStart, biggestDrop })))}`,
       );
-    } catch (problem) {
-      setWaiting(null);
-      setError(problem instanceof Error ? problem.message : "Could not ask the music agent.");
-    } finally {
-      lock.current = false;
-    }
+    })()
+      .catch((problem) => {
+        setWaiting(null);
+        setError(problem instanceof Error ? problem.message : "Could not ask the music agent.");
+      })
+      .finally(() => {
+        lock.current = false;
+      });
   }
   async function swap(cue: MusicCue) {
     if (!result || lock.current || disabled) return;
@@ -347,7 +354,7 @@ export function MusicPanel({
     setBusy(true);
     onBusy(true);
     setError("");
-    try {
+    return await (async () => {
       const snapshot = await requestTimelineSnapshot(false, context.sequenceId);
       if (snapshot.signature !== result.undo.expectedSignature)
         throw new Error("The timeline changed. Inspect it before swapping.");
@@ -394,13 +401,15 @@ export function MusicPanel({
         { ...result.plan, cues: result.plan.cues.map((c) => (c.id === cue.id ? replacement : c)) },
         result.trackIndex,
       );
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Swap failed.");
-    } finally {
-      lock.current = false;
-      setBusy(false);
-      onBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        setError(problem instanceof Error ? problem.message : "Swap failed.");
+      })
+      .finally(() => {
+        lock.current = false;
+        setBusy(false);
+        onBusy(false);
+      });
   }
   async function undoAll() {
     if (!result || lock.current || disabled) return;
@@ -408,20 +417,22 @@ export function MusicPanel({
     setBusy(true);
     onBusy(true);
     setError("");
-    try {
+    return await (async () => {
       const packet = await request("undo", result.undo);
       if (packet.status !== "undone" || typeof packet.sequenceId !== "string")
         throw new Error("Missing restored sequence ID.");
       onRestored?.(packet.sequenceId);
       saveResult(null);
       setMessage("Opened the sequence from before music placement.");
-    } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Undo failed.");
-    } finally {
-      lock.current = false;
-      setBusy(false);
-      onBusy(false);
-    }
+    })()
+      .catch((problem) => {
+        setError(problem instanceof Error ? problem.message : "Undo failed.");
+      })
+      .finally(() => {
+        lock.current = false;
+        setBusy(false);
+        onBusy(false);
+      });
   }
   const blocked = disabled || busy || !!waiting;
   return (

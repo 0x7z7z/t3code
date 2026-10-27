@@ -102,6 +102,7 @@ export function VOCleanupPanel({
   const sequenceName = context?.sequenceName || "";
   const validKeep = mode === "breaths" || (/^\d+$/.test(keepMs) && Number(keepMs) <= 5000);
 
+  // oxlint-disable-next-line t3code/react-effect-budget -- Resolve the selected source against Premiere after the host or path changes.
   useEffect(() => {
     if (!sourceInput.path.trim() || !projectId || !sequenceId || placement) return;
     let cancelled = false;
@@ -146,14 +147,16 @@ export function VOCleanupPanel({
     lock.current = true;
     setBusy(true);
     setError("");
-    try {
+    return await (async () => {
       await work();
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "VO cleanup failed.");
-    } finally {
-      lock.current = false;
-      setBusy(false);
-    }
+    })()
+      .catch((failure) => {
+        setError(failure instanceof Error ? failure.message : "VO cleanup failed.");
+      })
+      .finally(() => {
+        lock.current = false;
+        setBusy(false);
+      });
   }
 
   async function choose(selection: "pick" | "selected") {

@@ -96,6 +96,7 @@ async function panelFixture(settingsOverride = {}) {
       window.__adobe_cep__.evalScript = callback;
     },
     runTimers: (delay) => {
+      // oxlint-disable-next-line unicorn/no-useless-spread -- Callbacks can schedule timers; run only the original snapshot.
       for (const [id, timer] of [...timers])
         if (timer.delay === delay) {
           timers.delete(id);

@@ -153,7 +153,7 @@ function createCommandBridge(options) {
     }
     try {
       return JSON.stringify(JSON.parse(result));
-    } catch (error) {
+    } catch (_error) {
       return JSON.stringify(
         result === "EvalScript error." || result.indexOf("Error") === 0
           ? { success: false, error: result }
