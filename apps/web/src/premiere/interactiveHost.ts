@@ -68,7 +68,9 @@ export function requestTimelineAction(
       () => finish("Premiere did not respond. Check the timeline before trying again.", {}),
       // Native caption import and Save dialogs can remain open for a while.
       type === "premiere.vo-cleanup.request"
-        ? 21660000
+        ? "action" in payload && payload.action === "run"
+          ? 21660000
+          : 125000
         : type === "premiere.music.request"
           ? 660000
           : type === "premiere.captions.request"

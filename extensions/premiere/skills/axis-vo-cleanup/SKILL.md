@@ -1,6 +1,6 @@
 ---
 name: axis-vo-cleanup
-description: Clean a chosen voice-over file with silence removal, breath attenuation, or both, preserving originals and leaving the Premiere timeline alone.
+description: Clean a chosen voice-over file with silence removal, breath attenuation, or both, preserving originals and optionally placing a checkpointed copy below the selected VO.
 ---
 
 # Axis VO cleanup
@@ -32,5 +32,26 @@ after silence removal. No automatic package installs.
 
 Read the JSON result and report the saved path, duration change and region count.
 Optional project-bin import belongs to the panel's explicit import action. This
-workflow never changes the timeline. Any later timeline replacement needs the
-normal preview, confirmation and Axis checkpoint/undo flow.
+CLI workflow never changes the timeline. The panel's **Import into timeline**
+checkbox and **Clean VO** action explicitly confirm placement on exactly one new
+track directly below the selected VO. Never overwrite existing tracks. Require a
+verified single mono or stereo mapping; refuse separate mono, surround, unknown
+mappings, retimed or reversed clips, and a locked VO track or audio track below it.
+Capture project, sequence, clip and track IDs plus timing at selection and refuse
+placement if the instance changed. Distinct instances of the same file are
+ambiguous. Explicitly linked mono channels with the same source and timing count
+as one instance; anchor the bottom selected channel.
+
+Use the existing Axis sequence checkpoint system before any timeline mutation.
+Verify source points with media type 2, placement start/end/in/out, and the full
+identity and timing of every existing audio/video clip. Restore the checkpoint
+automatically on any placement failure. **Undo placement** restores the verified
+checkpoint and original track layout, and refuses later timeline edits. Retain
+Undo until restoration is verified. The changed sequence and any added track
+remain in **Axis checkpoints**. Never retry a timed-out timeline mutation: tell
+the user to check the timeline and use Premiere Undo.
+
+WhisperX has a five-hour bound. The CLI supervises the worker and its descendants,
+stopping before CEP's six-hour timeout and removing reserved outputs and temporary
+files on failure. `--cancel-file <path>` stops gracefully when that file exists;
+`--timeout-seconds` can shorten the overall bound for testing. Never raise it.

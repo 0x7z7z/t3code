@@ -8,16 +8,51 @@ import argparse
 import csv
 import json
 import math
+import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 
 import numpy as np
 import soundfile as sf
 
 from axis_transcript import timed_words
+
+TRANSCRIBE_TIMEOUT_SECONDS = 18000
+JOB_TIMEOUT_SECONDS = 21540  # Leave a minute for cleanup before CEP's six-hour hard stop.
+
+
+def kill_tree(process):
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           capture_output=True, timeout=15, creationflags=subprocess.CREATE_NO_WINDOW)
+        finally:
+            if process.poll() is None:
+                process.kill()
+    else:
+        try:
+            # Let a worker unwind its WhisperX finally block before forcing its group closed.
+            process.send_signal(signal.SIGTERM)
+            process.communicate(timeout=15)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    if process.poll() is None:
+        process.kill()
+    process.communicate(timeout=15)
+
+
+def managed_process(command):
+    return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            encoding="utf-8", errors="replace",
+                            **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt"
+                               else {"start_new_session": True}))
 
 
 def measure_frames(source):
@@ -164,16 +199,23 @@ def load_words(filename, duration):
 
 def transcribe_words(source, directory):
     # Use Axis's existing WhisperX command and timing parser, on the post-silence audio.
-    result = subprocess.run([sys.executable, "-m", "whisperx", str(source), "--output_dir", str(directory),
+    process = managed_process([sys.executable, "-m", "whisperx", str(source), "--output_dir", str(directory),
                              "--output_format", "json", "--model", "medium.en", "--compute_type", "int8",
-                             "--batch_size", "8", "--device", "cpu"], capture_output=True,
-                            encoding="utf-8", errors="replace")
-    if result.returncode:
-        raise ValueError("WhisperX failed. Check Transcription setup in Axis Diagnostics. " + result.stderr[-500:])
+                             "--batch_size", "8", "--device", "cpu"])
+    try:
+        _, stderr = process.communicate(timeout=TRANSCRIBE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        kill_tree(process)
+        raise ValueError("WhisperX timed out. Cleanup stopped and its temporary files were removed.") from None
+    except BaseException:
+        kill_tree(process)
+        raise
+    if process.returncode:
+        raise ValueError("WhisperX failed. Check Transcription setup in Axis Diagnostics. " + stderr[-500:])
     return directory / (source.stem + ".json")
 
 
-def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None):
+def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None, job_id=None, workspace=None):
     source = Path(source).resolve(strict=True)
     if mode not in ("silence", "breaths", "both") or type(keep_ms) is not int or not 0 <= keep_ms <= 5000:
         raise ValueError("Choose silence, breaths or both, and 0-5000 ms retained silence")
@@ -182,7 +224,7 @@ def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None):
     folder = Path(output_dir).resolve() if output_dir else source.parent
     folder.mkdir(parents=True, exist_ok=True)
     # Exclusive creation reserves every output; even concurrent runs cannot overwrite files.
-    base = folder / (source.stem + "_AxisVO_" + uuid.uuid4().hex[:12])
+    base = folder / (source.stem + "_AxisVO_" + (job_id or uuid.uuid4().hex[:12]))
     reserved = []
 
     def reserve(suffix):
@@ -193,7 +235,7 @@ def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None):
         return filename
 
     try:
-        with tempfile.TemporaryDirectory(prefix="axis-vo-", dir=folder) as temporary:
+        with tempfile.TemporaryDirectory(prefix="axis-vo-", dir=workspace or folder) as temporary:
             temporary = Path(temporary)
             current = source
             try:
@@ -236,16 +278,83 @@ def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None):
         raise
 
 
+def supervise(command, timeout, cancel_file=None):
+    process = managed_process(command)
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            if cancel_file and cancel_file.exists():
+                raise ValueError("VO cleanup cancelled. Temporary files and unfinished outputs were removed.")
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ValueError("VO cleanup timed out. Temporary files and unfinished outputs were removed.")
+            try:
+                stdout, stderr = process.communicate(timeout=min(.25, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        if process.returncode:
+            raise ValueError(stderr.strip()[-1000:] or "VO cleanup failed.")
+        return stdout
+    except BaseException:
+        kill_tree(process)
+        raise
+
+
+def run_job(args):
+    source = args.input.resolve(strict=True)
+    folder = args.output_dir.resolve() if args.output_dir else source.parent
+    folder.mkdir(parents=True, exist_ok=True)
+    job_id = uuid.uuid4().hex
+    base = source.stem + "_AxisVO_" + job_id
+    outputs = [folder / (base + suffix) for suffix in
+               ("_SilenceRemoved.wav", "_NoBreaths.wav", "_breaths.csv")]
+    if any(p.exists() for p in outputs):
+        raise ValueError("Could not reserve unique cleanup outputs. Try again.")
+    # The supervisor owns the workspace and output names, so even a terminated
+    # worker or WhisperX descendant cannot bypass failure cleanup.
+    try:
+        with tempfile.TemporaryDirectory(prefix="axis-vo-job-", dir=folder) as workspace:
+            command = [sys.executable, str(Path(__file__).resolve()), "--worker", "--input", str(source),
+                       "--mode", args.mode, "--keep-ms", str(args.keep_ms), "--output-dir", str(folder),
+                       "--job-id", job_id, "--workspace", workspace]
+            if args.transcript:
+                command += ["--transcript", str(args.transcript)]
+            return supervise(command, args.timeout_seconds, args.cancel_file)
+    except BaseException:
+        for filename in outputs:
+            filename.unlink(missing_ok=True)
+        raise
+
+
 def main():
+    if os.name != "nt":
+        def stop(_signum, _frame):
+            raise KeyboardInterrupt("VO cleanup stopped")
+        signal.signal(signal.SIGTERM, stop)
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--mode", choices=("silence", "breaths", "both"), default="both")
     parser.add_argument("--keep-ms", type=int, default=50)
     parser.add_argument("--transcript", type=Path, help="Existing source word timings, breaths-only mode")
     parser.add_argument("--output-dir", type=Path, help="Test/artifact override; default is beside source")
+    parser.add_argument("--cancel-file", type=Path, help="Stop gracefully when this file exists")
+    parser.add_argument("--timeout-seconds", type=float, default=JOB_TIMEOUT_SECONDS)
+    parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--job-id", help=argparse.SUPPRESS)
+    parser.add_argument("--workspace", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     try:
-        print(json.dumps(cleanup(args.input, args.mode, args.keep_ms, args.transcript, args.output_dir)))
+        if not 0 < args.timeout_seconds <= JOB_TIMEOUT_SECONDS:
+            raise ValueError("Invalid cleanup deadline")
+        if args.worker:
+            print(json.dumps(cleanup(args.input, args.mode, args.keep_ms, args.transcript,
+                                     args.output_dir, args.job_id, args.workspace)))
+        else:
+            print(run_job(args), end="")
+    except FileNotFoundError:
+        print("Audio file not found.", file=sys.stderr)
+        sys.exit(1)
     except Exception as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

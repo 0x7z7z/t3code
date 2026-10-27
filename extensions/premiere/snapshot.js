@@ -13,7 +13,8 @@
     range,
     cutRange,
     rawResult,
-    checkpointKind
+    checkpointKind,
+    internalRollback
   ) {
     function result(value) {
       return rawResult ? value : "axis:" + json(value);
@@ -174,10 +175,10 @@
       return null;
     }
     function prefix(id) {
-      // Caption and music panels retain their own undo receipts. Keep these
+      // Caption, music and VO panels retain their own undo receipts. Keep these
       // clones out of automatic turn-checkpoint pruning.
       return (
-        (checkpointKind === "captions" ? "[Axis caption checkpoint " : checkpointKind === "music" ? "[Axis music checkpoint " : "[Axis checkpoint ") +
+        (checkpointKind === "captions" ? "[Axis caption checkpoint " : checkpointKind === "music" ? "[Axis music checkpoint " : checkpointKind === "vo" ? "[Axis VO checkpoint " : "[Axis checkpoint ") +
         id +
         "] "
       );
@@ -225,10 +226,13 @@
         }
         return result({ ok: true, removed: removed });
       }
-      var before = snapshot(original, true);
+      // Only a synchronous VO failure can skip reading a damaged after-state.
+      // Normal Undo still requires the exact signature, including later edits.
+      var rollingBack = action === "restore" && checkpointKind === "vo" && rawResult === true && internalRollback === true;
+      var before = rollingBack ? null : snapshot(original, true);
       if (action === "restore") {
         requireStandalone(original);
-        if (before.truncated || json(before) !== expected)
+        if (!rollingBack && (before.truncated || json(before) !== expected))
           fail("The timeline changed after this turn. Undo is unavailable.");
         var saved = find(checkpointId);
         if (!saved || String(saved.name).indexOf(prefix(originalId)) !== 0)
@@ -254,6 +258,12 @@
           // The restored version takes the original's place in the project panel.
           if (saved.projectItem.moveBin(home) === false)
             fail("Premiere refused to move the restored sequence to its original bin.");
+          if (
+            !app.project.activeSequence ||
+            String(app.project.activeSequence.sequenceID) !== String(saved.sequenceID) ||
+            json(snapshot(saved, false)) !== checkpoint
+          )
+            fail("The restored checkpoint did not match the saved timeline.");
         } catch (restoreError) {
           var recovery = [
             function () {
@@ -277,7 +287,7 @@
                 String(app.project.activeSequence.sequenceID) !== originalId
               )
                 fail("Could not reopen the current sequence.");
-            },
+            }
           ];
           var recoveryErrors = [];
           for (var r = 0; r < recovery.length; r++) {

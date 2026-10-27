@@ -122,7 +122,7 @@ def test_project49_reproduction():
     extras = sum(not any(float(r["start_s"]) - .06 <= mark <= float(r["end_s"]) for mark in marks) for r in first)
     assert hits == 13
     assert extras == 0
-    assert abs(len(rows) - 136) <= 2
+    assert len(rows) == 136
     assert len(rows) == len(expected)
     max_delta = max(abs(float(row[key]) - float(ref[key])) for row, ref in zip(rows, expected) for key in ("start_s", "end_s"))
     assert max_delta <= .015
@@ -145,3 +145,137 @@ def test_project49_reproduction():
                "sampleCount": offset, "outsideRegionsBitIdentical": True, **result}
     (output / "project49-result.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary))
+
+
+@pytest.mark.parametrize("failure", ["timeout", "cancel"])
+def test_transcription_stops_its_process_tree_and_removes_outputs(tmp_path, monkeypatch, failure):
+    import subprocess
+    import axis_vo_cleanup as module
+    source = tmp_path / "voice.wav"
+    sf.write(source, np.ones(8000) * .1, 8000)
+    stopped = []
+
+    class Process:
+        returncode = None
+
+        def communicate(self, timeout):
+            assert timeout == module.TRANSCRIBE_TIMEOUT_SECONDS
+            if failure == "timeout":
+                raise subprocess.TimeoutExpired("whisperx", timeout)
+            raise KeyboardInterrupt("cancel")
+
+    process = Process()
+    monkeypatch.setattr(module, "managed_process", lambda _: process)
+    monkeypatch.setattr(module, "kill_tree", stopped.append)
+    error = ValueError if failure == "timeout" else KeyboardInterrupt
+    with pytest.raises(error):
+        cleanup(source)
+    assert stopped == [process]
+    assert list(tmp_path.iterdir()) == [source]
+
+
+@pytest.mark.parametrize("failure", ["timeout", "cancel", "worker-error"])
+def test_supervisor_removes_reserved_outputs_and_workspace_even_if_worker_cannot_unwind(tmp_path, monkeypatch, failure):
+    import argparse
+    import axis_vo_cleanup as module
+    source = tmp_path / "voice.wav"
+    sf.write(source, np.ones(8000) * .1, 8000)
+    original = source.read_bytes()
+    unrelated = tmp_path / "other_AxisVO_existing.wav"
+    unrelated.write_bytes(b"keep")
+    stopped = []
+    commands = []
+
+    class Process:
+        pid = 123
+        returncode = None
+
+        def communicate(self, timeout):
+            if failure == "worker-error":
+                self.returncode = 1
+                return "", "worker failed"
+            raise module.subprocess.TimeoutExpired("worker", timeout)
+
+    process = Process()
+    def launch(command):
+        commands.append(command)
+        token = command[command.index("--job-id") + 1]
+        workspace = Path(command[command.index("--workspace") + 1])
+        (workspace / "unfinished-temp").write_bytes(b"temp")
+        for suffix in ("_SilenceRemoved.wav", "_NoBreaths.wav", "_breaths.csv"):
+            (tmp_path / ("voice_AxisVO_" + token + suffix)).write_bytes(b"reserved")
+        return process
+
+    monkeypatch.setattr(module, "managed_process", launch)
+    monkeypatch.setattr(module, "kill_tree", stopped.append)
+    moments = iter([0, 0, 2])
+    monkeypatch.setattr(module.time, "monotonic", lambda: next(moments))
+    stop_file = tmp_path / "stop"
+    if failure == "cancel":
+        stop_file.touch()
+    args = argparse.Namespace(input=source, output_dir=tmp_path, mode="both", keep_ms=50,
+                              transcript=None, timeout_seconds=1, cancel_file=stop_file)
+    with pytest.raises(ValueError, match={"timeout": "timed out", "cancel": "cancelled", "worker-error": "worker failed"}[failure]):
+        module.run_job(args)
+    assert stopped == [process]
+    assert source.read_bytes() == original
+    assert unrelated.read_bytes() == b"keep"
+    assert set(tmp_path.iterdir()) == {source, unrelated} | ({stop_file} if failure == "cancel" else set())
+    assert "--worker" in commands[0]
+
+
+def test_cli_supervisor_success_and_missing_file(tmp_path):
+    import subprocess
+    import sys
+    import axis_vo_cleanup as module
+    source = tmp_path / "voice.wav"
+    sf.write(source, np.ones(8000) * .1, 8000)
+    command = [sys.executable, module.__file__, "--input", str(source), "--mode", "silence"]
+    completed = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert Path(result["outputPath"]).is_file()
+    assert not list(tmp_path.glob("axis-vo-*"))
+    source.unlink()
+    missing = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    assert missing.returncode == 1
+    assert missing.stderr.strip() == "Audio file not found."
+
+
+def test_supervisor_really_stops_a_worker_and_its_child(tmp_path):
+    import sys
+    import axis_vo_cleanup as module
+    worker = tmp_path / "worker.py"
+    # A child writing readiness proves the descendant was spawned before cancellation.
+    worker.write_text(
+        "import subprocess, sys, threading\n"
+        "from pathlib import Path\n"
+        "child = subprocess.Popen([sys.executable, '-c', "
+        "'import sys; print(\"ready\", flush=True); sys.stdin.read()'], stdin=subprocess.PIPE, stdout=subprocess.PIPE)\n"
+        "child.stdout.readline()\n"
+        "Path(sys.argv[1]).write_text(str(child.pid))\n"
+        "Path(sys.argv[2]).touch()\n"
+        "threading.Event().wait()\n"
+    )
+    pid_file, stop_file = tmp_path / "pid", tmp_path / "stop"
+    with pytest.raises(ValueError, match="cancelled"):
+        module.supervise([sys.executable, str(worker), str(pid_file), str(stop_file)], 15, stop_file)
+    pid = int(pid_file.read_text())
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        handle = kernel.OpenProcess(0x100000, False, pid)
+        if handle:
+            try:
+                assert kernel.WaitForSingleObject(handle, 0) == 0
+            finally:
+                kernel.CloseHandle(handle)
+    else:
+        # An orphaned dead process may await init's reaper; it must not still be running.
+        stat = Path("/proc") / str(pid) / "stat"
+        assert not stat.exists() or stat.read_text().split()[2] == "Z"

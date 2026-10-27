@@ -62,7 +62,12 @@ async function panelFixture(settingsOverride = {}) {
             ? os
             : name.endsWith("transcript-handoff.cjs")
               ? require("./transcript-handoff.cjs")
-              : runtime,
+              : name.endsWith("vo-cleanup.cjs")
+                ? {
+                    operation: (data, _directory, evaluate, options) =>
+                      require("./vo-cleanup.cjs").operation(data, __dirname, evaluate, options),
+                  }
+                : runtime,
     setInterval: (callback, delay) => {
       intervals.set(++timerId, { callback, delay });
       return timerId;
@@ -1976,4 +1981,30 @@ test("QE joins preserve the unfaded swell envelope and cap the default three-sec
     assert.equal(host.writes[3].value, 0.14 * Math.pow(10, -15 / 20));
     assert.equal(host.writes.at(-1).value, 0);
   }
+});
+
+test("a lost VO callback releases the CEP busy lock and late replies cannot revive it", async (t) => {
+  const f = await panelFixture();
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let late;
+  f.setEvalScript((script, callback) => {
+    parse(script, { ecmaVersion: 3 });
+    late = callback;
+  });
+  f.send({ type: "premiere.vo-cleanup.request", requestId: "lost", action: "selected" });
+  f.send({ type: "premiere.vo-cleanup.request", requestId: "busy", action: "selected" });
+  assert.match(f.messages.at(-1).packet.error, /operation is running/);
+  t.mock.timers.tick(120001);
+  await new Promise(setImmediate);
+  assert.equal(f.messages.at(-1).packet.requestId, "lost");
+  assert.match(f.messages.at(-1).packet.error, /did not respond/);
+  const count = f.messages.length;
+  late("axis:vo|source|late.wav");
+  await new Promise(setImmediate);
+  assert.equal(f.messages.length, count);
+  f.setEvalScript((_script, callback) => callback("axis:vo|source|"));
+  f.send({ type: "premiere.vo-cleanup.request", requestId: "next", action: "selected" });
+  await new Promise(setImmediate);
+  assert.equal(f.messages.at(-1).packet.requestId, "next");
+  assert.equal(f.messages.at(-1).packet.ok, true);
 });
