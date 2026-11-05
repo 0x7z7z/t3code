@@ -53,6 +53,88 @@ function timelineAnchor() {
   };
 }
 
+it("shows live steps and time left, and Cancel ends the run without an error", async () => {
+  await page.viewport(440, 900);
+  localStorage.removeItem("axis.voCleanup.secondsPerAudioSecond.sandwich");
+  const props = setup();
+  const run = host.request.getMockImplementation()!;
+  let stop: (reason: Error) => void = () => undefined;
+  const state = {
+    steps: ["Removing silence", "Reading the words", "Lowering breaths", "Removing silence again"],
+    index: 1,
+    stepPercent: 43.7,
+    percent: 44.5,
+    audioSeconds: 1281,
+  };
+  host.request.mockImplementation(async (type, payload) => {
+    if (payload.action === "progress") return { progress: state };
+    if (payload.action === "cancel") {
+      stop(new Error("VO cleanup cancelled. Temporary files and unfinished outputs were removed."));
+      return { cancelling: true };
+    }
+    if (payload.action === "run")
+      return new Promise((_resolve, reject) => {
+        stop = reject;
+      });
+    return run(type, payload);
+  });
+  await using screen = await render(<VOCleanupPanel {...props} />);
+  await screen.getByRole("textbox", { name: "Audio file" }).fill("D:/Film/VO.wav");
+  await screen.getByRole("combobox", { name: "Remove" }).selectOptions("sandwich");
+  await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
+  await expect
+    .element(screen.getByText("Reading the words 43%"))
+    .toHaveAttribute("aria-current", "step");
+  await expect.element(screen.getByText("✓ Removing silence")).toBeVisible();
+  await expect
+    .element(screen.getByText("Lowering breaths"))
+    .toHaveAttribute("data-step", "waiting");
+  await expect
+    .element(screen.getByRole("progressbar", { name: "Clean VO progress" }))
+    .toHaveAttribute("value", "44.5");
+  await expect.element(screen.getByText(/elapsed/)).toBeVisible();
+  await screen.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect.element(screen.getByText(/VO cleanup cancelled/)).toBeVisible();
+  await expect.element(screen.getByRole("progressbar")).not.toBeInTheDocument();
+  await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
+});
+
+it("saves a finished run's speed and uses it for the next estimate", async () => {
+  await page.viewport(440, 900);
+  localStorage.setItem("axis.voCleanup.secondsPerAudioSecond.both", "1");
+  const props = setup();
+  const run = host.request.getMockImplementation()!;
+  let finish: (value: object) => void = () => undefined;
+  host.request.mockImplementation(async (type, payload) => {
+    if (payload.action === "progress")
+      return {
+        progress: {
+          steps: ["Removing silence", "Reading the words", "Lowering breaths"],
+          index: 0,
+          stepPercent: null,
+          percent: 0,
+          audioSeconds: 600,
+        },
+      };
+    if (payload.action === "run") {
+      const output = await run(type, payload);
+      return new Promise((resolve) => {
+        finish = () => resolve(output);
+      });
+    }
+    return run(type, payload);
+  });
+  await using screen = await render(<VOCleanupPanel {...props} />);
+  await screen.getByRole("textbox", { name: "Audio file" }).fill("D:/Film/VO.wav");
+  await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
+  await expect.element(screen.getByText(/About 10 min left/)).toBeVisible();
+  finish({});
+  await vi.waitFor(() =>
+    expect(localStorage.getItem("axis.voCleanup.secondsPerAudioSecond.both")).not.toBe("1"),
+  );
+  localStorage.removeItem("axis.voCleanup.secondsPerAudioSecond.both");
+});
+
 it("auto-anchors Browse and typed paths, and places the fourth mode at the returned current location", async () => {
   await page.viewport(440, 900);
   const props = setup();
@@ -168,9 +250,11 @@ it("cleans both steps at 440px, preserves the source choice and offers explicit 
     .element(screen.getByRole("textbox", { name: "Cleaned audio" }))
     .toHaveValue("D:/Film/VO_AxisVO_123_NoBreaths.wav");
   expect(
-    host.request.mock.calls.map((call) => call[1].action).filter((action) => action !== "resolve"),
+    host.request.mock.calls
+      .map((call) => call[1].action)
+      .filter((action) => action !== "resolve" && action !== "progress"),
   ).toEqual(["pick", "run"]);
-  expect(host.request).toHaveBeenLastCalledWith("premiere.vo-cleanup.request", {
+  expect(host.request).toHaveBeenCalledWith("premiere.vo-cleanup.request", {
     action: "run",
     path: "D:/Film/VO.wav",
     mode: "both",
@@ -198,7 +282,7 @@ it("chooses a project item and runs either individual step with retained-silence
   await screen.getByRole("spinbutton", { name: "Keep silence (ms)" }).fill("80");
   await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
   await expect.element(screen.getByRole("button", { name: "Clean VO", exact: true })).toBeEnabled();
-  expect(host.request).toHaveBeenLastCalledWith(
+  expect(host.request).toHaveBeenCalledWith(
     "premiere.vo-cleanup.request",
     expect.objectContaining({ mode: "silence", keepMs: 80 }),
   );
@@ -208,7 +292,7 @@ it("chooses a project item and runs either individual step with retained-silence
     .not.toBeInTheDocument();
   await screen.getByRole("button", { name: "Clean VO", exact: true }).click();
   await expect.element(screen.getByRole("button", { name: "Clean VO", exact: true })).toBeEnabled();
-  expect(host.request).toHaveBeenLastCalledWith(
+  expect(host.request).toHaveBeenCalledWith(
     "premiere.vo-cleanup.request",
     expect.objectContaining({ mode: "breaths" }),
   );

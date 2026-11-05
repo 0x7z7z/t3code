@@ -97,6 +97,14 @@ The CSV uses the breath-cleaned intermediate's timing.
 to **Axis VO cleanup**; you can also import after processing. Open a sequence in
 the intended project to enable import. The original files are preserved.
 
+While it runs, the panel shows each step, a progress bar, the elapsed time and the
+time left. The percentage while WhisperX reads the words comes from WhisperX, moves
+in jumps, and pauses at 80% while WhisperX finishes word timings.
+Time left appears once it can be worked out; after your first finished run of a mode,
+Axis also uses that run's speed on this PC. If nothing changes for 5 minutes you get a warning, and
+the job keeps running. **Cancel** stops Python and WhisperX and deletes that run's
+unfinished files. The source is never touched.
+
 **Import into timeline** finds the source file on the active sequence, including
 files chosen with Browse or a pasted path. If there are several instances, select
 the one to use and choose **Use selected clip**. Axis places the result on a new

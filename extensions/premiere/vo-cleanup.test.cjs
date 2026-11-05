@@ -103,6 +103,7 @@ test("VO bridge validates settings and passes a literal file path to the Python 
     "50",
   ]);
   assert.equal(calls.at(-1).args[7], "--cancel-file");
+  assert.equal(calls.at(-1).args[9], "--progress-file");
   assert.equal(fs.existsSync(path.dirname(calls.at(-1).args[8])), false);
   assert.equal(calls.at(-1).options.windowsHide, true);
   assert.equal(fs.readFileSync(source, "utf8"), "source bytes");
@@ -110,6 +111,43 @@ test("VO bridge validates settings and passes a literal file path to the Python 
     await assert.rejects(operation({ ...request, ...fields }, __dirname), /Choose/);
   await operation({ ...request, mode: "sandwich", keepMs: 80 }, __dirname);
   assert.deepEqual(calls.at(-1).args.slice(3, 7), ["--mode", "sandwich", "--keep-ms", "80"]);
+});
+
+test("VO bridge reports progress and cancels only the running job", async (t) => {
+  using temp = fs.mkdtempDisposableSync(path.join(os.tmpdir(), "axis-vo-progress-"));
+  const source = path.join(temp.path, "voice.wav");
+  fs.writeFileSync(source, "source bytes");
+  assert.deepEqual(await operation({ action: "progress" }, __dirname), {
+    ok: true,
+    progress: null,
+  });
+  assert.equal((await operation({ action: "cancel" }, __dirname)).cancelling, false);
+  let finish;
+  let args;
+  const launched = new Promise((resolve) => {
+    t.mock.method(child, "execFile", (_binary, called, _options, callback) => {
+      if (called.join(" ").includes('"pydub"')) return callback(null, "", "");
+      if (called.includes("-c"))
+        return callback(null, JSON.stringify({ path: "python-test", whisperx: true }));
+      args = called;
+      finish = callback;
+      resolve();
+    });
+  });
+  const run = operation({ action: "run", path: source, mode: "both", keepMs: 50 }, __dirname);
+  await launched;
+  assert.equal((await operation({ action: "progress" }, __dirname)).progress, null);
+  const state = { steps: ["Removing silence"], index: 0, stepPercent: null, percent: 0 };
+  fs.writeFileSync(args[args.indexOf("--progress-file") + 1], JSON.stringify(state));
+  assert.deepEqual((await operation({ action: "progress" }, __dirname)).progress, state);
+  assert.equal((await operation({ action: "cancel" }, __dirname)).cancelling, true);
+  assert.equal(fs.existsSync(args[args.indexOf("--cancel-file") + 1]), true);
+  finish(null, JSON.stringify({ outputPath: "clean.wav", regions: 0 }), "");
+  await run;
+  assert.deepEqual(await operation({ action: "progress" }, __dirname), {
+    ok: true,
+    progress: null,
+  });
 });
 
 test("VO bridge reports Python, transcription, and malformed-output failures", async (t) => {

@@ -146,6 +146,42 @@ svg {
   border-radius: 6px;
   padding: 12px;
 }
+[data-vo-progress] {
+  display: grid;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+[data-vo-progress] progress {
+  width: 100%;
+  height: 8px;
+}
+[data-vo-progress] p {
+  margin: 0;
+}
+[data-vo-progress] ol {
+  display: grid;
+  gap: 4px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+[data-vo-progress] [data-step="waiting"],
+[data-vo-progress] [data-step="done"] {
+  color: var(--muted);
+}
+[data-vo-progress] [data-step="current"] {
+  font-weight: 600;
+}
+[data-vo-progress] [data-vo-stuck] {
+  color: var(--danger);
+}
+[data-vo-progress] button {
+  justify-self: start;
+}
 [data-vo-cleanup] [role="alert"] {
   color: var(--danger);
 }

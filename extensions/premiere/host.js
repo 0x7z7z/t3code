@@ -1615,7 +1615,9 @@
           origin
         );
     }
-    var readOnly = data.action === "resolve";
+    // Progress and Cancel must get through while a cleanup holds the lock.
+    var readOnly =
+      data.action === "resolve" || data.action === "progress" || data.action === "cancel";
     if (voCleanupBusy && !readOnly)
       return reply({ ok: false, error: "A VO cleanup operation is running." });
     if (!window.__adobe_cep__)

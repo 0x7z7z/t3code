@@ -39,6 +39,80 @@ interface Placement {
   message: string;
 }
 
+interface CleanupProgress {
+  steps: string[];
+  index: number;
+  stepPercent: number | null;
+  percent: number;
+  audioSeconds: number | null;
+}
+
+interface CleanupJob {
+  startedAt: number;
+  finishStep: string | null;
+  secondsPerAudioSecond: number | null;
+}
+
+const STUCK_MS = 5 * 60 * 1000;
+const SPEED_KEY = "axis.voCleanup.secondsPerAudioSecond.";
+
+function parseProgress(value: unknown): CleanupProgress | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Partial<CleanupProgress>;
+  if (
+    !Array.isArray(data.steps) ||
+    !data.steps.every((step) => typeof step === "string") ||
+    !Number.isInteger(data.index) ||
+    data.index! < 0 ||
+    data.index! >= data.steps.length ||
+    typeof data.percent !== "number" ||
+    !Number.isFinite(data.percent)
+  )
+    return null;
+  return {
+    steps: data.steps,
+    index: data.index!,
+    stepPercent: typeof data.stepPercent === "number" ? data.stepPercent : null,
+    percent: Math.min(100, Math.max(0, data.percent)),
+    audioSeconds: typeof data.audioSeconds === "number" ? data.audioSeconds : null,
+  };
+}
+
+// Browser storage can be unavailable, and an estimate is never worth failing a run.
+function savedSpeed(mode: string) {
+  try {
+    const value = Number(localStorage.getItem(SPEED_KEY + mode));
+    return Number.isFinite(value) && value > 0 ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSpeed(mode: string, value: number) {
+  try {
+    if (Number.isFinite(value) && value > 0) localStorage.setItem(SPEED_KEY + mode, String(value));
+  } catch {
+    // The next run shows no estimate until its own percentage arrives.
+  }
+}
+
+function timeLeftMs(progress: CleanupProgress | null, elapsedMs: number, speed: number | null) {
+  if (!progress) return null;
+  if (progress.percent >= 10) return (elapsedMs * (100 - progress.percent)) / progress.percent;
+  if (speed === null || progress.audioSeconds === null) return null;
+  const left = speed * progress.audioSeconds * 1000 - elapsedMs;
+  return left > 0 ? left : null;
+}
+
+function clock(ms: number) {
+  const seconds = Math.floor(Math.max(0, ms) / 1000);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function timeLeftLabel(ms: number) {
+  return ms < 60000 ? "Less than a minute left" : `About ${Math.ceil(ms / 60000)} min left`;
+}
+
 function parseAnchor(value: unknown): TimelineAnchor | null {
   if (!value || typeof value !== "object") return null;
   const data = value as Partial<TimelineAnchor>;
@@ -95,6 +169,13 @@ export function VOCleanupPanel({
   const [imported, setImported] = useState(false);
   const [placementMessage, setPlacementMessage] = useState("");
   const [resultProject, setResultProject] = useState("");
+  const [job, setJob] = useState<CleanupJob | null>(null);
+  const [progress, setProgress] = useState<CleanupProgress | null>(null);
+  const [now, setNow] = useState(0);
+  const [stuck, setStuck] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [notice, setNotice] = useState("");
   const lock = useRef(false);
   const projectId = context?.projectDocumentId || context?.projectPath || "";
   const sequenceId = context?.sequenceId || "";
@@ -141,6 +222,46 @@ export function VOCleanupPanel({
   }, [sourceInput, projectId, sequenceId, projectName, sequenceName, placement]);
   const currentAnchor =
     anchor?.projectId === projectId && anchor.sequenceId === sequenceId ? anchor : null;
+
+  // oxlint-disable-next-line t3code/react-effect-budget -- Poll the external cleanup job while it runs.
+  useEffect(() => {
+    if (!job) return;
+    let disposed = false;
+    let reading = false;
+    let lastSeen = "";
+    let lastChange = Date.now();
+    const poll = () => {
+      if (reading) return;
+      reading = true;
+      void requestTimelineAction("premiere.vo-cleanup.request", { action: "progress" })
+        .then((packet) => {
+          if (disposed) return;
+          const found = parseProgress("progress" in packet ? packet.progress : null);
+          if (!found) return;
+          setProgress(found);
+          const seen = JSON.stringify([found.index, found.stepPercent]);
+          if (seen !== lastSeen) {
+            lastSeen = seen;
+            lastChange = Date.now();
+          }
+        })
+        // A missed poll only delays the display. The run itself reports any failure.
+        .catch(() => undefined)
+        .finally(() => {
+          reading = false;
+        });
+    };
+    poll();
+    const timer = setInterval(() => {
+      setNow(Date.now());
+      setStuck(Date.now() - lastChange > STUCK_MS);
+      poll();
+    }, 1000);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, [job]);
 
   async function action(work: () => Promise<void>) {
     if (lock.current) return;
@@ -252,30 +373,74 @@ export function VOCleanupPanel({
     await action(async () => {
       const targetAnchor = toTimeline ? currentAnchor : null;
       const targetProject = targetAnchor?.projectId || projectId;
+      const startedAt = Date.now();
       setResult(null);
       setImported(false);
       setPlacement(null);
       setPlacementMessage("");
-      const packet = await requestTimelineAction("premiere.vo-cleanup.request", {
-        action: "run",
-        path: source.trim(),
-        mode,
-        keepMs: mode === "breaths" ? 50 : Number(keepMs),
+      setNotice("");
+      setProgress(null);
+      setStuck(false);
+      setFinishing(false);
+      setCancelling(false);
+      setNow(startedAt);
+      setJob({
+        startedAt,
+        finishStep:
+          targetAnchor && targetProject
+            ? "Placing on timeline"
+            : importResult && targetProject
+              ? "Importing into project"
+              : null,
+        secondsPerAudioSecond: savedSpeed(mode),
       });
-      const output = parseResult(packet);
-      setResult(output);
-      setResultProject(targetProject);
-      if (targetAnchor && targetProject) {
-        try {
-          await place(output.outputPath, targetProject, targetAnchor, mode === "breaths");
-        } catch (failure) {
-          setAnchor(null);
-          setToTimeline(false);
-          throw failure;
-        }
-      } else if (importResult && targetProject) await importFile(output.outputPath, targetProject);
+      return await (async () => {
+        const packet = await requestTimelineAction("premiere.vo-cleanup.request", {
+          action: "run",
+          path: source.trim(),
+          mode,
+          keepMs: mode === "breaths" ? 50 : Number(keepMs),
+        });
+        const output = parseResult(packet);
+        saveSpeed(mode, (Date.now() - startedAt) / 1000 / output.beforeSeconds);
+        setResult(output);
+        setResultProject(targetProject);
+        setFinishing(true);
+        if (targetAnchor && targetProject) {
+          try {
+            await place(output.outputPath, targetProject, targetAnchor, mode === "breaths");
+          } catch (failure) {
+            setAnchor(null);
+            setToTimeline(false);
+            throw failure;
+          }
+        } else if (importResult && targetProject)
+          await importFile(output.outputPath, targetProject);
+      })()
+        .catch((failure: unknown) => {
+          if (!(failure instanceof Error) || !failure.message.startsWith("VO cleanup cancelled"))
+            throw failure;
+          setNotice(failure.message);
+        })
+        .finally(() => setJob(null));
     });
   }
+  async function cancel() {
+    setCancelling(true);
+    await requestTimelineAction("premiere.vo-cleanup.request", { action: "cancel" }).catch(
+      (failure: unknown) => {
+        setCancelling(false);
+        setError(failure instanceof Error ? failure.message : "Could not cancel VO cleanup.");
+      },
+    );
+  }
+
+  const elapsedMs = job ? Math.max(0, now - job.startedAt) : 0;
+  const leftMs =
+    job && !finishing ? timeLeftMs(progress, elapsedMs, job.secondsPerAudioSecond) : null;
+  const stepLabels = [...(progress?.steps ?? []), ...(job?.finishStep ? [job.finishStep] : [])];
+  const currentStep = finishing ? (progress?.steps.length ?? 0) : (progress?.index ?? 0);
+  const barPercent = finishing ? 100 : (progress?.percent ?? 0);
 
   return (
     <section data-vo-cleanup="" aria-label="VO cleanup" aria-busy={busy}>
@@ -371,7 +536,53 @@ export function VOCleanupPanel({
           Clean VO
         </button>
       </fieldset>
-      {busy ? <p role="status">Working on your VO. Keep Axis open until it finishes.</p> : null}
+      {job ? (
+        <div data-vo-progress="" role="status">
+          <progress
+            aria-label="Clean VO progress"
+            max={100}
+            {...(barPercent > 0 ? { value: barPercent } : {})}
+          />
+          {stepLabels.length ? (
+            <ol>
+              {stepLabels.map((label, index) => (
+                <li
+                  key={label}
+                  data-step={
+                    index < currentStep ? "done" : index === currentStep ? "current" : "waiting"
+                  }
+                  aria-current={index === currentStep ? "step" : undefined}
+                >
+                  {index < currentStep ? "✓ " : ""}
+                  {label}
+                  {index === currentStep && !finishing && progress?.stepPercent != null
+                    ? ` ${Math.floor(progress.stepPercent)}%`
+                    : ""}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p>Starting...</p>
+          )}
+          <p>
+            {clock(elapsedMs)} elapsed
+            {leftMs !== null ? `. ${timeLeftLabel(leftMs)}` : ""}
+          </p>
+          {stuck ? (
+            <p data-vo-stuck="">
+              No progress for 5 minutes. Axis is still running it, and you can keep waiting or
+              cancel.
+            </p>
+          ) : null}
+          {finishing ? null : (
+            <button type="button" disabled={cancelling} onClick={() => void cancel()}>
+              {cancelling ? "Cancelling..." : "Cancel"}
+            </button>
+          )}
+          <p>Keep Axis open until it finishes.</p>
+        </div>
+      ) : null}
+      {notice ? <p role="status">{notice}</p> : null}
       {result ? (
         <div data-vo-result="" role="status">
           <strong>

@@ -85,7 +85,7 @@ def test_fourth_mode_uses_post_silence_timings_and_keeps_intermediates(tmp_path,
         calls.append((current, keep_ms, words))
         remove(current, destination, keep_ms, words)
 
-    def transcribe(current, directory):
+    def transcribe(current, directory, _progress):
         assert current.name.endswith("_SilenceRemoved.wav")
         filename = directory / "words.json"
         filename.write_text(json.dumps({"words": [{"word": "She.", "start": .1, "end": .4}]}))
@@ -112,7 +112,7 @@ def test_final_silence_pass_closes_a_lowered_breath_gap(tmp_path, monkeypatch):
     sf.write(source, np.r_[vowel, fricative_noise(4800, sr, -39), vowel], sr)
     seen = []
 
-    def transcribe(current, directory):
+    def transcribe(current, directory, _progress):
         seen.append(current)
         filename = directory / "words.json"
         filename.write_text(json.dumps({"words": [
@@ -179,7 +179,7 @@ def test_pipeline_unique_outputs_and_post_silence_transcription(tmp_path, monkey
     original = source.read_bytes()
     seen = []
 
-    def transcribe(current, directory):
+    def transcribe(current, directory, _progress):
         seen.append((current, sf.info(current).duration))
         filename = directory / "words.json"
         filename.write_text(json.dumps({"words": [{"word": "Hello.", "start": 0, "end": .5}]}))
@@ -273,6 +273,53 @@ def test_project49_reproduction():
     print(json.dumps(summary))
 
 
+def test_whisperx_percent_folds_transcription_then_alignment():
+    import axis_vo_cleanup as module
+    assert module.whisperx_percent("loading model\n", None, False) == (None, None, False)
+    percent, raw, aligning = module.whisperx_percent("Progress: 40.00%...\nProgress: 100.00%...\n", None, False)
+    assert (percent, raw, aligning) == (80, 100, False)
+    percent, raw, aligning = module.whisperx_percent("Progress: 50.00%...\n", raw, aligning)
+    assert (percent, aligning) == (80, True)
+    assert module.whisperx_percent("Progress: 100.00%...\n", raw, aligning)[0] == 80
+    assert module.whisperx_percent("Progress: 10.00%...\nProgress: 20.00%...\n", None, False)[0] == 16
+
+
+def test_progress_reports_each_step_and_survives_a_failed_write(tmp_path, monkeypatch):
+    import axis_vo_cleanup as module
+    source = tmp_path / "voice.wav"
+    sf.write(source, np.r_[np.zeros(8000), np.ones(8000) * .1, np.zeros(8000)], 8000)
+    progress_file = tmp_path / "progress" / "state.json"
+    progress_file.parent.mkdir()
+    seen = []
+    write = module.Progress.write
+
+    def record(self):
+        write(self)
+        seen.append(json.loads(progress_file.read_text(encoding="utf-8")))
+
+    monkeypatch.setattr(module.Progress, "write", record)
+
+    def transcribe(path, directory, progress):
+        progress.update(50)
+        filename = directory / "words.json"
+        filename.write_text(json.dumps({"segments": [{"words": [{"word": "She.", "start": .1, "end": .4}]}]}),
+                            encoding="utf-8")
+        return filename
+
+    monkeypatch.setattr(module, "transcribe_words", transcribe)
+    monkeypatch.setattr(module, "breath_regions", lambda *args: ([], 8000))
+    cleanup(source, "sandwich", keep_ms=50, progress_file=progress_file)
+    assert seen[-1]["steps"] == ["Removing silence", "Reading the words", "Lowering breaths",
+                                 "Removing silence again"]
+    assert [row["index"] for row in seen] == [0, 0, 1, 1, 2, 3]
+    assert seen[1]["audioSeconds"] == 3
+    assert seen[3]["stepPercent"] == 50 and seen[3]["percent"] == 50
+    assert [row["percent"] for row in seen] == sorted(row["percent"] for row in seen)
+    monkeypatch.setattr(module.Progress, "write", write)
+    # An unwritable progress path must not fail the cleanup.
+    assert cleanup(source, "silence", progress_file=tmp_path / "missing" / "state.json")["outputPath"]
+
+
 @pytest.mark.parametrize("failure", ["timeout", "cancel"])
 def test_transcription_stops_its_process_tree_and_removes_outputs(tmp_path, monkeypatch, failure):
     import subprocess
@@ -284,15 +331,14 @@ def test_transcription_stops_its_process_tree_and_removes_outputs(tmp_path, monk
     class Process:
         returncode = None
 
-        def communicate(self, timeout):
-            assert timeout == module.TRANSCRIBE_TIMEOUT_SECONDS
-            if failure == "timeout":
-                raise subprocess.TimeoutExpired("whisperx", timeout)
+        def wait(self, timeout):
             raise KeyboardInterrupt("cancel")
 
     process = Process()
-    monkeypatch.setattr(module, "managed_process", lambda _: process)
+    monkeypatch.setattr(module, "managed_process", lambda _command, _log: process)
     monkeypatch.setattr(module, "kill_tree", stopped.append)
+    if failure == "timeout":
+        monkeypatch.setattr(module, "TRANSCRIBE_TIMEOUT_SECONDS", 0)
     error = ValueError if failure == "timeout" else KeyboardInterrupt
     with pytest.raises(error):
         cleanup(source)
@@ -340,7 +386,7 @@ def test_supervisor_removes_reserved_outputs_and_workspace_even_if_worker_cannot
     if failure == "cancel":
         stop_file.touch()
     args = argparse.Namespace(input=source, output_dir=tmp_path, mode="both", keep_ms=50,
-                              transcript=None, timeout_seconds=1, cancel_file=stop_file)
+                              transcript=None, timeout_seconds=1, cancel_file=stop_file, progress_file=None)
     with pytest.raises(ValueError, match={"timeout": "timed out", "cancel": "cancelled", "worker-error": "worker failed"}[failure]):
         module.run_job(args)
     assert stopped == [process]

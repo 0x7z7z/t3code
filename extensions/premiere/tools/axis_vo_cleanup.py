@@ -28,6 +28,13 @@ JOB_TIMEOUT_SECONDS = 21540  # Leave a minute for cleanup before CEP's six-hour 
 MODES = ("silence", "breaths", "both", "sandwich")
 FRICATIVE_STARTS = ("s", "z", "f", "v", "h", "j", "ch", "ph", "th", "x")
 FRICATIVE_ENDS = FRICATIVE_STARTS + ("sh", "ce", "dge")
+# Share of a run's time per step, measured on a 21-minute VO on CPU.
+STEP_WEIGHTS = {"silence": 6, "transcribe": 88, "breaths": 3, "final-silence": 3}
+STEP_LABELS = {"silence": "Removing silence", "transcribe": "Reading the words",
+               "breaths": "Lowering breaths", "final-silence": "Removing silence again"}
+# WhisperX reports transcription 0-100, then alignment 0-100. Alignment's own
+# number reaches 100 at once with the slow part still to come, so it is not shown.
+TRANSCRIBE_SHARE = 80
 
 
 def fricative_word(word, edge):
@@ -65,11 +72,59 @@ def kill_tree(process):
     process.communicate(timeout=15)
 
 
-def managed_process(command):
-    return subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+def managed_process(command, log=None):
+    return subprocess.Popen(command, stdout=log or subprocess.PIPE,
+                            stderr=subprocess.STDOUT if log else subprocess.PIPE,
                             encoding="utf-8", errors="replace",
                             **({"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt"
                                else {"start_new_session": True}))
+
+
+class Progress:
+    """Publish the running step for the panel. A failed write never affects the job."""
+
+    def __init__(self, filename, steps):
+        self.filename, self.steps = filename, steps
+        self.audio_seconds, self.index, self.step_percent = None, 0, None
+
+    def start(self, step):
+        self.index, self.step_percent = self.steps.index(step), None
+        self.write()
+
+    def update(self, step_percent):
+        self.step_percent = step_percent
+        self.write()
+
+    def overall(self):
+        total = sum(STEP_WEIGHTS[step] for step in self.steps)
+        done = sum(STEP_WEIGHTS[step] for step in self.steps[:self.index])
+        if self.step_percent is not None:
+            done += STEP_WEIGHTS[self.steps[self.index]] * self.step_percent / 100
+        return 100 * done / total
+
+    def write(self):
+        if not self.filename:
+            return
+        data = {"steps": [STEP_LABELS[step] for step in self.steps], "index": self.index,
+                "stepPercent": self.step_percent, "percent": self.overall(),
+                "audioSeconds": self.audio_seconds}
+        pending = Path(str(self.filename) + ".tmp")
+        try:
+            pending.write_text(json.dumps(data), encoding="utf-8")
+            os.replace(pending, self.filename)
+        except OSError:
+            pass
+
+
+def whisperx_percent(text, raw, aligning):
+    """Scale transcription to TRANSCRIBE_SHARE, then hold there through alignment."""
+    for value in re.findall(r"Progress: (\d+(?:\.\d+)?)%", text):
+        value = float(value)
+        aligning = aligning or (raw is not None and (raw >= 100 or value < raw - 1))
+        raw = value
+    if raw is None:
+        return None, None, aligning
+    return TRANSCRIBE_SHARE if aligning else raw * TRANSCRIBE_SHARE / 100, raw, aligning
 
 
 def measure_frames(source):
@@ -271,13 +326,35 @@ def load_words(filename, duration):
     return sorted(words, key=lambda w: (w["start"], w["end"]))
 
 
-def transcribe_words(source, directory):
+def transcribe_words(source, directory, progress=None):
     # Use Axis's existing WhisperX command and timing parser, on the post-silence audio.
-    process = managed_process([sys.executable, "-m", "whisperx", str(source), "--output_dir", str(directory),
-                             "--output_format", "json", "--model", "medium.en", "--compute_type", "int8",
-                             "--batch_size", "8", "--device", "cpu"])
+    # Unbuffered output goes to a file so its progress lines can be read while it runs.
+    log_path = directory / "whisperx.log"
+    percent, raw, aligning, read_to = None, None, False, 0
+    deadline = time.monotonic() + TRANSCRIBE_TIMEOUT_SECONDS
+    with log_path.open("wb") as log:
+        process = managed_process([sys.executable, "-u", "-m", "whisperx", str(source), "--output_dir", str(directory),
+                                 "--output_format", "json", "--model", "medium.en", "--compute_type", "int8",
+                                 "--batch_size", "8", "--device", "cpu", "--print_progress", "True"], log)
     try:
-        _, stderr = process.communicate(timeout=TRANSCRIBE_TIMEOUT_SECONDS)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise subprocess.TimeoutExpired("whisperx", TRANSCRIBE_TIMEOUT_SECONDS)
+            try:
+                process.wait(timeout=min(1, remaining))
+                break
+            except subprocess.TimeoutExpired:
+                with log_path.open("rb") as log:
+                    log.seek(read_to)
+                    chunk = log.read()
+                # Leave a partial last line until the rest of it arrives.
+                chunk = chunk[:chunk.rfind(b"\n") + 1]
+                read_to += len(chunk)
+                before = percent
+                percent, raw, aligning = whisperx_percent(chunk.decode("utf-8", "replace"), raw, aligning)
+                if progress and percent != before:
+                    progress.update(percent)
     except subprocess.TimeoutExpired:
         kill_tree(process)
         raise ValueError("WhisperX timed out. Cleanup stopped and its temporary files were removed.") from None
@@ -285,11 +362,24 @@ def transcribe_words(source, directory):
         kill_tree(process)
         raise
     if process.returncode:
-        raise ValueError("WhisperX failed. Check Transcription setup in Axis Diagnostics. " + stderr[-500:])
+        detail = log_path.read_text(encoding="utf-8", errors="replace")[-500:]
+        raise ValueError("WhisperX failed. Check Transcription setup in Axis Diagnostics. " + detail)
     return directory / (source.stem + ".json")
 
 
-def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None, job_id=None, workspace=None):
+def cleanup_steps(mode, transcript=None):
+    steps = []
+    if mode in ("silence", "both", "sandwich"):
+        steps.append("silence")
+    if mode in ("breaths", "both", "sandwich"):
+        steps += ["breaths"] if transcript else ["transcribe", "breaths"]
+    if mode == "sandwich":
+        steps.append("final-silence")
+    return steps
+
+
+def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None, job_id=None, workspace=None,
+            progress_file=None):
     source = Path(source).resolve(strict=True)
     if mode not in MODES or type(keep_ms) is not int or not 0 <= keep_ms <= 5000:
         raise ValueError("Choose a cleanup mode and 0-5000 ms retained silence")
@@ -300,6 +390,8 @@ def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None, j
     # Exclusive creation reserves every output; even concurrent runs cannot overwrite files.
     base = folder / (source.stem + "_AxisVO_" + (job_id or uuid.uuid4().hex[:12]))
     reserved = []
+    progress = Progress(progress_file, cleanup_steps(mode, transcript))
+    progress.write()
 
     def reserve(suffix):
         filename = Path(str(base) + suffix)
@@ -322,6 +414,8 @@ def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None, j
                 AudioSegment.from_file(source).export(current, format="wav")
                 info = sf.info(current)
             before = info.duration
+            progress.audio_seconds = before
+            progress.write()
             silence_path = None
             if mode in ("silence", "both", "sandwich"):
                 silence_path = reserve("_SilenceRemoved.wav")
@@ -331,7 +425,10 @@ def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None, j
             csv_path = None
             breaths_path = None
             if mode in ("breaths", "both", "sandwich"):
-                timing_path = Path(transcript) if transcript else transcribe_words(current, temporary)
+                if not transcript:
+                    progress.start("transcribe")
+                timing_path = Path(transcript) if transcript else transcribe_words(current, temporary, progress)
+                progress.start("breaths")
                 words = load_words(timing_path, sf.info(current).duration)
                 regions, sr = breath_regions(current, words)
                 destination = reserve("_NoBreaths.wav")
@@ -345,6 +442,7 @@ def cleanup(source, mode="both", keep_ms=50, transcript=None, output_dir=None, j
                     writer.writerows([(round(a / sr, 3), round(b / sr, 3), round((b - a) / sr, 3), a, b)
                                       for a, b in regions])
             if mode == "sandwich":
+                progress.start("final-silence")
                 destination = reserve("_SilenceBreathsSilence.wav")
                 remove_silence(current, destination, keep_ms, words)
                 current = destination
@@ -401,6 +499,8 @@ def run_job(args):
                        "--job-id", job_id, "--workspace", workspace]
             if args.transcript:
                 command += ["--transcript", str(args.transcript)]
+            if args.progress_file:
+                command += ["--progress-file", str(args.progress_file)]
             return supervise(command, args.timeout_seconds, args.cancel_file)
     except BaseException:
         for filename in outputs:
@@ -420,6 +520,7 @@ def main():
     parser.add_argument("--transcript", type=Path, help="Existing source word timings, breaths-only mode")
     parser.add_argument("--output-dir", type=Path, help="Test/artifact override; default is beside source")
     parser.add_argument("--cancel-file", type=Path, help="Stop gracefully when this file exists")
+    parser.add_argument("--progress-file", type=Path, help="Keep this JSON file updated with the running step")
     parser.add_argument("--timeout-seconds", type=float, default=JOB_TIMEOUT_SECONDS)
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--job-id", help=argparse.SUPPRESS)
@@ -430,7 +531,7 @@ def main():
             raise ValueError("Invalid cleanup deadline")
         if args.worker:
             print(json.dumps(cleanup(args.input, args.mode, args.keep_ms, args.transcript,
-                                     args.output_dir, args.job_id, args.workspace)))
+                                     args.output_dir, args.job_id, args.workspace, args.progress_file)))
         else:
             print(run_job(args), end="")
     except FileNotFoundError:

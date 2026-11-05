@@ -5,6 +5,8 @@ const child = require("child_process");
 const os = require("os");
 const { transcriptionStatus } = require("./diagnostics.cjs");
 
+let activeJob = null;
+
 function audioFile(value) {
   if (typeof value !== "string" || !value || value.length > 32768 || /\0/.test(value))
     throw new Error("Choose an audio file.");
@@ -106,6 +108,19 @@ function hostOperation(request, directory, evaluate, options = {}) {
 }
 
 async function operation(request, directory, evaluate, options = {}) {
+  if (request.action === "progress") {
+    if (!activeJob) return { ok: true, progress: null };
+    try {
+      return { ok: true, progress: JSON.parse(fs.readFileSync(activeJob.progressFile, "utf8")) };
+    } catch {
+      // Not written yet, or Python is replacing it. The next poll reads it.
+      return { ok: true, progress: null };
+    }
+  }
+  if (request.action === "cancel") {
+    if (activeJob) activeJob.stop();
+    return { ok: true, cancelling: activeJob !== null };
+  }
   if (request.action === "resolve") {
     if (
       typeof request.projectId !== "string" ||
@@ -239,8 +254,10 @@ async function operation(request, directory, evaluate, options = {}) {
   ];
   const control = fs.mkdtempSync(path.join(os.tmpdir(), "axis-vo-control-"));
   const cancelFile = path.join(control, "stop");
-  args.push("--cancel-file", cancelFile);
+  const progressFile = path.join(control, "progress.json");
+  args.push("--cancel-file", cancelFile, "--progress-file", progressFile);
   const stop = () => fs.writeFileSync(cancelFile, "stop");
+  activeJob = { progressFile, stop };
   options.signal?.addEventListener("abort", stop, { once: true });
   if (options.signal?.aborted) stop();
   try {
@@ -261,6 +278,7 @@ async function operation(request, directory, evaluate, options = {}) {
     });
     return { ok: true, ...data };
   } finally {
+    activeJob = null;
     options.signal?.removeEventListener("abort", stop);
     fs.rmSync(control, { recursive: true, force: true });
   }

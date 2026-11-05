@@ -82,3 +82,6 @@ WhisperX has a five-hour bound. The CLI supervises the worker and its descendant
 stopping before CEP's six-hour timeout and removing reserved outputs and temporary
 files on failure. `--cancel-file <path>` stops gracefully when that file exists;
 `--timeout-seconds` can shorten the overall bound for testing. Never raise it.
+`--progress-file <path>` keeps a JSON file updated with the step list, current step,
+step percent (WhisperX only) and overall percent. Read it to report progress on a
+long run.
