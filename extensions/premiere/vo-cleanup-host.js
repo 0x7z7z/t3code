@@ -413,7 +413,9 @@ function axisVOCleanupHost(request, timeline) {
           typeof clips.numItems !== "number"
         )
           return null;
-        var parts = [trackId, String(track.name), String(locked)];
+        // Leave out the track name: adding a track makes Premiere renumber default
+        // names ("Audio 2" becomes "Audio 3"), which is not a change to the edit.
+        var parts = [trackId, String(locked)];
         var header = parts.join("|");
         for (var c = 0; c < clips.numItems; c++) {
           var clip = clips[c];

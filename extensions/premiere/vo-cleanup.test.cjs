@@ -321,6 +321,10 @@ function timelineFixture(options = {}) {
           const at = after + (options.insertOffsets?.shift() ?? options.insertOffset ?? 0);
           for (let n = 0; n < count + (options.extraTracks || 0); n++)
             sequence.audio.splice(at, 0, track("Audio " + (at + 1)));
+          // Premiere renumbers default track names after an insert.
+          sequence.audio.forEach((existing, index) => {
+            if (/^Audio \d+$/.test(existing.name)) existing.name = "Audio " + (index + 1);
+          });
           if (options.onAdd) options.onAdd(sequence);
         },
       }),
@@ -573,7 +577,8 @@ async function place(f, fields = {}) {
 }
 function content(f) {
   return f.tracks.map((t) => [
-    t.name,
+    // Premiere renumbers default names when a track is added, so compare them as one name.
+    /^Audio \d+$/.test(t.name) ? "Audio" : t.name,
     t.list.map((c) => [
       c.projectItem.getMediaPath(),
       c.start.seconds,
