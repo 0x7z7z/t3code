@@ -10,6 +10,7 @@ import { findTimecodes, type TimecodeMatch } from "./timecode";
 // directly, so model output is never injected as HTML.
 
 const INLINE = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]+\]\([^)\s]+\))/g;
+const MD_ESCAPE = /\\([\\`*_{}[\]()#+\-.!|>~])/g;
 
 /** Called when the editor clicks a timestamp in a reply. */
 export type SeekHandler = (timecode: TimecodeMatch) => void;
@@ -69,7 +70,8 @@ function inline(
     offset += part.length;
     // split() with one capture group alternates plain text and tokens.
     plain = !plain;
-    if (plain) return linkedText(part, key, onSeek, actions);
+    // Markdown backslash escapes such as \# and \+ show as the plain character.
+    if (plain) return linkedText(part.replace(MD_ESCAPE, "$1"), key, onSeek, actions);
     if (part.startsWith("`")) {
       const name = part.slice(1, -1);
       return [
@@ -111,6 +113,27 @@ function lines(
 
 const LIST_ITEM = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/;
 const HEADING = /^#{1,6}\s+(.*)$/;
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+function isTableStart(source: readonly string[], index: number): boolean {
+  return TABLE_ROW.test(source[index] ?? "") && TABLE_RULE.test(source[index + 1] ?? "");
+}
+
+function tableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim().replace(/\\\|/g, "|"));
+}
+
+/** Code blocks that hold Markdown with a table, such as a pasted .md file, read better rendered. */
+function holdsMarkdownTable(language: string, code: readonly string[]): boolean {
+  if (!["", "md", "markdown"].includes(language)) return false;
+  return code.some((_, index) => isTableStart(code, index));
+}
 
 export function Markdown({
   text,
@@ -119,7 +142,7 @@ export function Markdown({
   complete = true,
 }: {
   text: string;
-  onSeek?: SeekHandler;
+  onSeek?: SeekHandler | undefined;
   actions?: TimelineActions | undefined;
   complete?: boolean;
 }) {
@@ -159,10 +182,55 @@ export function Markdown({
         );
         continue;
       }
+      if (holdsMarkdownTable(line.trim().slice(3).trim().toLowerCase(), code)) {
+        blocks.push(
+          <div key={blocks.length} data-quoted-markdown="">
+            <Markdown text={code.join("\n")} onSeek={onSeek} actions={actions} />
+          </div>,
+        );
+        continue;
+      }
+      // Lines wrap in the narrow panel, and timestamps stay clickable.
       blocks.push(
         <pre key={blocks.length}>
-          <code>{code.join("\n")}</code>
+          <code>{withTimecodes(code.join("\n"), 0, onSeek)}</code>
         </pre>,
+      );
+      continue;
+    }
+    if (isTableStart(source, index)) {
+      flush();
+      const head = tableCells(line);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < source.length && TABLE_ROW.test(source[index]!)) {
+        rows.push(tableCells(source[index]!));
+        index += 1;
+      }
+      blocks.push(
+        <div key={blocks.length} data-table="">
+          <table>
+            <thead>
+              <tr>
+                {head.map((cell, column) => (
+                  // oxlint-disable-next-line react/no-array-index-key -- Columns never reorder.
+                  <th key={column}>{inline(cell, onSeek, 0, actions)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                // oxlint-disable-next-line react/no-array-index-key -- Rows never reorder.
+                <tr key={rowIndex}>
+                  {head.map((_, column) => (
+                    // oxlint-disable-next-line react/no-array-index-key -- Columns never reorder.
+                    <td key={column}>{inline(row[column] ?? "", onSeek, 0, actions)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
       );
       continue;
     }

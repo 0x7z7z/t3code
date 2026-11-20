@@ -340,13 +340,50 @@ pre {
   border-radius: 6px;
   background: #171717;
   border: 1px solid var(--border);
-  max-height: 220px;
-  overflow: auto;
+  max-height: 60vh;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
+/* Wrap instead of scrolling sideways: the panel is narrow. */
 pre code {
   padding: 0;
   background: none;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+[data-table] {
+  margin: 0 0 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+[data-table] table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.4;
+}
+[data-table] th,
+[data-table] td {
+  text-align: left;
+  vertical-align: top;
+  padding: 5px 7px;
+  border-bottom: 1px solid var(--border);
+  min-width: 56px;
+  overflow-wrap: break-word;
+}
+[data-table] th {
+  background: var(--surface-2);
+  font-weight: 600;
+}
+[data-table] tr:last-child td {
+  border-bottom: 0;
+}
+[data-quoted-markdown] {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--border);
 }
 a {
   color: var(--accent-hover);
