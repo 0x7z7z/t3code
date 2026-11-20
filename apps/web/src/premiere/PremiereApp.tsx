@@ -561,7 +561,6 @@ export function PremiereApp() {
         await timelineChanges.begin(
           targetId,
           messageId,
-          mode === "default",
           context?.sequenceId,
           context?.projectDocumentId || context?.projectPath,
         );

@@ -117,6 +117,7 @@ export interface SnapshotReply {
 async function request(
   type: "snapshot" | "restore" | "prune" | "cut",
   fields: Record<string, unknown>,
+  timeoutMs?: number,
 ): Promise<Record<string, unknown>> {
   if (!isPremierePanel()) throw new Error("Premiere is not connected.");
   return new Promise((resolve, reject) => {
@@ -150,7 +151,7 @@ async function request(
     };
     const timer = setTimeout(
       () => finish("Premiere did not respond to the timeline request. Reopen the panel to retry."),
-      type === "cut" && "ranges" in fields ? 120000 : 15000,
+      timeoutMs ?? (type === "cut" && "ranges" in fields ? 120000 : 15000),
     );
     window.addEventListener("message", onMessage);
     try {
@@ -167,8 +168,13 @@ async function request(
 export async function requestTimelineSnapshot(
   checkpoint: boolean,
   sequenceId?: string,
+  timeoutMs?: number,
 ): Promise<SnapshotReply> {
-  const packet = await request("snapshot", { checkpoint, ...(sequenceId ? { sequenceId } : {}) });
+  const packet = await request(
+    "snapshot",
+    { checkpoint, ...(sequenceId ? { sequenceId } : {}) },
+    timeoutMs,
+  );
   const snapshot = parseTimelineSnapshot(packet.snapshot);
   if (
     !snapshot ||

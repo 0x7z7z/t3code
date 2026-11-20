@@ -180,13 +180,11 @@ it("shows authoritative restore errors and never reports success", async () => {
 function CaptureTurn({
   status,
   threadId = "capture-thread",
-  edit = true,
   missing = false,
   later = false,
 }: {
   status: "running" | "completed";
   threadId?: string;
-  edit?: boolean;
   missing?: boolean;
   later?: boolean;
 }) {
@@ -218,7 +216,7 @@ function CaptureTurn({
     <div>
       <button
         type="button"
-        onClick={() => void changes.begin(threadId, "capture-message", edit, "sequence")}
+        onClick={() => void changes.begin(threadId, "capture-message", "sequence")}
       >
         Start turn
       </button>
@@ -247,7 +245,7 @@ function DispatchTurn({ onDispatch }: { onDispatch: () => void }) {
         type="button"
         onClick={async () => {
           try {
-            await changes.begin("dispatch-thread", "dispatch-message", true, "sequence", "project");
+            await changes.begin("dispatch-thread", "dispatch-message", "sequence", "project");
             onDispatch();
           } catch (cause) {
             setError(cause instanceof Error ? cause.message : "Capture failed");
@@ -261,26 +259,28 @@ function DispatchTurn({ onDispatch }: { onDispatch: () => void }) {
   );
 }
 
-it.each(["unavailable", "missing", "truncated"])(
-  "blocks editing dispatch when the checkpoint is %s",
+it.each(["unavailable", "another project"])(
+  "still sends the turn, without a change list, when the timeline read is %s",
   async (failure) => {
     const props = setup();
     localStorage.removeItem("axis-turn-changes-v1");
-    if (failure === "unavailable") state.snapshot.mockRejectedValue(new Error("CEP offline"));
+    if (failure === "unavailable")
+      state.snapshot.mockRejectedValue(new Error("Premiere did not respond"));
     else
       state.snapshot.mockResolvedValue({
-        snapshot: { ...props.record.before, truncated: failure === "truncated" },
-        checkpointId: failure === "missing" ? null : "checkpoint",
-        checkpointSignature: failure === "missing" ? null : "before",
-        checkpointError: failure === "missing" ? "Clone refused" : null,
+        snapshot: { ...props.record.before, projectId: "other" },
+        checkpointId: null,
+        checkpointSignature: null,
+        checkpointError: null,
       });
     const onDispatch = vi.fn();
-    // Dispatch depends on the docked panel's checkpoint, with no router navigation.
     await using screen = await render(<DispatchTurn onDispatch={onDispatch} />, { router: false });
     await screen.getByRole("button", { name: "Dispatch edit" }).click();
-    await expect.element(screen.getByRole("alert")).toBeVisible();
-    expect(onDispatch).not.toHaveBeenCalled();
-    expect(localStorage.getItem("axis-turn-changes-v1")).not.toContain("dispatch-message");
+    await vi.waitFor(() => expect(onDispatch).toHaveBeenCalled());
+    expect(screen.getByRole("alert").query()).toBeNull();
+    // Sending never asks Premiere to duplicate the sequence.
+    expect(state.snapshot).toHaveBeenCalledWith(false, "sequence", 5000);
+    expect(localStorage.getItem("axis-turn-changes-v1") ?? "").not.toContain("dispatch-message");
   },
 );
 
@@ -301,7 +301,7 @@ it("captures before dispatch and after settlement, associates the reply, and res
   await screen.getByRole("button", { name: "Start turn" }).click();
   await expect.element(screen.getByText("Capturing turn")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(1);
-  expect(state.snapshot).toHaveBeenCalledWith(true, "sequence");
+  expect(state.snapshot).toHaveBeenCalledWith(false, "sequence", 5000);
   await screen.rerender(<CaptureTurn status="completed" />);
   await expect.element(screen.getByText("Turn capture-turn: 1 changes")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(2);
@@ -324,17 +324,17 @@ it("uses read-only snapshots in Plan mode and completes a pending capture after 
     checkpointError: null,
   });
   // This harness exercises the docked panel's turn lifecycle without router navigation.
-  await using screen = await render(<CaptureTurn status="running" edit={false} />, {
+  await using screen = await render(<CaptureTurn status="running" />, {
     router: false,
   });
   await screen.getByRole("button", { name: "Start turn" }).click();
   await expect.element(screen.getByText("Capturing turn")).toBeVisible();
-  expect(state.snapshot).toHaveBeenCalledWith(false, "sequence");
+  expect(state.snapshot).toHaveBeenCalledWith(false, "sequence", 5000);
   state.snapshot.mockResolvedValue({
     snapshot: { ...props.record.before, outPoint: 8 },
     signature: "after",
   });
-  await screen.rerender(<CaptureTurn key="reloaded-pending" status="completed" edit={false} />);
+  await screen.rerender(<CaptureTurn key="reloaded-pending" status="completed" />);
   await expect.element(screen.getByText("Turn capture-turn: 1 changes")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(2);
   localStorage.removeItem("axis-turn-changes-v1");

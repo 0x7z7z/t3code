@@ -9,6 +9,7 @@ import {
 import { pruneCheckpoints, requestTimelineSnapshot } from "./timelineHost";
 import type { TranscriptBlock } from "./transcript";
 
+const BEFORE_SNAPSHOT_MS = 5000;
 const settled = new Set(["completed", "failed", "cancelled", "interrupted", "rolled_back"]);
 
 export function useTurnChanges(
@@ -138,34 +139,15 @@ export function useTurnChanges(
     setUndoing,
     pending: records.some((record) => !record.after && !record.error),
     pendingThreadId: records.find((record) => !record.after && !record.error)?.threadId,
-    async begin(
-      targetThread: string,
-      messageId: string,
-      checkpoint: boolean,
-      sequenceId?: string,
-      projectId?: string,
-    ) {
+    async begin(targetThread: string, messageId: string, sequenceId?: string, projectId?: string) {
       if (!sequenceId) return;
-      // Editing must have a complete, verified checkpoint before dispatch.
-      const before = await requestTimelineSnapshot(checkpoint, sequenceId).catch(
-        (error: unknown) => {
-          if (checkpoint) throw error;
-          return null;
-        },
+      // A quick read for the turn's change list. Sending never duplicates the
+      // sequence and never waits long on Premiere: if the read fails or is slow,
+      // the turn is sent without a change list. Premiere's own Undo still works.
+      const before = await requestTimelineSnapshot(false, sequenceId, BEFORE_SNAPSHOT_MS).catch(
+        () => null,
       );
-      if (!before) return;
-      if (
-        checkpoint &&
-        (before.snapshot.truncated || !before.checkpointId || !before.checkpointSignature)
-      )
-        throw new Error(
-          before.checkpointError ||
-            "A complete timeline checkpoint is required before editing. No turn was sent.",
-        );
-      if (projectId && before.snapshot.projectId !== projectId)
-        throw new Error(
-          "The active Premiere project changed. Check the timeline, then send again.",
-        );
+      if (!before || (projectId && before.snapshot.projectId !== projectId)) return;
       const record: TurnChangeRecord = {
         threadId: targetThread,
         turnId: messageId,
