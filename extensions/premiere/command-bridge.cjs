@@ -4,6 +4,10 @@ var fs = require("fs");
 var path = require("path");
 var security = require("./bridge-directory-security.cjs");
 
+var PROBE_AFTER_MS = 30000;
+var LOST_REPLY_GRACE_MS = 4000;
+var STALLED_MS = 60000;
+
 function createCommandBridge(options) {
   var files = options.fs || fs;
   var clock = options.clock || {
@@ -135,7 +139,8 @@ function createCommandBridge(options) {
         status("standby", "Bridge active in another Axis instance");
         return;
       }
-      if (writeHeartbeat("running")) status("running", "Bridge running");
+      if (writeHeartbeat("running") && !(inFlight && inFlight.stalled))
+        status("running", "Bridge running");
     } catch (error) {
       status("error", "Bridge ownership failed: " + error.message);
     }
@@ -184,7 +189,7 @@ function createCommandBridge(options) {
     var response = path.join(directory, "res_" + id + ".json");
     var busy = path.join(directory, "busy_" + id + ".json");
     var started = clock.now();
-    var flight = { busy: busy, timer: null, finished: false };
+    var flight = { busy: busy, timer: null, finished: false, probe: null, stalled: false };
     inFlight = flight;
     flight.timer = clock.setInterval(function () {
       try {
@@ -196,7 +201,41 @@ function createCommandBridge(options) {
       } catch (error) {
         status("error", "Bridge busy update failed: " + error.message);
       }
+      checkLostReply();
     }, 2000);
+
+    // CEP very rarely drops an evalScript callback, which used to block every
+    // later command forever. ExtendScript runs scripts one at a time in order,
+    // so once a tiny probe sent after this command answers, this command has
+    // finished in Premiere. A grace period lets a late real reply win.
+    function checkLostReply() {
+      if (flight.finished) return;
+      var elapsed = clock.now() - started;
+      if (!flight.probe && elapsed >= PROBE_AFTER_MS) {
+        flight.probe = { answeredAt: null };
+        var probe = flight.probe;
+        try {
+          options.evalScript("1", function () {
+            probe.answeredAt = clock.now();
+          });
+        } catch (_error) {
+          flight.probe = null;
+        }
+        return;
+      }
+      if (flight.probe && flight.probe.answeredAt !== null) {
+        if (clock.now() - flight.probe.answeredAt < LOST_REPLY_GRACE_MS) return;
+        status("error", "Premiere finished a command but its reply was lost");
+        finish(
+          "Error: Premiere finished this command but its reply was lost. Check the timeline before retrying.",
+        );
+        return;
+      }
+      if (elapsed >= STALLED_MS) {
+        flight.stalled = true;
+        status("busy", "Premiere is busy. Close any open Premiere dialog.");
+      }
+    }
 
     function finish(result) {
       if (flight.finished) return;
@@ -205,6 +244,8 @@ function createCommandBridge(options) {
       remove(busy);
       publish(response, responseFor(result), ".staged");
       inFlight = null;
+      if (lastStatus.indexOf("running:") !== 0 && lastStatus.indexOf("standby:") !== 0)
+        status("running", "Bridge running");
       if (running) processCommands();
     }
 

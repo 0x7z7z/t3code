@@ -88,10 +88,28 @@ export function requestTimelineAction(
   });
 }
 
+export interface ReplyScope {
+  readonly sequenceId: string;
+  readonly projectId: string;
+}
+
+/** True when a reply's buttons would act on a different sequence than the one it was written for. */
+export function replyScopeChanged(actions: TimelineActions, mountedSequenceId: string): boolean {
+  const origin = actions.origin;
+  if (!origin) return mountedSequenceId !== actions.sequenceId;
+  return (
+    origin.sequenceId !== actions.sequenceId ||
+    (!!origin.projectId && origin.projectId !== actions.projectId)
+  );
+}
+
 export interface TimelineActions {
   readonly reviewMusic?: (plan: MusicPlan) => void;
   readonly reviewCleanup?: (settings: CleanupSettings) => void;
   readonly sequenceId: string;
+  readonly projectId: string;
+  /** The sequence a reply was written for, so its buttons never act on another one. */
+  readonly origin?: ReplyScope | undefined;
   readonly fps: number;
   readonly canAddMarkers: boolean;
   readonly clips: readonly TimelineClip[];
@@ -157,6 +175,7 @@ export function createTimelineActions(
   const projectId = context.projectDocumentId || context.projectPath;
   return {
     sequenceId,
+    projectId,
     fps: context.fps,
     canAddMarkers: canOperate,
     clips,

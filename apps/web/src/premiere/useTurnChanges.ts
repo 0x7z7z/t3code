@@ -6,7 +6,7 @@ import {
   writeTurnChanges,
   type TurnChangeRecord,
 } from "./turnChanges";
-import { pruneCheckpoints, requestTimelineSnapshot } from "./timelineHost";
+import { requestTimelineSnapshot } from "./timelineHost";
 import type { TranscriptBlock } from "./transcript";
 
 const BEFORE_SNAPSHOT_MS = 5000;
@@ -82,22 +82,9 @@ export function useTurnChanges(
           if (after.snapshot.projectId !== record.before.projectId)
             throw new Error("The active Premiere project changed.");
           const changes = diffTimeline(record.before, after.snapshot);
+          // Chat turns make no checkpoints, so they never delete any. Transcript
+          // cuts, captions, music and VO own and prune their own checkpoints.
           update({ after: after.snapshot, signature: after.signature, changes });
-          // Undo only uses the latest changed turn's checkpoint, so the rest are deleted.
-          const earlier = records
-            .filter(
-              (value) =>
-                value.messageId !== record.messageId &&
-                value.changes.length &&
-                !value.restored &&
-                value.before.sequenceId === record.before.sequenceId,
-            )
-            .reduce<TurnChangeRecord | null>(
-              (last, value) => (!last || value.createdAt > last.createdAt ? value : last),
-              null,
-            );
-          const keep = changes.length ? record.checkpointId : (earlier?.checkpointId ?? null);
-          void pruneCheckpoints(record.before.sequenceId, keep).catch(() => {});
         })
         .catch((error: unknown) =>
           update({

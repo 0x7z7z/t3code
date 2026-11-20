@@ -221,11 +221,33 @@ test("prunes this sequence's other checkpoints and leaves the kept one and unrel
     deleted.push(seq.sequenceID);
     return true;
   };
-  assert.deepEqual(f.run("prune", false, "sequence-a", "keep"), { ok: true, removed: 1 });
+  assert.deepEqual(f.run("prune", false, "sequence-a", "keep", "project-a"), {
+    ok: true,
+    removed: 1,
+  });
   assert.deepEqual(deleted, ["old"]);
   deleted.length = 0;
-  assert.deepEqual(f.run("prune", false, "sequence-a", ""), { ok: true, removed: 2 });
+  assert.deepEqual(f.run("prune", false, "sequence-a", "", "project-a"), {
+    ok: true,
+    removed: 2,
+  });
   assert.deepEqual(deleted.sort(), ["keep", "old"]);
+});
+
+test("prune deletes nothing when another project is open or the project is not named", () => {
+  const f = fixture();
+  const deleted = [];
+  f.project.sequences[f.project.sequences.numSequences++] = {
+    sequenceID: "old",
+    name: "[Axis checkpoint sequence-a] Main Edit 1",
+  };
+  f.project.deleteSequence = (seq) => deleted.push(seq.sequenceID);
+  for (const projectId of ["project-b", ""]) {
+    const result = f.run("prune", false, "sequence-a", "", projectId);
+    assert.equal(result.ok, false);
+    assert.match(result.error, /project changed/);
+  }
+  assert.deepEqual(deleted, []);
 });
 
 test("opens the checkpoint on restore and preserves the after version without deleting anything", () => {
@@ -524,4 +546,22 @@ test("escapes restore arguments before evaluating and rejects invalid restore re
   assert.equal(replies[0].ok, true);
   handle({ ...request, turnNumber: -1 }, null, (reply) => replies.push(reply));
   assert.equal(replies[1].ok, false);
+});
+
+test("a transcript cut that would pass the 2,000-clip Undo limit is refused before any change", () => {
+  const f = fixture();
+  const clips = f.original.videoTracks[0].clips;
+  for (let i = 0; i < 1500; i++)
+    clips[i] = {
+      ...f.clip,
+      nodeId: "clip-" + i,
+      start: { seconds: 0 },
+      end: { seconds: 10 },
+    };
+  clips.numItems = 1500;
+  const result = f.run("cut", true, "sequence-a", "", "", 1, () => assert.fail("Must not cut"));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /2,000-clip limit/);
+  assert.equal(result.unchanged, true);
+  assert.equal(f.project.sequences.numSequences, 1);
 });

@@ -164,12 +164,16 @@ it("reviews cleanup at panel width, toggles inline cuts, previews, updates thres
   await page.screenshot({ path: "../../../../.t3/cleanup-review-440.png" });
   await screen.getByRole("button", { name: "Apply 1 cut", exact: true }).click();
   await vi.waitFor(() =>
-    expect(host.batch).toHaveBeenCalledWith({
-      sequenceId: "cleanup",
-      projectId: "film",
-      expectedSignature: "after",
-      ranges: [{ start: 1.2, end: 2 }],
-    }),
+    expect(host.batch).toHaveBeenCalledWith(
+      {
+        sequenceId: "cleanup",
+        projectId: "film",
+        expectedSignature: "after",
+        ranges: [{ start: 1.2, end: 2 }],
+      },
+      // Receives a late reply's Undo checkpoint if Premiere answers after the timeout.
+      expect.any(Function),
+    ),
   );
   expect(host.cut).not.toHaveBeenCalled();
   await expect.element(screen.getByRole("button", { name: "frame at 00:00:01.400" })).toBeVisible();
@@ -267,6 +271,7 @@ it("relinks cleanup through surviving speed-changed VO segments and restores the
   expect(JSON.parse(localStorage.getItem(f.key)!).transcript.words).toHaveLength(3);
   expect(host.batch).toHaveBeenCalledWith(
     expect.objectContaining({ expectedSignature: "before", ranges: [{ start: 10, end: 10.2 }] }),
+    expect.any(Function),
   );
   await screen.getByRole("button", { name: "Undo transcript cut" }).click();
   await expect.element(screen.getByRole("button", { name: "Um, at 00:00:10.000" })).toBeVisible();
@@ -414,12 +419,15 @@ it("confirms cuts, persists remapped times and restores the transcript with the 
   expect(host.cut).not.toHaveBeenCalled();
   await screen.getByRole("button", { name: "Confirm ripple cut" }).click();
   await vi.waitFor(() =>
-    expect(host.cut).toHaveBeenCalledWith({
-      sequenceId: "cut",
-      projectId: "film",
-      start: 1,
-      end: 1.8,
-    }),
+    expect(host.cut).toHaveBeenCalledWith(
+      {
+        sequenceId: "cut",
+        projectId: "film",
+        start: 1,
+        end: 1.8,
+      },
+      expect.any(Function),
+    ),
   );
   await expect
     .element(screen.getByRole("button", { name: "matters. at 00:00:01.200" }))
@@ -664,10 +672,37 @@ it("keeps the transcript available in the sequence restored by caption undo", as
   await expect.element(screen.getByRole("button", { name: "Undo captions" })).toBeEnabled();
   host.load.mockResolvedValue({ status: "undone", sequenceId: "caption-checkpoint" });
   await screen.getByRole("button", { name: "Undo captions" }).click();
+  await screen.getByRole("button", { name: "Undo captions" }).click();
   await expect
     .element(screen.getByRole("button", { name: "Undo captions" }))
     .not.toBeInTheDocument();
   const restored = JSON.parse(localStorage.getItem(restoredKey)!);
   expect(restored.transcript).toEqual(f.transcript);
   expect(restored.undo).toBeNull();
+});
+
+it("brings back Undo when Premiere finishes a cut after Axis stopped waiting", async () => {
+  const f = setup("late-cut");
+  host.cut.mockImplementationOnce(async (_fields: unknown, onLate: (result: object) => void) => {
+    setTimeout(() =>
+      onLate({
+        checkpointId: "late-checkpoint",
+        checkpointSignature: "before",
+        expectedSignature: "after",
+        cutError: null,
+      }),
+    );
+    throw new Error("Premiere did not respond to the timeline request.");
+  });
+  await using screen = await render(<TranscriptView {...f.props} />);
+  await screen.getByRole("button", { name: "frame at 00:00:01.000" }).click();
+  await screen.getByRole("button", { name: "Cut from timeline" }).click();
+  await screen.getByRole("button", { name: "Confirm ripple cut" }).click();
+  await expect.element(screen.getByRole("button", { name: "Undo transcript cut" })).toBeVisible();
+  expect(screen.container.querySelector("[role=alert]")?.textContent).toContain(
+    "Premiere finished the cut after Axis stopped waiting.",
+  );
+  const saved = JSON.parse(localStorage.getItem(f.key)!);
+  expect(saved.undo.checkpointId).toBe("late-checkpoint");
+  expect(saved.uncertain).toBe(true);
 });

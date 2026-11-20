@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CheckIcon, CopyIcon, MapPinIcon } from "lucide-react";
 import { ClipButton } from "./ClipButton";
 import { clipNames } from "./clipLinks";
-import type { TimelineActions } from "./interactiveHost";
+import { replyScopeChanged, type TimelineActions } from "./interactiveHost";
 import { parseSuggestion, shotMarkers, shotsCsv, type MarkerSuggestion } from "./suggestionBlocks";
 
 /** Timeline-style timecode, such as 0:02:36 at 60 fps; hours appear only when needed. */
@@ -36,7 +36,7 @@ function AddMarkers({
     | { kind: "added"; count: number }
     | { kind: "error"; message: string }
   >({ kind: "idle" });
-  const changed = sequenceId !== actions.sequenceId;
+  const changed = replyScopeChanged(actions, sequenceId);
   const add = async () => {
     if (
       !actions.canAddMarkers ||
@@ -151,7 +151,7 @@ export function Suggestions({
         </table>
         <button
           type="button"
-          disabled={!actions.reviewMusic || sequenceId !== actions.sequenceId}
+          disabled={!actions.reviewMusic || replyScopeChanged(actions, sequenceId)}
           onClick={() => actions.reviewMusic?.(parsed.plan)}
         >
           Review music
@@ -168,7 +168,7 @@ export function Suggestions({
         </p>
         <button
           type="button"
-          disabled={!actions.reviewCleanup || sequenceId !== actions.sequenceId}
+          disabled={!actions.reviewCleanup || replyScopeChanged(actions, sequenceId)}
           onClick={() => actions.reviewCleanup?.(parsed.settings)}
         >
           Review cleanup

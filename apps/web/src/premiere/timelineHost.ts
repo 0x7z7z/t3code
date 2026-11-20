@@ -114,17 +114,30 @@ export interface SnapshotReply {
   checkpointIds: string[];
 }
 
+const LATE_REPLY_MS = 10 * 60 * 1000;
+
 async function request(
   type: "snapshot" | "restore" | "prune" | "cut",
   fields: Record<string, unknown>,
   timeoutMs?: number,
+  onLate?: (packet: Record<string, unknown>) => void,
 ): Promise<Record<string, unknown>> {
   if (!isPremierePanel()) throw new Error("Premiere is not connected.");
   return new Promise((resolve, reject) => {
     const requestId = `timeline-${Date.now()}-${++nextRequest}`;
-    const finish = (error: string | null, packet?: Record<string, unknown>) => {
-      clearTimeout(timer);
+    let settled = false;
+    let lateTimer: ReturnType<typeof setTimeout> | undefined;
+    const stopListening = () => {
+      clearTimeout(lateTimer);
       window.removeEventListener("message", onMessage);
+    };
+    const finish = (error: string | null, packet?: Record<string, unknown>, timedOut = false) => {
+      settled = true;
+      clearTimeout(timer);
+      // After a timeout, a caller that can use a late reply keeps listening for
+      // a while, so a slow Premiere edit still hands back its Undo checkpoint.
+      if (timedOut && onLate) lateTimer = setTimeout(stopListening, LATE_REPLY_MS);
+      else stopListening();
       if (error) reject(new TimelineRequestError(error, packet?.unchanged === true));
       else resolve(packet!);
     };
@@ -142,6 +155,11 @@ async function request(
         packet.requestId !== requestId
       )
         return;
+      if (settled) {
+        stopListening();
+        if (packet.ok === true) onLate?.(packet);
+        return;
+      }
       if (packet.ok !== true)
         finish(
           text(packet.error) ? packet.error : "Premiere could not complete the timeline request.",
@@ -150,8 +168,14 @@ async function request(
       else finish(null, packet);
     };
     const timer = setTimeout(
-      () => finish("Premiere did not respond to the timeline request. Reopen the panel to retry."),
-      timeoutMs ?? (type === "cut" && "ranges" in fields ? 120000 : 15000),
+      () =>
+        finish(
+          "Premiere did not respond to the timeline request. Reopen the panel to retry.",
+          undefined,
+          true,
+        ),
+      // A cut first duplicates the sequence, which takes longer on big projects.
+      timeoutMs ?? (type === "cut" ? 120000 : 15000),
     );
     window.addEventListener("message", onMessage);
     try {
@@ -197,9 +221,16 @@ export async function requestTimelineSnapshot(
   } as SnapshotReply;
 }
 
-/** Deletes the sequence's checkpoints other than `keepId`, which undo may still need. */
-export async function pruneCheckpoints(sequenceId: string, keepId: string | null): Promise<void> {
-  await request("prune", { sequenceId, ...(keepId ? { keepId } : {}) });
+/**
+ * Deletes the sequence's transcript-cut checkpoints other than `keepId`, which
+ * undo may still need. Premiere refuses when a different project is open.
+ */
+export async function pruneCheckpoints(
+  sequenceId: string,
+  keepId: string | null,
+  projectId: string,
+): Promise<void> {
+  await request("prune", { sequenceId, projectId, ...(keepId ? { keepId } : {}) });
 }
 
 export async function restoreTimeline(fields: {
@@ -223,8 +254,9 @@ export function cutTranscriptRanges(
     ranges: readonly { start: number; end: number }[];
     expectedSignature: string;
   },
+  onLate?: LateCut,
 ) {
-  return requestCut(fields);
+  return requestCut(fields, onLate);
 }
 
 export function cutTranscriptRange(
@@ -232,12 +264,35 @@ export function cutTranscriptRange(
     start: number;
     end: number;
   },
+  onLate?: LateCut,
 ) {
-  return requestCut(fields);
+  return requestCut(fields, onLate);
 }
 
-async function requestCut(fields: object) {
-  const packet = await request("cut", { ...fields });
+export type CutResult = ReturnType<typeof parseCut>;
+
+/** Called when Premiere finishes a cut after the panel stopped waiting for it. */
+export type LateCut = (result: CutResult) => void;
+
+async function requestCut(fields: object, onLate?: LateCut) {
+  const packet = await request(
+    "cut",
+    { ...fields },
+    undefined,
+    onLate
+      ? (late) => {
+          try {
+            onLate(parseCut(late));
+          } catch {
+            // An invalid late reply keeps the transcript marked uncertain.
+          }
+        }
+      : undefined,
+  );
+  return parseCut(packet);
+}
+
+function parseCut(packet: Record<string, unknown>) {
   if (
     !parseTimelineSnapshot(packet.snapshot) ||
     !text(packet.signature, 4000000) ||
@@ -252,9 +307,9 @@ async function requestCut(fields: object) {
     );
   return {
     snapshot: parseTimelineSnapshot(packet.snapshot)!,
-    checkpointId: packet.checkpointId,
-    checkpointSignature: packet.checkpointSignature,
-    expectedSignature: packet.signature,
-    cutError: packet.cutError,
+    checkpointId: packet.checkpointId as string,
+    checkpointSignature: packet.checkpointSignature as string,
+    expectedSignature: packet.signature as string,
+    cutError: packet.cutError as string | null,
   };
 }

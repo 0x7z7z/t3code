@@ -79,7 +79,8 @@ function inline(
           {actions && clipNames(actions.clips).includes(name) ? (
             <ClipButton name={name} actions={actions} />
           ) : (
-            name
+            // Timestamps written as `00:01:02:03` stay clickable.
+            withTimecodes(name, key + 1, onSeek)
           )}
         </code>,
       ];
@@ -113,11 +114,32 @@ function lines(
 
 const LIST_ITEM = /^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/;
 const HEADING = /^#{1,6}\s+(.*)$/;
-const TABLE_ROW = /^\s*\|.*\|\s*$/;
-const TABLE_RULE = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+const TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$/;
+const PIPE = /(?<!\\)\|/;
+// A code fence opens with 3+ backticks or tildes and closes with at least as
+// many of the same character, so a fence can quote a shorter fence inside it.
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
+
+/** A row of a GitHub table; the outer pipes are optional. */
+function isTableRow(line: string): boolean {
+  return PIPE.test(line) && line.trim() !== "";
+}
 
 function isTableStart(source: readonly string[], index: number): boolean {
-  return TABLE_ROW.test(source[index] ?? "") && TABLE_RULE.test(source[index + 1] ?? "");
+  const head = source[index] ?? "";
+  const rule = source[index + 1] ?? "";
+  return (
+    isTableRow(head) &&
+    TABLE_RULE.test(rule) &&
+    PIPE.test(rule) &&
+    tableCells(head).length === tableCells(rule).length
+  );
+}
+
+function closesFence(line: string, open: string): boolean {
+  const close = FENCE_CLOSE.exec(line);
+  return !!close && close[1]![0] === open[0] && close[1]!.length >= open.length;
 }
 
 function tableCells(line: string): string[] {
@@ -157,19 +179,20 @@ export function Markdown({
   };
   while (index < source.length) {
     const line = source[index]!;
-    if (line.trimStart().startsWith("```")) {
+    const fence = FENCE_OPEN.exec(line);
+    if (fence && !(fence[1]![0] === "`" && fence[2]!.includes("`"))) {
       flush();
+      const open = fence[1]!;
+      const language = fence[2]!.trim();
       const code: string[] = [];
       index += 1;
-      while (index < source.length && !source[index]!.trimStart().startsWith("```")) {
+      while (index < source.length && !closesFence(source[index]!, open)) {
         code.push(source[index]!);
         index += 1;
       }
       const closed = index < source.length;
       index += 1;
-      const kind = actions
-        ? suggestionKind(line.trim().slice(3).trim(), code.join("\n"), actions.fps)
-        : null;
+      const kind = actions ? suggestionKind(language, code.join("\n"), actions.fps) : null;
       if (actions && kind) {
         blocks.push(
           <Suggestions
@@ -182,7 +205,7 @@ export function Markdown({
         );
         continue;
       }
-      if (holdsMarkdownTable(line.trim().slice(3).trim().toLowerCase(), code)) {
+      if (holdsMarkdownTable(language.toLowerCase(), code)) {
         blocks.push(
           <div key={blocks.length} data-quoted-markdown="">
             <Markdown text={code.join("\n")} onSeek={onSeek} actions={actions} />
@@ -203,7 +226,7 @@ export function Markdown({
       const head = tableCells(line);
       const rows: string[][] = [];
       index += 2;
-      while (index < source.length && TABLE_ROW.test(source[index]!)) {
+      while (index < source.length && isTableRow(source[index]!)) {
         rows.push(tableCells(source[index]!));
         index += 1;
       }

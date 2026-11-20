@@ -7,6 +7,7 @@ import "./styles.css";
 function actions(): TimelineActions {
   return {
     sequenceId: "seq",
+    projectId: "film",
     fps: 24,
     canAddMarkers: true,
     clips: [
@@ -183,4 +184,38 @@ it.each([320, 440])("keeps a long shot table inside a %ipx panel", async (width)
   );
   await expect.element(screen.getByRole("table")).toBeVisible();
   expect(container.scrollWidth).toBeLessThanOrEqual(container.clientWidth);
+});
+
+it("keeps an old reply's buttons off while a different sequence or project is open", async () => {
+  const timeline = { ...actions(), reviewCleanup: vi.fn() };
+  const text =
+    '```axis-markers\n[{"time":1,"name":"Beat"}]\n```\n\n```axis-cleanup\n{"pauseThreshold":0.8}\n```';
+  // The reply was written while sequence "a" was open; "seq" is open now.
+  await using screen = await render(
+    <Markdown
+      actions={{ ...timeline, origin: { sequenceId: "a", projectId: "film" } }}
+      text={text}
+    />,
+    { router: false },
+  );
+  await expect.element(screen.getByRole("button", { name: "Add 1 markers" })).toBeDisabled();
+  await expect.element(screen.getByRole("button", { name: "Review cleanup" })).toBeDisabled();
+  await expect
+    .element(screen.getByText("Return to the original sequence to add these markers."))
+    .toBeVisible();
+  await screen.rerender(
+    <Markdown
+      actions={{ ...timeline, origin: { sequenceId: "seq", projectId: "other" } }}
+      text={text}
+    />,
+  );
+  await expect.element(screen.getByRole("button", { name: "Add 1 markers" })).toBeDisabled();
+  await screen.rerender(
+    <Markdown
+      actions={{ ...timeline, origin: { sequenceId: "seq", projectId: "film" } }}
+      text={text}
+    />,
+  );
+  await screen.getByRole("button", { name: "Add 1 markers" }).click();
+  expect(timeline.addMarkers).toHaveBeenCalledTimes(1);
 });

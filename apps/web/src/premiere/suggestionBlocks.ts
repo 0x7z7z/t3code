@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 import * as Option from "effect/Option";
 import { defaultCleanupSettings, type CleanupSettings } from "./transcriptCleanup";
 import { validateMusicPlan, type MusicPlan } from "./music";
+import { timecodeSeconds } from "./timecode";
 
 const seconds = Schema.Number.check(
   Schema.isFinite(),
@@ -87,12 +88,19 @@ export function parseSuggestionTime(value: string | number, fps: number): number
   if (!Number.isFinite(fps) || fps <= 0 || fps > 240)
     throw new Error("No valid sequence frame rate.");
   if (typeof value === "number") return value;
-  const match = /^(\d{2}):([0-5]\d):([0-5]\d):(\d{2})$/.exec(value);
-  if (!match || Number(match[4]) >= Math.ceil(fps))
-    throw new Error("Use seconds or HH:MM:SS:FF timecodes.");
-  return (
-    Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) + Number(match[4]) / fps
-  );
+  const match = /^(\d{2}):([0-5]\d):([0-5]\d)([:;])(\d{2})$/.exec(value);
+  const parsed = match
+    ? timecodeSeconds(
+        Number(match[1]),
+        Number(match[2]),
+        Number(match[3]),
+        Number(match[5]),
+        fps,
+        match[4] === ";",
+      )
+    : Number.NaN;
+  if (!Number.isFinite(parsed)) throw new Error("Use seconds or HH:MM:SS:FF timecodes.");
+  return parsed;
 }
 
 export type ParsedSuggestion =

@@ -21,6 +21,25 @@ describe("buildTranscript", () => {
     ]);
   });
 
+  it("remembers which sequence each reply was written for", () => {
+    const blocks = buildTranscript([
+      item({
+        id: "u1",
+        type: "user_message",
+        text: 'Mark beats\n\n<premiere-host-context>\n{"projectDocumentId":"doc","projectPath":"D:/a.prproj","sequenceId":"seq-a"}\nThis is host metadata.',
+        attachments: [],
+      }),
+      item({ id: "a1", type: "assistant_message", text: "Done.", streaming: false }),
+      item({ id: "u2", type: "user_message", text: "/compact", attachments: [] }),
+      item({ id: "a2", type: "assistant_message", text: "Compacted.", streaming: false }),
+    ]);
+    expect(blocks[1]).toMatchObject({
+      kind: "assistant",
+      scope: { sequenceId: "seq-a", projectId: "doc" },
+    });
+    expect(blocks[3]).toMatchObject({ kind: "assistant", scope: undefined });
+  });
+
   it("groups consecutive tool calls and hides internal bookkeeping", () => {
     const blocks = buildTranscript([
       item({

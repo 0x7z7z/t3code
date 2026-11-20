@@ -5,6 +5,7 @@ import { importWhisperHandoff, loadWhisperTranscript, whisperPrompt } from "./wh
 import {
   cutTranscriptRange,
   cutTranscriptRanges,
+  type CutResult,
   pruneCheckpoints,
   requestTimelineSnapshot,
   restoreTimeline,
@@ -664,6 +665,27 @@ export function TranscriptView({
     setSelection(null);
   }
 
+  // Premiere finished a cut after the panel stopped waiting. Keep the transcript
+  // marked uncertain, but give back the Undo checkpoint the cut created.
+  function lateCut(
+    late: CutResult,
+    previous: { before: NonNullable<typeof doc>; beforeLink?: typeof link },
+  ) {
+    persist({
+      ...storedRef.current,
+      uncertain: true,
+      undo: {
+        ...previous,
+        checkpointId: late.checkpointId,
+        checkpointSignature: late.checkpointSignature,
+        expectedSignature: late.expectedSignature,
+      },
+    });
+    setError(
+      "Premiere finished the cut after Axis stopped waiting. Undo transcript cut is available. Reimport the transcript before cutting again.",
+    );
+  }
+
   async function cut() {
     if (!doc || !range || disabled || operation.current || stored.uncertain) return;
     if (!confirmCut) {
@@ -675,12 +697,15 @@ export function TranscriptView({
     onBusy(true);
     setError(null);
     return await (async () => {
-      const result = await cutTranscriptRange({
-        sequenceId: context.sequenceId,
-        projectId: context.projectDocumentId || context.projectPath,
-        start: range.start,
-        end: range.end,
-      });
+      const result = await cutTranscriptRange(
+        {
+          sequenceId: context.sequenceId,
+          projectId: context.projectDocumentId || context.projectPath,
+          start: range.start,
+          end: range.end,
+        },
+        (late) => lateCut(late, { before: doc }),
+      );
       // Linked words follow the cut through the refreshed clip positions instead.
       const timeline = link ? await snapshot().catch(() => null) : null;
       const fresh = timeline && link ? refreshVoiceLink(timeline, link) : null;
@@ -695,7 +720,11 @@ export function TranscriptView({
         uncertain: result.cutError !== null,
         link: fresh ?? link,
       });
-      await pruneCheckpoints(context.sequenceId, result.checkpointId).catch(() => {});
+      await pruneCheckpoints(
+        context.sequenceId,
+        result.checkpointId,
+        context.projectDocumentId || context.projectPath,
+      ).catch(() => {});
       setSelection(null);
       setConfirmCut(false);
       if (result.cutError) setError(`${result.cutError} The checkpoint is available below.`);
@@ -787,12 +816,15 @@ export function TranscriptView({
     onBusy(true);
     setError(null);
     return await (async () => {
-      const result = await cutTranscriptRanges({
-        sequenceId: context.sequenceId,
-        projectId: context.projectDocumentId || context.projectPath,
-        ranges,
-        expectedSignature: cleanup.signature,
-      });
+      const result = await cutTranscriptRanges(
+        {
+          sequenceId: context.sequenceId,
+          projectId: context.projectDocumentId || context.projectPath,
+          ranges,
+          expectedSignature: cleanup.signature,
+        },
+        (late) => lateCut(late, { before: doc, beforeLink: link }),
+      );
       // Source words remain intact. The after snapshot places them through the surviving,
       // speed-aware clip segments; an entirely removed VO has zero surviving segments.
       const fresh = link
@@ -818,7 +850,11 @@ export function TranscriptView({
       });
       clearCleanup();
       setSelection(null);
-      await pruneCheckpoints(context.sequenceId, result.checkpointId).catch(() => {});
+      await pruneCheckpoints(
+        context.sequenceId,
+        result.checkpointId,
+        context.projectDocumentId || context.projectPath,
+      ).catch(() => {});
       if (result.cutError)
         setError(`${result.cutError} Undo transcript cut restores the entire cleanup.`);
     })()

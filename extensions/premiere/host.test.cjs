@@ -401,7 +401,7 @@ test("music partial failure retains a usable undo receipt and checkpoints surviv
   const prune = vm.runInNewContext(
     "(" +
       panel.timelineOperation.toString() +
-      ")('prune',false,'sequence-a','','',0,null,null,true)",
+      ")('prune',false,'sequence-a','',String(app.project.documentID || app.project.path),0,null,null,true)",
     host.context,
   );
   assert.equal(prune.removed, 0);
@@ -1443,7 +1443,9 @@ test("turn checkpoint pruning preserves caption undo checkpoints", async () => {
   evaluation.callback(vm.runInNewContext(evaluation.script, host.context));
   const { timelineOperation } = panel;
   const result = vm.runInNewContext(
-    "(" + timelineOperation.toString() + ")('prune',false,'sequence-a','','',0,null,null,true)",
+    "(" +
+      timelineOperation.toString() +
+      ")('prune',false,'sequence-a','',String(app.project.documentID || app.project.path),0,null,null,true)",
     host.context,
   );
   assert.equal(result.removed, 0);
@@ -2044,4 +2046,57 @@ test("VO source resolution can finish during an outstanding operation without re
   await new Promise(setImmediate);
   assert.equal(f.messages.at(-1).packet.requestId, "next");
   assert.equal(f.messages.at(-1).packet.ok, true);
+});
+
+test("a lost Premiere reply releases the music lock instead of blocking Music until restart", async () => {
+  const panel = await panelFixture();
+  panel.send({ type: "premiere.music.request", requestId: "first", action: "pick" });
+  const pick = panel.evaluations.at(-1);
+  assert.match(pick.script, /selectDialog/);
+  // Premiere never answers the picker.
+  for (let tick = 0; tick < 15; tick++) panel.runIntervals(2000);
+  const probe = panel.evaluations.at(-1);
+  assert.equal(probe.script, "1");
+  probe.callback("1");
+  panel.runIntervals(2000);
+  assert.ok(!panel.messages.some((message) => message.packet.requestId === "first"));
+  panel.runIntervals(2000);
+  const failed = panel.messages.find((message) => message.packet.requestId === "first").packet;
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /reply was lost/);
+  // A late original reply is ignored, and Music accepts new work.
+  pick.callback("D%3A%2FMusic");
+  assert.equal(panel.messages.filter((message) => message.packet.requestId === "first").length, 1);
+  panel.send({ type: "premiere.music.request", requestId: "second", action: "pick" });
+  assert.match(panel.evaluations.at(-1).script, /selectDialog/);
+});
+
+test("music refuses up front when the result would pass the 2,000-clip Undo limit", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const original = host.sequence.audioTracks[0].clips[0];
+  const crowded = host.sequence.audioTracks[0].clips;
+  for (let i = 1; i < 1999; i++) crowded[i] = { ...original, nodeId: "voice-" + i };
+  crowded.numItems = 1999;
+  const result = runMusic(panel, host, musicRequest(musicSignature(panel, host)));
+  assert.equal(result.ok, false);
+  assert.match(result.error, /2,000-clip limit/);
+  assert.equal(host.imports.length, 0);
+  assert.equal(host.sequence.audioTracks[2].clips.numItems, 0);
+});
+
+test("music that also changes another track stops with Undo instead of reporting success", async () => {
+  const panel = await panelFixture();
+  const host = musicHost();
+  const target = host.sequence.audioTracks[2];
+  const originalOverwrite = target.overwriteClip;
+  target.overwriteClip = function (item, start) {
+    originalOverwrite.call(this, item, start);
+    // Simulates Premiere spilling onto the neighbouring SFX track.
+    host.sequence.audioTracks[1].clips.numItems = 0;
+  };
+  const result = runMusic(panel, host, musicRequest(musicSignature(panel, host)));
+  assert.equal(result.status, "partial");
+  assert.match(result.message, /also changed track A2/);
+  assert.ok(result.checkpointId);
 });

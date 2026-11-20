@@ -48,6 +48,30 @@ describe("Markdown", () => {
     expect(rendered.match(/data-timestamp/g)).toHaveLength(2);
   });
 
+  it("renders tables written without outer pipes", () => {
+    const rendered = html("Time | Note\n--- | ---\n00:00:01:00 | Cut here");
+    expect(rendered).toContain("<th>Time</th><th>Note</th>");
+    expect(rendered).toContain("<td>Cut here</td>");
+    // Prose with a pipe and no rule line stays prose.
+    expect(html("Use A | B here")).toBe("<p>Use A | B here</p>");
+  });
+
+  it("matches code fences by length and character, including tilde fences", () => {
+    const nested = html("````markdown\n# Notes\n```js\nx()\n```\nafter\n````\nhello");
+    expect(nested).toBe("<pre><code># Notes\n```js\nx()\n```\nafter</code></pre><p>hello</p>");
+    expect(html("~~~\ncode\n~~~")).toBe("<pre><code>code</code></pre>");
+    // A fence left open by a streaming reply runs to the end.
+    expect(html("```\nstill writing")).toBe("<pre><code>still writing</code></pre>");
+  });
+
+  it("makes a timestamp written in backticks clickable", () => {
+    const rendered = renderToStaticMarkup(
+      <Markdown text={"Go to `00:00:01:00`"} onSeek={() => {}} />,
+    );
+    expect(rendered).toContain("<code><button");
+    expect(rendered).toContain("data-timestamp");
+  });
+
   it("shows Markdown escapes as plain characters", () => {
     expect(html("P2 \\+ P3, \\# and C:\\Users")).toBe("<p>P2 + P3, # and C:\\Users</p>");
   });

@@ -306,8 +306,8 @@ it("captures before dispatch and after settlement, associates the reply, and res
   await expect.element(screen.getByText("Turn capture-turn: 1 changes")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(2);
   expect(state.snapshot).toHaveBeenLastCalledWith(false, "sequence");
-  // The changed turn's checkpoint is the only one undo can still use.
-  expect(state.prune).toHaveBeenCalledWith("sequence", "checkpoint");
+  // A chat turn never deletes checkpoints, such as a transcript cut's Undo point.
+  expect(state.prune).not.toHaveBeenCalled();
   await screen.rerender(<CaptureTurn key="reloaded" status="completed" />);
   await expect.element(screen.getByText("Turn capture-turn: 1 changes")).toBeVisible();
   expect(state.snapshot).toHaveBeenCalledTimes(2);

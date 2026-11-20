@@ -845,7 +845,7 @@ export function PremiereApp() {
                     <Markdown
                       text={block.text}
                       onSeek={seek}
-                      actions={timelineActions}
+                      actions={timelineActions && { ...timelineActions, origin: block.scope }}
                       complete={!block.streaming}
                     />
                     {block.streaming ? <span data-typing="" aria-label="Writing" /> : null}
@@ -863,7 +863,7 @@ export function PremiereApp() {
                     <Markdown
                       text={block.markdown}
                       onSeek={seek}
-                      actions={timelineActions}
+                      actions={timelineActions && { ...timelineActions, origin: block.scope }}
                       complete
                     />
                     <button

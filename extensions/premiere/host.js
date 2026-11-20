@@ -948,6 +948,38 @@
         ? pathKey(clip.projectItem.getMediaPath())
         : "";
     }
+    function snapshotClipCount(snap) {
+      var total = 0;
+      var groups = [snap.videoTracks, snap.audioTracks];
+      for (var g = 0; g < groups.length; g++)
+        for (var t = 0; t < groups[g].length; t++) total += groups[g][t].clips.length;
+      return total;
+    }
+    // Names the first track other than the music track whose clips changed.
+    function otherTrackChange(before, after, musicTrack) {
+      if (
+        before.videoTrackCount !== after.videoTrackCount ||
+        before.audioTrackCount !== after.audioTrackCount
+      )
+        return "the track layout";
+      var groups = [
+        ["video", before.videoTracks, after.videoTracks],
+        ["audio", before.audioTracks, after.audioTracks]
+      ];
+      var fields = ["nodeId", "mediaPath", "start", "end", "inPoint", "outPoint", "enabled"];
+      for (var g = 0; g < groups.length; g++)
+        for (var t = 0; t < groups[g][1].length; t++) {
+          if (groups[g][0] === "audio" && t === musicTrack) continue;
+          var label = (groups[g][0] === "audio" ? "A" : "V") + (t + 1);
+          var was = groups[g][1][t].clips;
+          var now = groups[g][2][t] ? groups[g][2][t].clips : [];
+          if (was.length !== now.length) return "track " + label;
+          for (var n = 0; n < was.length; n++)
+            for (var f = 0; f < fields.length; f++)
+              if (was[n][fields[f]] !== now[n][fields[f]]) return "track " + label;
+        }
+      return "";
+    }
     function response(status, signature, message, sequenceId) {
       return (
         "axis:music|" +
@@ -1092,6 +1124,13 @@
         failure("The timeline changed after preview. Rebuild the music plan.");
       if (current.snapshot && current.snapshot.truncated)
         failure("The timeline is too large to inspect safely.");
+      var beforeMusic = current.snapshot;
+      // Each cue adds one clip. Undo cannot check a sequence past 2,000 clips,
+      // so refuse up front instead of placing music that cannot be undone.
+      if (snapshotClipCount(beforeMusic) + request.cues.length > 2000)
+        failure(
+          "This sequence is too close to Axis Undo's 2,000-clip limit to add music safely. Nothing was changed."
+        );
       var fps = 254016000000 / Number(s.timebase);
       if (!number(fps) || fps <= 0) fps = 30;
       var frameDuration = 1 / fps;
@@ -1494,6 +1533,17 @@
         "music"
       );
       if (!current.ok) failure("Could not verify the completed music timeline.");
+      if (current.snapshot.truncated)
+        failure("The music timeline is too large to verify. Click Undo all to restore it.");
+      // Music may only change its own track. A WAV mapped to several mono
+      // channels, for example, can spill onto the next track.
+      var collateral = otherTrackChange(beforeMusic, current.snapshot, trackIndex);
+      if (collateral)
+        failure(
+          "Music placement also changed " +
+            collateral +
+            ". Click Undo all to restore the timeline from before the music."
+        );
       return response(
         "applied",
         current.signature,
@@ -1518,6 +1568,48 @@
       return "axis:error|" + encodeURIComponent(String(error).slice(0, 800));
     }
   }
+  // CEP can drop an evalScript callback, which left busy flags set until restart.
+  // ExtendScript runs scripts in order, so when a later probe answers, the first
+  // script is done; after a short grace period its callback gets an axis:error.
+  var LOST_REPLY = "Premiere finished but its reply was lost. Check the timeline before retrying.";
+  function guardedEval(script, callback) {
+    // Counted in 2-second ticks: probe after 30 seconds, then wait 4 more.
+    var settled = false;
+    var ticks = 0;
+    var probing = false;
+    var ticksSinceProbe = null;
+    function settle(raw) {
+      if (settled) return;
+      settled = true;
+      clearInterval(timer);
+      callback(raw);
+    }
+    var timer = setInterval(function () {
+      if (settled) return;
+      ticks++;
+      if (ticksSinceProbe !== null) ticksSinceProbe++;
+      if (!probing && ticks >= 15) {
+        probing = true;
+        try {
+          window.__adobe_cep__.evalScript("1", function () {
+            ticksSinceProbe = 0;
+          });
+        } catch (_ignoredProbe) {
+          probing = false;
+        }
+      } else if (ticksSinceProbe !== null && ticksSinceProbe >= 2) {
+        settle("axis:error|" + encodeURIComponent(LOST_REPLY));
+      }
+    }, 2000);
+    try {
+      window.__adobe_cep__.evalScript(script, settle);
+    } catch (error) {
+      settled = true;
+      clearInterval(timer);
+      throw error;
+    }
+  }
+
   var musicBusy = false;
   function musicMessage(data, origin) {
     if (data.type !== "premiere.music.request") return;
@@ -1550,10 +1642,12 @@
       return;
     }
     if (data.action === "pick") {
-      window.__adobe_cep__.evalScript(
+      guardedEval(
         "(function(){var f=Folder.selectDialog('Choose music library');return f?encodeURIComponent(f.fsName):'';})()",
         function (raw) {
           try {
+            if (String(raw).indexOf("axis:error|") === 0)
+              return done({ ok: false, error: LOST_REPLY });
             done({ ok: true, root: decodeURIComponent(raw || "") });
           } catch (error) {
             done({ ok: false, error: String(error.message).slice(0, 1024) });
@@ -1568,7 +1662,7 @@
       var encoded = JSON.stringify(data);
       if (encoded.length > 4000000) throw new Error("Music plan is too large.");
       encoded = encoded.replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-      window.__adobe_cep__.evalScript("(" + musicScript() + ")(" + encoded + ")", function (raw) {
+      guardedEval("(" + musicScript() + ")(" + encoded + ")", function (raw) {
         try {
           var fields = String(raw).split("|").map(decodeURIComponent);
           if (fields[0] !== "axis:music")
@@ -1633,7 +1727,7 @@
           data,
           extensionDirectory,
           function (script, callback) {
-            window.__adobe_cep__.evalScript(script, callback);
+            guardedEval(script, callback);
           },
           { timelineSource: window.AxisTimeline.operation.toString() }
         )
@@ -1712,7 +1806,7 @@
       .replace(/\u2029/g, "\\u2029");
     captionsBusy = true;
     try {
-      window.__adobe_cep__.evalScript("(" + captionScript() + ")(" + encoded + ")", function (raw) {
+      guardedEval("(" + captionScript() + ")(" + encoded + ")", function (raw) {
         captionsBusy = false;
         try {
           var fields = String(raw).split("|").map(decodeURIComponent);

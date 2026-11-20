@@ -147,7 +147,11 @@ test("heartbeats each second, starts busy updates at two seconds and never retri
   f.tick(1000);
   f.tick(2000);
   f.tick(200);
-  assert.equal(f.evaluations.length, 1);
+  // The edit is never retried. The only extra call is the tiny lost-reply probe.
+  assert.deepEqual(
+    f.evaluations.map((item) => item.script),
+    ["longEdit()", "1"],
+  );
   assert.deepEqual(f.read("busy_long.json"), { id: "long", elapsedMs: 122001 });
   assert.equal(f.read("axis-bridge-owner.json").timestamp, 132001);
   f.evaluations[0].callback('{"success":true}');
@@ -304,4 +308,55 @@ test("directory validation fails before creating timers, leases or executing com
   assert.equal(f.intervals.size, 0);
   assert.deepEqual(f.names(), []);
   assert.equal(f.evaluations.length, 0);
+});
+
+test("recovers from a lost Premiere reply once a later probe answers, and moves on", (t) => {
+  const f = fixture(t);
+  f.write("cmd_a.jsx", "first()");
+  f.write("cmd_b.jsx", "second()");
+  f.create().start();
+  assert.deepEqual(
+    f.evaluations.map((item) => item.script),
+    ["first()"],
+  );
+  // The first command's callback never arrives.
+  f.advance(30000);
+  f.tick(2000);
+  assert.deepEqual(
+    f.evaluations.map((item) => item.script),
+    ["first()", "1"],
+  );
+  f.evaluations[1].callback("1");
+  f.advance(2000);
+  f.tick(2000);
+  assert.equal(f.evaluations.length, 2, "a late real reply still gets a grace period");
+  f.advance(4000);
+  f.tick(2000);
+  assert.match(f.read("res_a.json").error, /reply was lost/);
+  assert.equal(f.read("res_a.json").success, false);
+  assert.deepEqual(
+    f.evaluations.map((item) => item.script),
+    ["first()", "1", "second()"],
+  );
+  // The original callback arriving late is ignored.
+  f.evaluations[0].callback('{"success":true}');
+  assert.match(f.read("res_a.json").error, /reply was lost/);
+});
+
+test("keeps waiting while Premiere is busy and reports it instead of failing the command", (t) => {
+  const f = fixture(t);
+  f.write("cmd_a.jsx", "long()");
+  f.create().start();
+  f.advance(30000);
+  f.tick(2000);
+  f.advance(40000);
+  f.tick(2000);
+  f.tick(1000);
+  assert.equal(f.events.at(-1).state, "busy");
+  assert.ok(!f.names().includes("res_a.json"));
+  // The real reply, then the probe's, arrive when Premiere frees up.
+  f.evaluations[0].callback('{"success":true,"data":1}');
+  f.evaluations[1].callback("1");
+  assert.deepEqual(f.read("res_a.json"), { success: true, data: 1 });
+  assert.equal(f.events.at(-1).state, "running");
 });

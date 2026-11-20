@@ -221,3 +221,48 @@ it("cleans up timed-out timeline requests without retrying an operation", async 
     vi.unstubAllGlobals();
   }
 });
+
+it("waits two minutes for a cut and hands a late reply's Undo checkpoint back", async () => {
+  const f = fixture();
+  vi.useFakeTimers();
+  try {
+    const late = vi.fn();
+    const pending = cutTranscriptRange(
+      { sequenceId: "sequence", projectId: "project", start: 1, end: 2 },
+      late,
+    );
+    const rejected = expect(pending).rejects.toThrow("Premiere did not respond");
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(late).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(60000);
+    await rejected;
+    // Premiere finishes the slow cut after the panel stopped waiting.
+    expect(f.listeners.size).toBe(1);
+    f.send({
+      ok: true,
+      snapshot: f.snapshot,
+      signature: "after",
+      checkpointId: "saved",
+      checkpointSignature: "before",
+      cutError: null,
+    });
+    expect(late).toHaveBeenCalledWith(
+      expect.objectContaining({ checkpointId: "saved", expectedSignature: "after" }),
+    );
+    expect(f.listeners.size).toBe(0);
+    // Without a late reply, the listener is released after ten minutes.
+    const silent = cutTranscriptRange(
+      { sequenceId: "sequence", projectId: "project", start: 1, end: 2 },
+      late,
+    );
+    const silentRejected = expect(silent).rejects.toThrow("Premiere did not respond");
+    await vi.advanceTimersByTimeAsync(120000);
+    await silentRejected;
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+    expect(f.listeners.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});

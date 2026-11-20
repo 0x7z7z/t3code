@@ -16,6 +16,8 @@
     checkpointKind,
     internalRollback
   ) {
+    // Snapshots stop at this many clips, and Undo refuses a cut-off snapshot.
+    var CLIP_LIMIT = 2000;
     function result(value) {
       return rawResult ? value : "axis:" + json(value);
     }
@@ -67,7 +69,7 @@
         for (var t = 0; t < collection.numTracks && t < 256; t++) {
           var clips = collection[t].clips;
           var items = [];
-          for (var c = 0; c < clips.numItems && count < 2000; c++, count++) {
+          for (var c = 0; c < clips.numItems && count < CLIP_LIMIT; c++, count++) {
             var clip = clips[c];
             var enabled = null;
             var speed = null;
@@ -211,8 +213,11 @@
       if (sequenceId && originalId !== sequenceId)
         fail("The active sequence changed. Open the original sequence first.");
       if (action === "prune") {
-        // Only the latest changed turn can be undone, so other checkpoints of
-        // this sequence are deleted instead of piling up in the project.
+        // Only the latest transcript cut can be undone, so its other checkpoints
+        // are deleted instead of piling up. A sequence ID can repeat across
+        // projects, so the request must name the open project.
+        if (!expected || text(app.project.documentID || app.project.path) !== expected)
+          fail("The active Premiere project changed. No checkpoint was deleted.");
         var removed = 0;
         for (var p = app.project.sequences.numSequences - 1; p >= 0; p--) {
           var old = app.project.sequences[p];
@@ -311,6 +316,25 @@
         if (expected && json(before) !== expected)
           fail("The timeline changed since cleanup review. Review the cuts again.");
         if (before.truncated) fail("This sequence exceeds the checkpoint limit. No range was cut.");
+        // A cut inside a clip splits it in two. If the result would pass the
+        // snapshot limit, the cut could not be undone, so refuse it up front.
+        var cutRows = range && range.ranges ? range.ranges : [range];
+        var clipTotal = 0;
+        var splits = 0;
+        var trackGroups = [before.videoTracks, before.audioTracks];
+        for (var tg = 0; tg < trackGroups.length; tg++)
+          for (var tt = 0; tt < trackGroups[tg].length; tt++) {
+            var trackClips = trackGroups[tg][tt].clips;
+            clipTotal += trackClips.length;
+            for (var tc = 0; tc < trackClips.length; tc++)
+              for (var tr = 0; tr < cutRows.length; tr++)
+                if (trackClips[tc].start < cutRows[tr].start && trackClips[tc].end > cutRows[tr].end)
+                  splits++;
+          }
+        if (clipTotal + splits > CLIP_LIMIT)
+          fail(
+            "This cut would take the sequence past Axis Undo's 2,000-clip limit. No range was cut."
+          );
         cutRange(original, range, true);
       }
       var savedId = null;
@@ -429,6 +453,7 @@
     if (
       (prune &&
         (!valid(data.sequenceId, 512) ||
+          !valid(data.projectId, 2048) ||
           (data.keepId !== undefined && !valid(data.keepId, 512)))) ||
       (!restore && !prune && !cutting && typeof data.checkpoint !== "boolean") ||
       (cutting &&
@@ -466,7 +491,7 @@
       restore ? data.checkpointSignature : cutting || data.checkpoint === true,
       data.sequenceId || "",
       (prune ? data.keepId : data.checkpointId) || "",
-      data.expectedSignature || "",
+      (prune ? data.projectId : data.expectedSignature) || "",
       data.turnNumber || 1,
       cutting
         ? batch

@@ -80,6 +80,15 @@ it("adds the preview at sequence time and persists undo across a remount", async
   await screen.rerender(<CaptionsPanel {...props} key="remount" />);
   await expect.element(screen.getByRole("button", { name: "Add to sequence" })).toBeDisabled();
   host.request.mockResolvedValue({ status: "undone", sequenceId: "restored-sequence" });
+  const calls = host.request.mock.calls.length;
+  // Caption text cannot be checked, so the first click only warns.
+  await screen.getByRole("button", { name: "Undo captions" }).click();
+  await expect.element(screen.getByRole("alert")).toBeVisible();
+  expect(screen.container.querySelector("[role=alert]")?.textContent).toContain("caption fixes");
+  expect(host.request.mock.calls.length).toBe(calls);
+  await screen.getByRole("button", { name: "Keep captions" }).click();
+  await expect.element(screen.getByRole("alert")).not.toBeInTheDocument();
+  await screen.getByRole("button", { name: "Undo captions" }).click();
   await screen.getByRole("button", { name: "Undo captions" }).click();
   await expect.element(screen.getByRole("button", { name: "Add to sequence" })).toBeEnabled();
   expect(props.onRestored).toHaveBeenCalledWith("restored-sequence");
@@ -143,6 +152,8 @@ it("shows native failures and keeps undo available when deletion fails", async (
   await expect.element(screen.getByRole("button", { name: "Undo captions" })).toBeEnabled();
   host.request.mockRejectedValue(new Error("Bin changed"));
   await screen.getByRole("button", { name: "Undo captions" }).click();
+  await screen.getByRole("button", { name: "Undo captions" }).click();
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Bin changed");
   await expect.element(screen.getByRole("button", { name: "Undo captions" })).toBeEnabled();
 });
 

@@ -1,4 +1,5 @@
 import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
+import type { ReplyScope } from "./interactiveHost";
 
 const HOST_CONTEXT_MARKER = "\n<premiere-host-context>";
 
@@ -21,9 +22,16 @@ export type TranscriptBlock =
       readonly id: string;
       readonly text: string;
       readonly streaming: boolean;
+      /** The sequence open when the editor sent the message this replies to. */
+      readonly scope?: ReplyScope | undefined;
     }
   | { readonly kind: "tools"; readonly id: string; readonly steps: ReadonlyArray<ToolStep> }
-  | { readonly kind: "plan"; readonly id: string; readonly markdown: string }
+  | {
+      readonly kind: "plan";
+      readonly id: string;
+      readonly markdown: string;
+      readonly scope?: ReplyScope | undefined;
+    }
   | {
       readonly kind: "todo";
       readonly id: string;
@@ -43,6 +51,25 @@ export type TranscriptBlock =
 /** Removes the Premiere context the panel appends to every prompt. */
 export function stripHostContext(text: string): string {
   return text.split(HOST_CONTEXT_MARKER)[0]!.trim();
+}
+
+/** Reads the project and sequence from the Premiere context attached to a prompt. */
+export function hostContextScope(text: string): ReplyScope | null {
+  const attached = text.split(HOST_CONTEXT_MARKER)[1];
+  const line = attached?.split("\n").find((value) => value.trim());
+  if (!line) return null;
+  try {
+    const value: unknown = JSON.parse(line);
+    if (!value || typeof value !== "object") return null;
+    const record = value as Record<string, unknown>;
+    const sequenceId = typeof record.sequenceId === "string" ? record.sequenceId : "";
+    const projectId =
+      (typeof record.projectDocumentId === "string" && record.projectDocumentId) ||
+      (typeof record.projectPath === "string" ? record.projectPath : "");
+    return sequenceId ? { sequenceId, projectId } : null;
+  } catch {
+    return null;
+  }
 }
 
 function sentenceCase(value: string): string {
@@ -94,9 +121,12 @@ export function buildTranscript(
   items: ReadonlyArray<OrchestrationV2TurnItem>,
 ): ReadonlyArray<TranscriptBlock> {
   const blocks: TranscriptBlock[] = [];
+  let scope: ReplyScope | undefined;
   for (const item of items) {
     const last = blocks.at(-1);
     if (item.type === "user_message") {
+      // A message without Premiere context, such as a slash command, keeps no scope.
+      scope = hostContextScope(item.text) ?? undefined;
       const text = stripHostContext(item.text);
       const images = item.attachments.map((attachment) => attachment.name);
       if (text || images.length) blocks.push({ kind: "user", id: item.id, text, images });
@@ -111,11 +141,11 @@ export function buildTranscript(
           text: text ? `${last.text}\n\n${text}` : last.text,
           streaming: item.streaming,
         };
-      else blocks.push({ kind: "assistant", id: item.id, text, streaming: item.streaming });
+      else blocks.push({ kind: "assistant", id: item.id, text, streaming: item.streaming, scope });
       continue;
     }
     if (item.type === "proposed_plan") {
-      blocks.push({ kind: "plan", id: item.id, markdown: item.markdown });
+      blocks.push({ kind: "plan", id: item.id, markdown: item.markdown, scope });
       continue;
     }
     if (item.type === "todo_list") {

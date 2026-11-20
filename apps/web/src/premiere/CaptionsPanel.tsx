@@ -62,6 +62,9 @@ export function CaptionsPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // Premiere's scripting cannot read caption text, so Undo cannot tell whether
+  // captions were edited by hand. The editor confirms the swap first.
+  const [confirmUndo, setConfirmUndo] = useState(false);
   const lock = useRef(false);
   const projectId = context.projectDocumentId || context.projectPath;
   const storageKey = `axis-captions-undo:${JSON.stringify([projectId, context.sequenceId])}`;
@@ -95,6 +98,11 @@ export function CaptionsPanel({
       (action !== "undo" && (validation || !cues.length))
     )
       return;
+    if (action === "undo" && undo?.checkpointId && !confirmUndo) {
+      setConfirmUndo(true);
+      return;
+    }
+    setConfirmUndo(false);
     lock.current = true;
     setBusy(true);
     onBusy(true);
@@ -124,7 +132,7 @@ export function CaptionsPanel({
         saveUndo(null);
         setNotice(
           undo?.checkpointId
-            ? "Opened the pre-caption checkpoint. The captioned version is preserved in Axis checkpoints."
+            ? "Opened the pre-caption checkpoint. The captioned version, with any caption fixes, is in the Axis checkpoints bin."
             : "Imported caption source removed.",
         );
       } else if (packet.status === "added" || packet.status === "imported") {
@@ -314,8 +322,12 @@ export function CaptionsPanel({
       </p>
       {validation || error ? <p role="alert">{validation || error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
-      {undo?.checkpointId ? (
-        <p>Undo opens a saved sequence. Later caption edits cannot be checked.</p>
+      {undo?.checkpointId && confirmUndo ? (
+        <p role="alert">
+          Undo swaps in the copy saved before captions were added. Edits made since then, including
+          caption fixes, move with the captioned version to the Axis checkpoints bin. Click Undo
+          captions again to continue.
+        </p>
       ) : null}
       <footer>
         <button
@@ -334,9 +346,16 @@ export function CaptionsPanel({
           Save .srt…
         </button>
         {undo ? (
-          <button type="button" disabled={disabled || busy} onClick={() => void run("undo")}>
-            Undo captions
-          </button>
+          <>
+            <button type="button" disabled={disabled || busy} onClick={() => void run("undo")}>
+              Undo captions
+            </button>
+            {confirmUndo ? (
+              <button type="button" disabled={busy} onClick={() => setConfirmUndo(false)}>
+                Keep captions
+              </button>
+            ) : null}
+          </>
         ) : null}
       </footer>
     </section>

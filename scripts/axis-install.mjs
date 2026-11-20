@@ -20,9 +20,11 @@ const { values } = NodeUtil.parseArgs({
     "sandbox-root": { type: "string" },
     uninstall: { type: "boolean" },
     "prepare-upgrade": { type: "boolean" },
-    port: { type: "string", default: "5739" },
+    port: { type: "string" },
   },
 });
+const requestedPort = values.port;
+values.port ??= "5739";
 const runtimeRoot = values["runtime-root"]
   ? NodePath.resolve(values["runtime-root"])
   : NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
@@ -44,6 +46,19 @@ function inside(parent, child) {
 }
 if (!values["prepare-upgrade"] && !inside(installRoot, runtimeRoot))
   throw new Error("Runtime must be inside the install directory.");
+// The panel's saved transcripts, drafts and Undo receipts live in browser
+// storage tied to its local address, so an upgrade keeps the installed port.
+function installedPort(destination) {
+  try {
+    const config = JSON.parse(
+      NodeFS.readFileSync(NodePath.join(destination, "config.json"), "utf8"),
+    );
+    const url = new URL(config.backendUrl);
+    return url.hostname === "127.0.0.1" && url.port ? url.port : null;
+  } catch {
+    return null;
+  }
+}
 function stopOwnedBackends() {
   // Stop only PIDs captured when Axis spawned a packaged backend, after checking
   // executable and entrypoint identity. A dev backend has no such receipt.
@@ -192,7 +207,9 @@ if (values["prepare-upgrade"]) {
     "--destination",
     destination,
     "--port",
-    sandbox ? values.port : await availablePort(values.port),
+    sandbox
+      ? values.port
+      : await availablePort(requestedPort ?? installedPort(destination) ?? values.port),
   ];
   if (sandbox)
     args.push(

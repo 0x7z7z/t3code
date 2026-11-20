@@ -21,7 +21,19 @@ from urllib.parse import parse_qs, urlparse
 HERE = Path(__file__).resolve().parent
 TOOLS = HERE.parent / "premiere" / "tools"
 sys.path.insert(0, str(TOOLS))
-import axis_vo_cleanup as engine  # noqa: E402
+
+
+class _Engine:
+    """Imports the cleanup engine on first use. Importing it at startup failed
+    before the page could open when numpy or soundfile were missing, so the
+    shortcut looked like it did nothing. Now the page opens and shows setup steps."""
+
+    def __getattr__(self, name):
+        import axis_vo_cleanup
+        return getattr(axis_vo_cleanup, name)
+
+
+engine = _Engine()
 
 PORT = int(os.environ.get("AXIS_VO_STUDIO_PORT", "8790"))
 TOKEN = secrets.token_urlsafe(24)
@@ -137,6 +149,8 @@ class Job:
             self.cancel_file.write_text("stop", encoding="utf-8")
         except OSError:
             pass
+        # The transcript step also checks self.cancelled once its process has
+        # started, so a cancel that lands while WhisperX is starting still stops it.
         if self.phase == "transcript":
             kill(self.process)
 
@@ -144,6 +158,7 @@ class Job:
         try:
             self.result = self.clean()
             if self.transcript and not self.cancelled:
+                self.process = None
                 self.phase = "transcript"
                 self.result["transcript"] = self.make_transcript(Path(self.result["outputPath"]))
             if self.cancelled:
@@ -182,8 +197,15 @@ class Job:
 
     def make_transcript(self, audio):
         """WhisperX on the finished file, so word times match the cleaned audio exactly."""
-        work = self.control / "transcript"
-        work.mkdir()
+        # Work next to the output, on the same drive, so the finished files can be
+        # renamed into place. Renaming across drives (temp on C:, VO on D:) fails.
+        work = Path(tempfile.mkdtemp(prefix=".axis-transcript-", dir=audio.parent))
+        try:
+            return self.run_whisperx(audio, work)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+
+    def run_whisperx(self, audio, work):
         log_path = work / "whisperx.log"
         with open(log_path, "wb") as log:
             self.process = subprocess.Popen(
@@ -193,6 +215,8 @@ class Job:
                 stdout=log, stderr=subprocess.STDOUT, **NO_WINDOW)
             raw, aligning, read_at = None, False, 0
             while self.process.poll() is None:
+                if self.cancelled:
+                    kill(self.process)
                 time.sleep(1)
                 with open(log_path, "rb") as reader:
                     reader.seek(read_at)
@@ -214,7 +238,10 @@ class Job:
             made = work / (audio.stem + "." + extension)
             if made.exists():
                 target = audio.with_name(audio.stem + "_transcript." + extension)
-                os.replace(made, target)
+                try:
+                    os.replace(made, target)
+                except OSError:
+                    shutil.copyfile(made, target)
                 saved[extension] = str(target)
         if "srt" not in saved:
             raise RuntimeError("WhisperX made no transcript. The cleaned audio is saved.")
