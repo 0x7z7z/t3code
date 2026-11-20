@@ -1,0 +1,798 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Axis VO Studio</title>
+    <style>
+      :root {
+        --bg: #f4f5f7;
+        --card: #ffffff;
+        --text: #17191c;
+        --muted: #5f6670;
+        --line: #dfe2e7;
+        --field: #f8f9fb;
+        --accent: #2f6fec;
+        --accent-text: #ffffff;
+        --accent-soft: #e7eefd;
+        --good: #1f8a4c;
+        --bad: #c23934;
+        --bad-soft: #fdecec;
+        --warn-soft: #fff6e0;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.04);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --bg: #141518;
+          --card: #1d1f23;
+          --text: #eceef1;
+          --muted: #9aa1ab;
+          --line: #2e3137;
+          --field: #24272c;
+          --accent: #4d8bff;
+          --accent-text: #ffffff;
+          --accent-soft: #1f2d48;
+          --good: #4cc07c;
+          --bad: #ff7a73;
+          --bad-soft: #3a2224;
+          --warn-soft: #3a3120;
+          --shadow: none;
+        }
+      }
+      :root[data-theme="dark"] {
+        --bg: #141518;
+        --card: #1d1f23;
+        --text: #eceef1;
+        --muted: #9aa1ab;
+        --line: #2e3137;
+        --field: #24272c;
+        --accent: #4d8bff;
+        --accent-text: #ffffff;
+        --accent-soft: #1f2d48;
+        --good: #4cc07c;
+        --bad: #ff7a73;
+        --bad-soft: #3a2224;
+        --warn-soft: #3a3120;
+        --shadow: none;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          15px/1.5 "Segoe UI",
+          system-ui,
+          sans-serif;
+      }
+      main {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 28px 16px 60px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+      .logo {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        background: var(--accent);
+        color: var(--accent-text);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 20px;
+        margin-bottom: 16px;
+        box-shadow: var(--shadow);
+      }
+      h2 {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin: 0 0 12px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      input[type="text"],
+      input[type="number"] {
+        background: var(--field);
+        border: 1px solid var(--line);
+        color: var(--text);
+        border-radius: 9px;
+        padding: 9px 12px;
+        font: inherit;
+        min-width: 0;
+      }
+      #path {
+        flex: 1 1 260px;
+      }
+      button {
+        font: inherit;
+        border-radius: 9px;
+        padding: 9px 16px;
+        border: 1px solid var(--line);
+        background: var(--field);
+        color: var(--text);
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      button.primary {
+        background: var(--accent);
+        color: var(--accent-text);
+        border-color: var(--accent);
+        font-weight: 600;
+      }
+      button.big {
+        width: 100%;
+        padding: 13px;
+        font-size: 16px;
+      }
+      button.link {
+        border: none;
+        background: none;
+        color: var(--accent);
+        padding: 2px 6px;
+      }
+      .file {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .file strong {
+        word-break: break-all;
+      }
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      audio {
+        width: 100%;
+        height: 36px;
+      }
+      .modes {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        gap: 10px;
+      }
+      .mode {
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 12px 14px;
+        cursor: pointer;
+        background: var(--field);
+      }
+      .mode input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .mode:has(input:checked) {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .mode:has(input:focus-visible) {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .mode b {
+        display: block;
+      }
+      .mode > span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 11px;
+        padding: 1px 7px;
+        border-radius: 99px;
+        background: var(--good);
+        color: #ffffff;
+        font-weight: 600;
+        margin-left: 6px;
+        vertical-align: 1px;
+      }
+      .setting {
+        margin-top: 18px;
+      }
+      .setting label.title {
+        font-weight: 600;
+        display: block;
+        margin-bottom: 6px;
+      }
+      .slider {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .slider input[type="range"] {
+        flex: 1;
+        accent-color: var(--accent);
+      }
+      .slider input[type="number"] {
+        width: 90px;
+      }
+      .check {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+        cursor: pointer;
+      }
+      .check input {
+        margin-top: 4px;
+        accent-color: var(--accent);
+        width: 16px;
+        height: 16px;
+      }
+      progress {
+        width: 100%;
+        height: 10px;
+        accent-color: var(--accent);
+      }
+      .steps {
+        list-style: none;
+        padding: 0;
+        margin: 14px 0;
+        display: grid;
+        gap: 6px;
+      }
+      .steps li {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        color: var(--muted);
+      }
+      .steps li::before {
+        content: "";
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid var(--line);
+        flex: none;
+      }
+      .steps li.done {
+        color: var(--text);
+      }
+      .steps li.done::before {
+        border-color: var(--good);
+        background: var(--good);
+        box-shadow: inset 0 0 0 3px var(--card);
+      }
+      .steps li.now {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .steps li.now::before {
+        border-color: var(--accent);
+        border-top-color: transparent;
+        animation: spin 0.9s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .steps li.now::before {
+          animation: none;
+          border-top-color: var(--accent);
+        }
+      }
+      .timing {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .stat {
+        background: var(--field);
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .stat b {
+        display: block;
+        font-size: 20px;
+      }
+      .compare {
+        display: grid;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .files {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 6px;
+      }
+      .files li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        border-top: 1px solid var(--line);
+        padding-top: 6px;
+      }
+      .files li span {
+        flex: 1 1 200px;
+        min-width: 0;
+        word-break: break-all;
+        font-size: 13px;
+      }
+      .files li b {
+        font-weight: 600;
+        display: block;
+        font-size: 14px;
+      }
+      .alert {
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin-bottom: 16px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .alert.bad {
+        background: var(--bad-soft);
+        color: var(--bad);
+      }
+      .alert.warn {
+        background: var(--warn-soft);
+      }
+      .recent {
+        margin-top: 10px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .recent button {
+        font-size: 12px;
+        padding: 4px 10px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="logo" aria-hidden="true">Ax</div>
+        <div>
+          <h1>Axis VO Studio</h1>
+          <p>Clean a voice-over without opening Premiere. Your original file is never changed.</p>
+        </div>
+      </header>
+
+      <div id="setup" class="alert warn" hidden></div>
+      <div id="error" class="alert bad" role="alert" hidden></div>
+
+      <section class="card" aria-labelledby="voTitle">
+        <h2 id="voTitle">1. Voice-over</h2>
+        <div class="row">
+          <button class="primary" id="browse">Browse...</button>
+          <input
+            id="path"
+            type="text"
+            placeholder="...or paste the file path here"
+            aria-label="File path"
+          />
+          <button id="usePath">Use path</button>
+        </div>
+        <div class="recent" id="recent" hidden></div>
+        <div class="file" id="file" hidden>
+          <div><strong id="fileName"></strong> <span class="muted" id="fileLength"></span></div>
+          <audio id="sourcePlayer" controls preload="none"></audio>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="removeTitle">
+        <h2 id="removeTitle">2. What to remove</h2>
+        <div class="modes" role="radiogroup" aria-labelledby="removeTitle">
+          <label class="mode">
+            <input type="radio" name="mode" value="sandwich" checked />
+            <b>Silence, breaths, then silence <span class="tag">Best</span></b>
+            <span>Cuts pauses, lowers breaths, then cuts the gaps the breaths leave.</span>
+          </label>
+          <label class="mode">
+            <input type="radio" name="mode" value="both" />
+            <b>Silence, then breaths</b>
+            <span>Cuts pauses, then lowers breaths. Keeps the gaps where breaths were.</span>
+          </label>
+          <label class="mode">
+            <input type="radio" name="mode" value="silence" />
+            <b>Silence only</b>
+            <span>Fastest. Cuts pauses and leaves breaths alone.</span>
+          </label>
+          <label class="mode">
+            <input type="radio" name="mode" value="breaths" />
+            <b>Breaths only</b>
+            <span>Lowers breaths and keeps the exact length, so it still lines up.</span>
+          </label>
+        </div>
+
+        <div class="setting" id="keepSetting">
+          <label class="title" for="keepNumber">Silence to keep between phrases</label>
+          <div class="slider">
+            <input
+              id="keepRange"
+              type="range"
+              min="0"
+              max="500"
+              step="10"
+              value="50"
+              aria-label="Silence to keep, in milliseconds"
+            />
+            <input id="keepNumber" type="number" min="0" max="5000" step="10" value="50" />
+            <span>ms</span>
+          </div>
+          <div class="muted">50 ms is tight and punchy. 150–250 ms sounds more relaxed.</div>
+        </div>
+
+        <div class="setting">
+          <label class="check">
+            <input type="checkbox" id="transcript" />
+            <span>
+              <b>Also make a transcript of the cleaned VO</b><br />
+              <span class="muted"
+                >Runs last, on the finished file, so every word's timing matches it. Saves SRT, TXT,
+                VTT and JSON next to it. Takes about as long again as the cleanup.</span
+              >
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <button class="primary big" id="clean" disabled>Clean VO</button>
+
+      <section class="card" id="progressCard" hidden aria-live="polite" style="margin-top: 16px">
+        <h2>Working on it</h2>
+        <progress id="bar" max="100"></progress>
+        <ol class="steps" id="steps"></ol>
+        <div class="timing">
+          <span class="muted" id="clock"></span>
+          <button id="cancel">Cancel</button>
+        </div>
+        <p class="muted" id="keepOpen">
+          You can close this tab. The cleanup keeps running while Axis VO Studio is open, and this
+          page picks it up again when you come back.
+        </p>
+      </section>
+
+      <section class="card" id="resultCard" hidden style="margin-top: 16px">
+        <h2>Done</h2>
+        <div class="stats" id="stats"></div>
+        <div class="compare">
+          <div>
+            <span class="muted">Before</span
+            ><audio id="beforePlayer" controls preload="none"></audio>
+          </div>
+          <div>
+            <span class="muted">After</span><audio id="afterPlayer" controls preload="none"></audio>
+          </div>
+        </div>
+        <ul class="files" id="files"></ul>
+        <button class="link" id="again" style="margin-top: 12px">Clean another VO</button>
+      </section>
+    </main>
+
+    <script>
+      const TOKEN = "__AXIS_TOKEN__";
+      const $ = (id) => document.getElementById(id);
+      let source = null;
+      let polling = null;
+      let lastPhase = null;
+
+      function api(path, body) {
+        return fetch(path, {
+          method: body ? "POST" : "GET",
+          headers: { "X-Axis-Token": TOKEN, "Content-Type": "application/json" },
+          body: body ? JSON.stringify(body) : undefined,
+        }).then((response) =>
+          response.json().then((data) => {
+            if (!response.ok) throw new Error(data.error || "Something went wrong.");
+            return data;
+          }),
+        );
+      }
+      function audioUrl(path) {
+        return (
+          "/api/audio?token=" + encodeURIComponent(TOKEN) + "&path=" + encodeURIComponent(path)
+        );
+      }
+      function showError(message) {
+        $("error").textContent = message || "";
+        $("error").hidden = !message;
+      }
+      function clock(seconds) {
+        seconds = Math.max(0, Math.round(seconds));
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = String(seconds % 60).padStart(2, "0");
+        return h ? h + ":" + String(m).padStart(2, "0") + ":" + s : m + ":" + s;
+      }
+      function about(seconds) {
+        if (seconds < 60) return "under a minute";
+        const minutes = Math.round(seconds / 60);
+        return minutes === 1 ? "1 min" : minutes + " min";
+      }
+      function baseName(path) {
+        return path.split(/[\\/]/).pop();
+      }
+      function store(key, value) {
+        try {
+          if (value === undefined) return JSON.parse(localStorage.getItem(key));
+          localStorage.setItem(key, JSON.stringify(value));
+        } catch {
+          return null;
+        }
+      }
+
+      function setSource(file) {
+        source = file;
+        $("file").hidden = !file;
+        $("clean").disabled = !file || isRunning();
+        if (!file) return;
+        $("path").value = file.path;
+        $("fileName").textContent = baseName(file.path);
+        $("fileLength").textContent = file.seconds ? clock(file.seconds) : "";
+        $("sourcePlayer").src = audioUrl(file.path);
+        const recent = (store("axis.recent") || []).filter((p) => p !== file.path);
+        store("axis.recent", [file.path, ...recent].slice(0, 5));
+        renderRecent();
+      }
+      function renderRecent() {
+        const list = (store("axis.recent") || []).filter((p) => !source || p !== source.path);
+        const box = $("recent");
+        box.hidden = !list.length;
+        box.replaceChildren();
+        if (!list.length) return;
+        const label = document.createElement("span");
+        label.className = "muted";
+        label.textContent = "Recent:";
+        box.append(label);
+        for (const path of list) {
+          const button = document.createElement("button");
+          button.textContent = baseName(path);
+          button.title = path;
+          button.onclick = () => check(path);
+          box.append(button);
+        }
+      }
+      function check(path) {
+        showError("");
+        return api("/api/check", { path }).then(setSource, (error) => showError(error.message));
+      }
+
+      $("browse").onclick = () => {
+        showError("");
+        $("browse").disabled = true;
+        api("/api/pick", {})
+          .then((file) => file.path && setSource(file))
+          .catch((error) => showError(error.message))
+          .finally(() => ($("browse").disabled = false));
+      };
+      $("usePath").onclick = () => check($("path").value);
+      $("path").onkeydown = (event) => event.key === "Enter" && check($("path").value);
+
+      function mode() {
+        return document.querySelector("input[name=mode]:checked").value;
+      }
+      function syncMode() {
+        $("keepSetting").hidden = mode() === "breaths";
+        store("axis.mode", mode());
+      }
+      for (const input of document.querySelectorAll("input[name=mode]")) input.onchange = syncMode;
+      $("keepRange").oninput = () => {
+        $("keepNumber").value = $("keepRange").value;
+        store("axis.keep", Number($("keepRange").value));
+      };
+      $("keepNumber").oninput = () => {
+        $("keepRange").value = Math.min(500, Number($("keepNumber").value) || 0);
+        store("axis.keep", Number($("keepNumber").value));
+      };
+      $("transcript").onchange = () => store("axis.transcript", $("transcript").checked);
+
+      function isRunning() {
+        return lastPhase === "cleanup" || lastPhase === "transcript";
+      }
+      $("clean").onclick = () => {
+        const keepMs = Math.round(Number($("keepNumber").value));
+        if (!Number.isInteger(keepMs) || keepMs < 0 || keepMs > 5000)
+          return showError("Silence to keep must be between 0 and 5000 ms.");
+        showError("");
+        $("clean").disabled = true;
+        api("/api/run", {
+          path: source.path,
+          mode: mode(),
+          keepMs,
+          transcript: $("transcript").checked,
+        })
+          .then(() => {
+            $("resultCard").hidden = true;
+            poll();
+          })
+          .catch((error) => {
+            showError(error.message);
+            $("clean").disabled = false;
+          });
+      };
+      $("cancel").onclick = () => {
+        $("cancel").disabled = true;
+        $("cancel").textContent = "Cancelling...";
+        api("/api/cancel", {}).catch((error) => showError(error.message));
+      };
+      $("again").onclick = () => {
+        $("resultCard").hidden = true;
+        setSource(null);
+        $("path").value = "";
+        $("path").focus();
+      };
+
+      function renderJob(job) {
+        const wasRunning = isRunning();
+        lastPhase = job ? job.phase : null;
+        if (wasRunning && lastPhase === "cancelled")
+          showError("Cancelled. Your original file is unchanged.");
+        const running = isRunning();
+        $("progressCard").hidden = !running;
+        $("clean").disabled = !source || running;
+        $("clean").textContent = running ? "Cleaning..." : "Clean VO";
+        if (!job) return;
+        if (running) {
+          $("bar").value = job.percent;
+          if (job.percent <= 0) $("bar").removeAttribute("value");
+          const list = $("steps");
+          list.replaceChildren();
+          job.steps.forEach((label, i) => {
+            const item = document.createElement("li");
+            item.className = i < job.index ? "done" : i === job.index ? "now" : "";
+            if (i === job.index) item.setAttribute("aria-current", "step");
+            item.textContent =
+              label +
+              (i === job.index && job.stepPercent != null
+                ? " — " + Math.round(job.stepPercent) + "%"
+                : "");
+            list.append(item);
+          });
+          let text = clock(job.elapsed) + " elapsed";
+          if (job.secondsLeft != null) text += ". About " + about(job.secondsLeft) + " left";
+          else text += ". Working out the time left...";
+          $("clock").textContent = text + ".";
+          $("cancel").disabled = job.cancelling;
+          $("cancel").textContent = job.cancelling ? "Cancelling..." : "Cancel";
+          if (!source) setSource({ path: job.source, seconds: job.audioSeconds });
+        }
+        if (job.phase === "failed") showError(job.error);
+        if (job.phase === "done") renderResult(job);
+      }
+
+      function renderResult(job) {
+        const r = job.result;
+        if (!r || $("resultCard").dataset.shown === r.outputPath + job.elapsed) return;
+        $("resultCard").dataset.shown = r.outputPath + job.elapsed;
+        $("resultCard").hidden = false;
+        const saved = r.beforeSeconds - r.afterSeconds;
+        const stats = [
+          [clock(r.beforeSeconds) + " → " + clock(r.afterSeconds), "Length before → after"],
+          [saved > 0.5 ? clock(saved) : "0:00", "Time cut"],
+        ];
+        if (job.mode !== "silence") stats.push([String(r.regions), "Breaths lowered"]);
+        stats.push([clock(job.elapsed), "Took"]);
+        $("stats").replaceChildren(
+          ...stats.map(([value, label]) => {
+            const box = document.createElement("div");
+            box.className = "stat";
+            const b = document.createElement("b");
+            b.textContent = value;
+            box.append(b, label);
+            return box;
+          }),
+        );
+        $("beforePlayer").src = audioUrl(job.source);
+        $("afterPlayer").src = audioUrl(r.outputPath);
+        const files = [["Cleaned VO", r.outputPath]];
+        if (r.silencePath && r.silencePath !== r.outputPath)
+          files.push(["Silence-only copy", r.silencePath]);
+        if (r.breathsPath && r.breathsPath !== r.outputPath)
+          files.push(["Breath-cleaned copy", r.breathsPath]);
+        if (r.regionsPath) files.push(["Breath list (CSV)", r.regionsPath]);
+        const t = r.transcript || {};
+        if (t.srt) files.push(["Transcript (SRT subtitles)", t.srt]);
+        if (t.txt) files.push(["Transcript (plain text)", t.txt]);
+        if (t.json) files.push(["Transcript with word timings (JSON)", t.json]);
+        $("files").replaceChildren(
+          ...files.map(([label, path]) => {
+            const item = document.createElement("li");
+            const text = document.createElement("span");
+            const b = document.createElement("b");
+            b.textContent = label;
+            text.append(b, path);
+            const open = document.createElement("button");
+            open.textContent = "Open";
+            open.onclick = () => api("/api/open", { path }).catch((e) => showError(e.message));
+            const reveal = document.createElement("button");
+            reveal.textContent = "Show in folder";
+            reveal.onclick = () => api("/api/reveal", { path }).catch((e) => showError(e.message));
+            item.append(text, open, reveal);
+            return item;
+          }),
+        );
+        $("resultCard").scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+
+      function poll() {
+        clearTimeout(polling);
+        api("/api/status")
+          .then((data) => {
+            $("setup").textContent = data.setup || "";
+            $("setup").hidden = !data.setup;
+            renderJob(data.job);
+            if (isRunning()) polling = setTimeout(poll, 1000);
+          })
+          .catch(() => {
+            showError("Axis VO Studio stopped. Start it again from its shortcut.");
+            polling = setTimeout(poll, 3000);
+          });
+      }
+
+      const savedMode = store("axis.mode");
+      const savedKeep = store("axis.keep");
+      if (savedMode) {
+        const radio = document.querySelector("input[name=mode][value=" + savedMode + "]");
+        if (radio) radio.checked = true;
+      }
+      if (Number.isFinite(savedKeep)) {
+        $("keepNumber").value = savedKeep;
+        $("keepRange").value = Math.min(500, savedKeep);
+      }
+      $("transcript").checked = store("axis.transcript") === true;
+      syncMode();
+      renderRecent();
+      poll();
+    </script>
+  </body>
+</html>
